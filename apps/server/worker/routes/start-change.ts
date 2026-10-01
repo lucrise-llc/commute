@@ -41,8 +41,13 @@ export const startChangeRoute = createRoute({
 
 export const startChangeHandler: RouteHandler<typeof startChangeRoute, AppEnv> = async (c) => {
   const { projectId } = c.req.valid('param');
-  const { intent, paths } = c.req.valid('json');
-  const started = await c.env.COORDINATOR.getByName(projectId).startChange({ projectId, intent, paths });
+  const { intent, paths, owner } = c.req.valid('json');
+  const started = await c.env.COORDINATOR.getByName(projectId).startChange({
+    projectId,
+    intent,
+    owner: owner ?? null,
+    paths
+  });
   return c.json(
     {
       changeId: started.changeId,

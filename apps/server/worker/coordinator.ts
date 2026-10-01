@@ -1,18 +1,23 @@
-import { z } from '@hono/zod-openapi';
+import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
+
 import { DurableObject } from 'cloudflare:workers';
+import { drizzle } from 'drizzle-orm/durable-sqlite';
+import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
-import type { MeetingPair } from './footprint';
 import type { ChangeRef, IssuedToken } from './repos';
-import type { MergeResult, MergeSide } from './runner';
-import type { Change, ChangeEvent, Overlap } from './schemas';
+import type { Change, ChangeEvent, Landing, Overlap, WaitReason } from './schemas';
+import type { ChangeRecord, EventRecord, JobRecord, ProjectRecord } from './db/project-store';
+import type { LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
 
-import { HEAD_MOVED } from './runner';
-import { logError, log } from './log';
-import { mergeOnRunnerPool } from './runner-pool';
+import { log, logError } from './log';
+import { onRunnerPool } from './runner-pool';
+import migrations from '../drizzle/migrations';
+import { ProjectStore } from './db/project-store';
+import { HEAD_MOVED, LAND_CONFLICT } from './runner';
 import { diffCommits, meetingPairs } from './footprint';
 import { artifactsErrorCode, errorCodeOf } from './errors';
 import { changeEventSchema, waitRequestSchema } from './schemas';
-import { changeRepoName, issueReadToken, issueWriteToken } from './repos';
+import { changeRepoName, issueAgentToken, issueJobToken } from './repos';
 
 const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
@@ -21,117 +26,17 @@ const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
 const WEBSOCKET_POLICY_VIOLATION = 1_008;
-// Retries wait 10, 20, 40, 80, then 160 seconds, which outlasts a container that stops answering for a few minutes.
-const MERGE_ATTEMPTS_MAX = 6;
-const MERGE_RETRY_BASE_DELAY_MS = 10_000;
-const MERGE_RETRY_BACKOFF_FACTOR = 2;
 const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8})\/events$/;
-
-const eventPayloadSchema = z.record(z.string(), z.unknown());
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS project (
-  id TEXT PRIMARY KEY,
-  change_count INTEGER NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS change (
-  id TEXT PRIMARY KEY,
-  intent TEXT NOT NULL,
-  state TEXT NOT NULL,
-  base_commit TEXT,
-  head_commit TEXT,
-  created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS footprint (
-  change_id TEXT NOT NULL,
-  source TEXT NOT NULL,
-  path TEXT NOT NULL,
-  PRIMARY KEY (change_id, source, path)
-);
-CREATE TABLE IF NOT EXISTS reported_overlap (
-  change_id TEXT NOT NULL,
-  other_change_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  other_path TEXT NOT NULL,
-  PRIMARY KEY (change_id, other_change_id, path, other_path)
-);
-CREATE TABLE IF NOT EXISTS event (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  change_id TEXT NOT NULL,
-  at TEXT NOT NULL,
-  type TEXT NOT NULL,
-  payload TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS merge_check (
-  left_id TEXT NOT NULL,
-  right_id TEXT NOT NULL,
-  left_head TEXT NOT NULL,
-  right_head TEXT NOT NULL,
-  outcome TEXT NOT NULL,
-  conflicts TEXT NOT NULL,
-  PRIMARY KEY (left_id, right_id)
-);
-CREATE TABLE IF NOT EXISTS pending_merge (
-  left_id TEXT NOT NULL,
-  right_id TEXT NOT NULL,
-  attempts INTEGER NOT NULL,
-  run_after INTEGER NOT NULL,
-  PRIMARY KEY (left_id, right_id)
-);
-`;
-
-type ChangeRow = {
-  id: string;
-  intent: string;
-  state: string;
-  base_commit: string | null;
-  head_commit: string | null;
-  created_at: string;
-};
-
-type FootprintRow = {
-  change_id: string;
-  intent: string;
-  path: string;
-};
-
-type EventRow = {
-  seq: number;
-  change_id: string;
-  at: string;
-  type: string;
-  payload: string;
-};
-
-type MergeCheckRow = {
-  left_id: string;
-  right_id: string;
-  left_head: string;
-  right_head: string;
-  outcome: string;
-};
-
-type PendingMergeRow = {
-  left_id: string;
-  right_id: string;
-  attempts: number;
-};
-
-// A change with commits of its own: the only kind a merge check can compare.
-type PushedChange = ChangeRow & {
-  base_commit: string;
-  head_commit: string;
-};
-
-type OtherChange = {
-  intent: string;
-  paths: string[];
-};
+// A failed job retries after 10, 20, 40, 80, then 160 seconds, which outlasts a container that stops answering for a
+// few minutes.
+const JOB_ATTEMPTS_MAX = 6;
+const JOB_RETRY_BASE_DELAY_MS = 10_000;
+const JOB_RETRY_BACKOFF_FACTOR = 2;
 
 type StartChangeParams = {
   projectId: string;
   intent: string;
+  owner: string | null;
   paths: string[];
 };
 
@@ -141,25 +46,25 @@ type ChangeStarted = IssuedToken & {
   overlaps: Overlap[];
 };
 
+type ApproveBatchParams = {
+  changeIds: string[];
+  approver: string;
+};
+
 type ForkedChange = {
   baseCommit: string;
-  writeToken: IssuedToken;
+  agentToken: IssuedToken;
 };
 
-type PairsParams = {
-  changeId: string;
-  otherChangeId: string;
-  pairs: MeetingPair[];
+// A change with commits of its own: the only kind a merge check compares.
+type PushedChange = ChangeRecord & {
+  baseCommit: string;
+  headCommit: string;
 };
 
-type RecordOverlapsParams = {
-  changeId: string;
-  isPush: boolean;
-};
-
-type FootprintOfParams = {
-  changeId: string;
-  source: 'declared' | 'pushed';
+type PushedPair = {
+  left: PushedChange;
+  right: PushedChange;
 };
 
 type EventPayload =
@@ -176,6 +81,26 @@ type EventPayload =
       outcome: 'parallel' | 'sequenced';
       landsFirst: string | null;
       conflicts: string[];
+    }
+  | {
+      type: 'landed';
+      batchId: string;
+      landedCommit: string;
+      approver: string;
+    }
+  | {
+      type: 'restacked';
+      trunkCommit: string;
+      headCommit: string;
+    }
+  | {
+      type: 'restack_conflict';
+      trunkCommit: string;
+      conflicts: string[];
+    }
+  | {
+      type: 'landing_failed';
+      batchId: string;
     };
 
 type EmitParams = {
@@ -183,94 +108,211 @@ type EmitParams = {
   payload: EventPayload;
 };
 
-type PushedPair = {
-  left: PushedChange;
-  right: PushedChange;
-};
+// 'again' keeps the job due now, for state that moved while it ran.
+type JobOutcome = 'done' | 'again';
 
 type QueueMergeChecksParams = {
   changeId: string;
   overlaps: Overlap[];
 };
 
-type PairIds = {
+type AnnounceMergeParams = PushedPair & {
+  result: MergeResult;
+};
+
+type ApplyRestackParams = {
+  projectId: string;
+  change: ChangeRecord;
+  trunkHead: string;
+  result: RestackResult;
+};
+
+type ApplyLandingParams = {
+  batchId: string;
+  approver: string;
+  result: LandResult;
+};
+
+type RepoHeadParams = ChangeRef & {
+  head: string;
+  scope: 'read' | 'write';
+};
+
+type TrunkHeadParams = {
+  projectId: string;
+  head: string;
+  scope: 'read' | 'write';
+};
+
+type ChangeBaseParams = {
+  changeId: string;
+  baseCommit: string;
+};
+
+type BatchApproved = {
+  batchId: string;
+};
+
+type JobParams = {
+  job: JobRecord;
+  projectId: string;
+};
+
+type RecordOverlapsParams = {
+  changeId: string;
+  isPush: boolean;
+};
+
+type MergeJobParams = {
+  projectId: string;
   leftId: string;
   rightId: string;
 };
 
-type ReadSideParams = ChangeRef & {
-  head: string;
+type LandJobParams = {
+  projectId: string;
+  batchId: string;
 };
 
-type AnnounceParams = PushedPair & {
-  result: MergeResult;
+type LandingChangeParams = {
+  projectId: string;
+  change: PushedChange;
+  batchId: string;
+  approver: string;
 };
 
-// One coordinator per project. It owns the life of each change, the footprint index, and the event stream that
-// agents wait on.
+// One coordinator per project. It owns the life of each change: its footprint and overlaps, the merge checks of its
+// pairs, its batch, its landing on trunk, and the restacks that follow. It also holds the event stream that agents
+// wait on.
 export class Coordinator extends DurableObject<Env> {
-  private readonly sql: SqlStorage;
+  private readonly store: ProjectStore;
   private readonly pushReads = new Map<string, Promise<void>>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.sql = ctx.storage.sql;
-    this.sql.exec(SCHEMA);
+    const db: DrizzleSqliteDODatabase = drizzle(ctx.storage);
+    this.store = new ProjectStore(db);
+    // The migrator runs synchronously, and the constructor ends before the coordinator handles any request.
+    migrate(db, migrations);
   }
 
   async createProject(projectId: string): Promise<IssuedToken> {
-    if (this.hasProject()) {
+    if (this.store.project() !== null) {
       throw new Error('PROJECT_EXISTS');
     }
     const created = await this.createTrunk(projectId);
     using trunk = await this.env.ARTIFACTS.get(projectId);
-    const writeToken = await issueWriteToken(trunk);
+    const agentToken = await issueAgentToken(trunk);
     await trunk.revokeToken(created.token);
-    this.sql.exec('INSERT INTO project (id, change_count, created_at) VALUES (?, 0, ?)', projectId, now());
+    this.store.insertProject(projectId);
     log({ event: 'project_created', projectId });
-    return writeToken;
+    return agentToken;
   }
 
-  async startChange({ projectId, intent, paths }: StartChangeParams): Promise<ChangeStarted> {
-    if (!this.hasProject()) {
+  async startChange({ projectId, intent, owner, paths }: StartChangeParams): Promise<ChangeStarted> {
+    if (this.store.project() === null) {
       throw new Error('PROJECT_NOT_FOUND');
     }
-    const changeId = this.allocateChange({ intent, paths });
+    const number = this.store.nextChangeNumber();
+    const changeId = `c-${number}`;
+    this.store.insertStartingChange({ changeId, number, intent, owner, paths });
     let forked: ForkedChange;
     try {
       forked = await this.forkTrunk({ projectId, changeId });
     } catch (error) {
-      this.removeChange(changeId);
+      this.store.removeChange(changeId);
       logError({ event: 'change_start_failed', projectId, changeId, error });
       throw new Error(errorCodeOf(error) === 'TRUNK_EMPTY' ? 'TRUNK_EMPTY' : 'FORK_FAILED', { cause: error });
     }
-    this.sql.exec(
-      "UPDATE change SET state = 'open', base_commit = ?, head_commit = ? WHERE id = ?",
-      forked.baseCommit,
-      forked.baseCommit,
-      changeId
-    );
+    this.store.openChange({ changeId, commit: forked.baseCommit });
+    await this.alignWithTrunk({ changeId, baseCommit: forked.baseCommit });
     const overlaps = this.recordOverlaps({ changeId, isPush: false });
-    log({ event: 'change_started', projectId, changeId, overlaps: overlaps.length });
-    return { changeId, baseCommit: forked.baseCommit, overlaps, ...forked.writeToken };
+    log({ event: 'change_started', projectId, changeId, owner, overlaps: overlaps.length });
+    return { changeId, baseCommit: forked.baseCommit, overlaps, ...forked.agentToken };
+  }
+
+  // After the first change, trunk moves only through landings. A fork that began before a landing finished has the
+  // older trunk as its base, so it restacks like every other open change.
+  private async alignWithTrunk({ changeId, baseCommit }: ChangeBaseParams): Promise<void> {
+    const trunkHead = this.store.project()?.trunkHead ?? null;
+    if (trunkHead === null) {
+      this.store.setTrunkHead(baseCommit);
+      return;
+    }
+    if (trunkHead !== baseCommit) {
+      this.store.queueJob({ key: `restack:${changeId}`, kind: 'restack', runAfter: Date.now() });
+      await this.ctx.storage.setAlarm(Date.now());
+    }
   }
 
   getChange(changeId: string): Change {
-    const change = this.findChange(changeId);
-    if (change === null || change.state !== 'open' || change.base_commit === null || change.head_commit === null) {
+    const change = this.store.findChange(changeId);
+    if (change === null || change.state === 'starting' || change.baseCommit === null || change.headCommit === null) {
       throw new Error('CHANGE_NOT_FOUND');
     }
     return {
       changeId,
       intent: change.intent,
-      baseCommit: change.base_commit,
-      headCommit: change.head_commit,
-      declaredPaths: this.footprintOf({ changeId, source: 'declared' }),
-      footprint: this.footprintOf({ changeId, source: 'pushed' }),
-      overlaps: this.currentOverlaps(changeId),
-      ...this.landingOrder(changeId),
-      createdAt: change.created_at
+      owner: change.owner,
+      state: change.state,
+      baseCommit: change.baseCommit,
+      headCommit: change.headCommit,
+      declaredPaths: this.store.footprint({ changeId, source: 'declared' }),
+      footprint: this.store.footprint({ changeId, source: 'pushed' }),
+      overlaps: change.state === 'landed' ? [] : this.currentOverlaps(changeId),
+      landsAfter: this.landsAfter(changeId),
+      landsBefore: this.landsBefore(changeId),
+      waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
+      batchId: change.batchId,
+      landedCommit: change.landedCommit,
+      createdAt: change.createdAt
     };
+  }
+
+  // The next batch is every ready change. Two ready changes that overlap have a clean merge result, because a
+  // conflict makes the later change wait for the earlier one, so the batch commutes inside and with trunk.
+  getLanding(): Landing {
+    const project = this.requireProject();
+    const ready: Landing['ready'] = [];
+    const waiting: Landing['waiting'] = [];
+    for (const change of this.store.activeChanges()) {
+      const summary = { changeId: change.id, intent: change.intent, owner: change.owner };
+      const waitsFor = this.waitReasons(change);
+      if (waitsFor.length === 0) {
+        ready.push(summary);
+      } else {
+        waiting.push({ ...summary, waitsFor });
+      }
+    }
+    const batch = this.store.landingBatch();
+    return {
+      trunkHead: project.trunkHead,
+      ready,
+      waiting,
+      batch: batch === null ? null : { batchId: batch.id, changeIds: batch.changeIds, approver: batch.approver }
+    };
+  }
+
+  async approveBatch({ changeIds, approver }: ApproveBatchParams): Promise<BatchApproved> {
+    const landing = this.getLanding();
+    if (landing.batch !== null) {
+      throw new Error('LANDING_IN_PROGRESS');
+    }
+    const ready = new Set(landing.ready.map((change) => change.changeId));
+    if (changeIds.some((changeId) => !ready.has(changeId))) {
+      throw new Error('BATCH_NOT_READY');
+    }
+    // A ready change sits on trunk, so the trunk head is known once any change is ready.
+    const trunkHead = landing.trunkHead;
+    if (trunkHead === null) {
+      throw new Error('A ready change exists, but the project has no trunk head.');
+    }
+    const batchId = this.store.insertBatch({ approver, changeIds, trunkBefore: trunkHead });
+    this.store.setLanding({ changeIds, batchId });
+    this.store.queueJob({ key: `land:${batchId}`, kind: 'land', runAfter: 0 });
+    await this.ctx.storage.setAlarm(Date.now());
+    log({ event: 'batch_approved', batchId, approver, changeIds });
+    return { batchId };
   }
 
   // Pushes to one change are read one at a time, so a slow read cannot overwrite the result of a newer push.
@@ -286,7 +328,8 @@ export class Coordinator extends DurableObject<Env> {
 
   override fetch(request: Request): Response {
     const changeId = EVENTS_PATH_PATTERN.exec(new URL(request.url).pathname)?.[1];
-    if (changeId === undefined || this.findChange(changeId)?.state !== 'open') {
+    const change = changeId === undefined ? null : this.store.findChange(changeId);
+    if (changeId === undefined || change === null || change.state === 'starting') {
       return Response.json({ error: 'CHANGE_NOT_FOUND' }, { status: 404 });
     }
     if (request.headers.get('upgrade') !== 'websocket') {
@@ -307,14 +350,8 @@ export class Coordinator extends DurableObject<Env> {
       socket.close(WEBSOCKET_POLICY_VIOLATION, 'Send {"after": <seq>} after connecting.');
       return;
     }
-    const rows = this.sql.exec<EventRow>(
-      'SELECT seq, change_id, at, type, payload FROM event WHERE change_id = ? AND seq > ? ORDER BY seq LIMIT ?',
-      changeId,
-      request.data.after,
-      EVENTS_REPLAY_MAX
-    );
-    for (const row of rows) {
-      socket.send(JSON.stringify(eventFrom(row)));
+    for (const record of this.store.eventsAfter({ changeId, after: request.data.after, limit: EVENTS_REPLAY_MAX })) {
+      socket.send(JSON.stringify(eventFrom(record)));
     }
     socket.serializeAttachment(SOCKET_REPLAYED);
   }
@@ -325,204 +362,70 @@ export class Coordinator extends DurableObject<Env> {
     socket.close(WEBSOCKET_NORMAL_CLOSURE, 'Closed by the client.');
   }
 
-  // Runs one due merge check per alarm, so a run stays far below the alarm time limit, and sets the next alarm for the
-  // next due check.
+  // Runs one due job per alarm, so a run stays far below the alarm time limit, and sets the alarm for the next one.
   override async alarm(): Promise<void> {
-    const [job] = this.sql
-      .exec<PendingMergeRow>(
-        'SELECT left_id, right_id, attempts FROM pending_merge WHERE run_after <= ? ORDER BY run_after LIMIT 1',
-        Date.now()
-      )
-      .toArray();
-    if (job !== undefined) {
-      await this.runMergeCheck(job);
+    const job = this.store.dueJob(Date.now());
+    if (job !== null) {
+      await this.runJob(job);
     }
-    const [next] = this.sql
-      .exec<{ run_after: number }>('SELECT MIN(run_after) AS run_after FROM pending_merge')
-      .toArray();
-    if (next?.run_after !== undefined && next.run_after !== null) {
-      await this.ctx.storage.setAlarm(Math.max(next.run_after, Date.now()));
+    const next = this.store.nextJobTime();
+    if (next !== null) {
+      await this.ctx.storage.setAlarm(Math.max(next, Date.now()));
     }
   }
 
-  // A push queues a merge check with every change whose footprint meets it, and a new check of every pair that has
-  // a result, so a push that removes a conflict also removes its sequence.
-  private async queueMergeChecks({ changeId, overlaps }: QueueMergeChecksParams): Promise<void> {
-    const checked = this.sql
-      .exec<{ other_id: string }>(
-        `SELECT CASE WHEN left_id = ? THEN right_id ELSE left_id END AS other_id
-         FROM merge_check WHERE left_id = ? OR right_id = ?`,
-        changeId,
-        changeId,
-        changeId
-      )
-      .toArray()
-      .map((row) => row.other_id);
-    const others = new Set([...overlaps.map((overlap) => overlap.changeId), ...checked]);
-    let queued = 0;
-    for (const otherChangeId of others) {
-      if (pushedChange(this.findChange(otherChangeId)) === null) {
-        continue;
-      }
-      const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
-      queued += this.sql.exec(
-        `INSERT INTO pending_merge (left_id, right_id, attempts, run_after) VALUES (?, ?, 0, ?)
-         ON CONFLICT (left_id, right_id) DO UPDATE SET attempts = 0, run_after = excluded.run_after`,
-        leftId,
-        rightId,
-        Date.now()
-      ).rowsWritten;
-    }
-    if (queued > 0) {
-      await this.ctx.storage.setAlarm(Date.now());
-    }
-  }
-
-  private async runMergeCheck({ left_id: leftId, right_id: rightId, attempts }: PendingMergeRow): Promise<void> {
-    const left = pushedChange(this.findChange(leftId));
-    const right = pushedChange(this.findChange(rightId));
-    const previous = this.findMergeCheck({ leftId, rightId });
-    if (left === null || right === null) {
-      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
-      this.sql.exec('DELETE FROM merge_check WHERE left_id = ? AND right_id = ?', leftId, rightId);
-      return;
-    }
-    if (previous?.left_head === left.head_commit && previous.right_head === right.head_commit) {
-      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
-      return;
-    }
-
-    let result: MergeResult;
+  private async runJob(job: JobRecord): Promise<void> {
+    const projectId = this.requireProject().id;
     try {
-      result = await this.mergeHeads({ left, right });
-    } catch (error) {
-      logError({ event: 'merge_check_failed', leftId, rightId, attempts: attempts + 1, error });
-      if (error instanceof Error && error.message === HEAD_MOVED) {
-        await this.rereadHeads({ left, right });
+      const outcome = await this.jobOutcome({ job, projectId });
+      if (outcome === 'done') {
+        this.store.finishJob(job);
+      } else {
+        this.store.retryJob({ key: job.key, version: job.version, attempts: job.attempts + 1, runAfter: Date.now() });
       }
-      if (attempts + 1 >= MERGE_ATTEMPTS_MAX) {
-        this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
+    } catch (error) {
+      logError({ event: 'job_failed', jobKey: job.key, attempts: job.attempts + 1, error });
+      if (job.attempts + 1 >= JOB_ATTEMPTS_MAX) {
+        this.store.finishJob(job);
+        this.abandonJob(job);
         return;
       }
-      this.sql.exec(
-        'UPDATE pending_merge SET attempts = ?, run_after = ? WHERE left_id = ? AND right_id = ?',
-        attempts + 1,
-        Date.now() + MERGE_RETRY_BASE_DELAY_MS * MERGE_RETRY_BACKOFF_FACTOR ** attempts,
-        leftId,
-        rightId
-      );
-      return;
-    }
-
-    this.sql.exec(
-      `INSERT OR REPLACE INTO merge_check (left_id, right_id, left_head, right_head, outcome, conflicts)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      leftId,
-      rightId,
-      left.head_commit,
-      right.head_commit,
-      result.outcome,
-      JSON.stringify(result.conflicts)
-    );
-    const isCurrent =
-      this.findChange(leftId)?.head_commit === left.head_commit &&
-      this.findChange(rightId)?.head_commit === right.head_commit;
-    if (isCurrent) {
-      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
-    }
-    if (previous?.outcome !== result.outcome) {
-      this.announce({ left, right, result });
-    }
-    log({ event: 'merge_checked', leftId, rightId, outcome: result.outcome, conflicts: result.conflicts.length });
-  }
-
-  // The repository holds a head that the coordinator did not record, for example after a push read failed. Reading
-  // the heads again records it and queues the pair for the new head.
-  private async rereadHeads({ left, right }: PushedPair): Promise<void> {
-    const projectId = this.projectId();
-    await this.recordPush({ projectId, changeId: left.id });
-    await this.recordPush({ projectId, changeId: right.id });
-  }
-
-  private async mergeHeads({ left, right }: PushedPair): Promise<MergeResult> {
-    const projectId = this.projectId();
-    const [leftSide, rightSide] = await Promise.all([
-      this.readSide({ projectId, changeId: left.id, head: left.head_commit }),
-      this.readSide({ projectId, changeId: right.id, head: right.head_commit })
-    ]);
-    return mergeOnRunnerPool({
-      env: this.env,
-      projectId,
-      pairKey: `${left.id}/${right.id}`,
-      left: leftSide,
-      right: rightSide
-    });
-  }
-
-  private async readSide({ projectId, changeId, head }: ReadSideParams): Promise<MergeSide> {
-    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
-    const [info, readToken] = await Promise.all([repo.info(), issueReadToken(repo)]);
-    return { remote: info.remote, token: readToken.token, head };
-  }
-
-  // A conflict puts the change that started first ahead of the other one. Both sides learn the outcome and the other
-  // change's intent.
-  private announce({ left, right, result }: AnnounceParams): void {
-    const outcome = result.outcome === 'conflict' ? 'sequenced' : 'parallel';
-    const landsFirst = outcome === 'sequenced' ? left.id : null;
-    for (const [change, other] of [
-      [left, right],
-      [right, left]
-    ] as const) {
-      this.emit({
-        changeId: change.id,
-        payload: {
-          type: 'merge_checked',
-          otherChange: { changeId: other.id, intent: other.intent },
-          outcome,
-          landsFirst,
-          conflicts: result.conflicts
-        }
+      this.store.retryJob({
+        key: job.key,
+        version: job.version,
+        attempts: job.attempts + 1,
+        runAfter: Date.now() + JOB_RETRY_BASE_DELAY_MS * JOB_RETRY_BACKOFF_FACTOR ** job.attempts
       });
     }
   }
 
-  // Only a result for the current heads of both changes sets an order; a result for older heads waits for its new check.
-  private landingOrder(changeId: string): Pick<Change, 'landsAfter' | 'landsBefore'> {
-    const rows = this.sql
-      .exec<MergeCheckRow>(
-        `SELECT merge_check.left_id, merge_check.right_id, merge_check.left_head, merge_check.right_head, merge_check.outcome
-         FROM merge_check
-         JOIN change AS left_change ON left_change.id = merge_check.left_id AND left_change.head_commit = merge_check.left_head
-         JOIN change AS right_change ON right_change.id = merge_check.right_id AND right_change.head_commit = merge_check.right_head
-         WHERE merge_check.outcome = 'conflict' AND (merge_check.left_id = ? OR merge_check.right_id = ?)`,
-        changeId,
-        changeId
-      )
-      .toArray();
-    return {
-      landsAfter: rows.filter((row) => row.right_id === changeId).map((row) => row.left_id),
-      landsBefore: rows.filter((row) => row.left_id === changeId).map((row) => row.right_id)
-    };
+  private jobOutcome({ job, projectId }: JobParams): Promise<JobOutcome> {
+    const [, first = '', second = ''] = job.key.split(':');
+    if (job.kind === 'merge') {
+      return this.runMergeJob({ projectId, leftId: first, rightId: second });
+    }
+    if (job.kind === 'restack') {
+      return this.runRestackJob({ projectId, changeId: first });
+    }
+    return this.runLandJob({ projectId, batchId: first });
   }
 
-  private findMergeCheck({ leftId, rightId }: PairIds): MergeCheckRow | null {
-    const [row] = this.sql
-      .exec<MergeCheckRow>(
-        'SELECT left_id, right_id, left_head, right_head, outcome FROM merge_check WHERE left_id = ? AND right_id = ?',
-        leftId,
-        rightId
-      )
-      .toArray();
-    return row ?? null;
+  // A landing that runs out of attempts gives its changes back to the queue of ready work.
+  private abandonJob(job: JobRecord): void {
+    if (job.kind !== 'land') {
+      logError({ event: 'job_abandoned', jobKey: job.key, error: 'attempts exhausted' });
+      return;
+    }
+    const [, batchId = ''] = job.key.split(':');
+    this.failBatch(batchId);
   }
 
-  private projectId(): string {
-    return this.sql.exec<{ id: string }>('SELECT id FROM project').one().id;
-  }
-
-  private hasProject(): boolean {
-    return this.sql.exec('SELECT id FROM project').toArray().length > 0;
+  private requireProject(): ProjectRecord {
+    const project = this.store.project();
+    if (project === null) {
+      throw new Error('PROJECT_NOT_FOUND');
+    }
+    return project;
   }
 
   private async createTrunk(projectId: string): Promise<ArtifactsCreateRepoResult> {
@@ -536,28 +439,6 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  private allocateChange({ intent, paths }: Omit<StartChangeParams, 'projectId'>): string {
-    const { change_count: count } = this.sql
-      .exec<{ change_count: number }>('UPDATE project SET change_count = change_count + 1 RETURNING change_count')
-      .one();
-    const changeId = `c-${count}`;
-    this.sql.exec(
-      "INSERT INTO change (id, intent, state, created_at) VALUES (?, ?, 'starting', ?)",
-      changeId,
-      intent,
-      now()
-    );
-    for (const path of paths) {
-      this.sql.exec("INSERT INTO footprint (change_id, source, path) VALUES (?, 'declared', ?)", changeId, path);
-    }
-    return changeId;
-  }
-
-  private removeChange(changeId: string): void {
-    this.sql.exec('DELETE FROM change WHERE id = ?', changeId);
-    this.sql.exec('DELETE FROM footprint WHERE change_id = ?', changeId);
-  }
-
   private async forkTrunk({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
     const repoName = changeRepoName({ projectId, changeId });
     using trunk = await this.env.ARTIFACTS.get(projectId);
@@ -568,9 +449,9 @@ export class Coordinator extends DurableObject<Env> {
       if (head === undefined) {
         throw new Error('TRUNK_EMPTY');
       }
-      const writeToken = await issueWriteToken(repo);
+      const agentToken = await issueAgentToken(repo);
       await repo.revokeToken(forked.token);
-      return { baseCommit: head.hash, writeToken };
+      return { baseCommit: head.hash, agentToken };
     } catch (error) {
       await this.env.ARTIFACTS.delete(repoName);
       throw error;
@@ -593,21 +474,18 @@ export class Coordinator extends DurableObject<Env> {
   }
 
   private async readPush({ projectId, changeId }: ChangeRef): Promise<void> {
-    const change = this.findChange(changeId);
-    if (change === null || change.state !== 'open' || change.base_commit === null) {
+    const change = this.store.findChange(changeId);
+    if (change === null || change.state !== 'open' || change.baseCommit === null) {
       return;
     }
     using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
     const [head] = await repo.log({ ref: TRUNK_BRANCH, limit: 1 });
-    if (head === undefined || head.hash === change.head_commit) {
+    if (head === undefined || head.hash === change.headCommit) {
       return;
     }
-    const footprint = await diffCommits({ repo, fromCommit: change.base_commit, toCommit: head.hash });
-    this.sql.exec("DELETE FROM footprint WHERE change_id = ? AND source = 'pushed'", changeId);
-    for (const path of footprint) {
-      this.sql.exec("INSERT INTO footprint (change_id, source, path) VALUES (?, 'pushed', ?)", changeId, path);
-    }
-    this.sql.exec('UPDATE change SET head_commit = ? WHERE id = ?', head.hash, changeId);
+    const footprint = await diffCommits({ repo, fromCommit: change.baseCommit, toCommit: head.hash });
+    this.store.replacePushedFootprint({ changeId, paths: footprint });
+    this.store.setHead({ changeId, commit: head.hash });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
     log({
@@ -623,26 +501,26 @@ export class Coordinator extends DurableObject<Env> {
   // Finds every change whose footprint meets this one, and sends one event to each side for pairs it has not been
   // told about. A change that is starting learns its overlaps from the start response instead of an event.
   private recordOverlaps({ changeId, isPush }: RecordOverlapsParams): Overlap[] {
-    const change = this.findChange(changeId);
+    const change = this.store.findChange(changeId);
     if (change === null) {
       return [];
     }
-    const paths = this.allPathsOf(changeId);
+    const paths = this.store.allPaths(changeId);
     const overlaps: Overlap[] = [];
-    for (const [otherChangeId, other] of this.otherChanges(changeId)) {
+    for (const [otherChangeId, other] of this.store.otherActiveFootprints(changeId)) {
       const pairs = meetingPairs({ paths, otherPaths: other.paths });
       if (pairs.length === 0) {
         continue;
       }
       overlaps.push({ changeId: otherChangeId, intent: other.intent, paths: pairs });
       const reversed = meetingPairs({ paths: other.paths, otherPaths: paths });
-      if (this.reportPairs({ changeId: otherChangeId, otherChangeId: changeId, pairs: reversed })) {
+      if (this.store.reportPairs({ changeId: otherChangeId, otherChangeId: changeId, pairs: reversed })) {
         this.emit({
           changeId: otherChangeId,
           payload: { type: 'overlap_found', overlap: { changeId, intent: change.intent, paths: reversed } }
         });
       }
-      const isNewForChange = this.reportPairs({ changeId, otherChangeId, pairs });
+      const isNewForChange = this.store.reportPairs({ changeId, otherChangeId, pairs });
       if (isPush && isNewForChange) {
         this.emit({
           changeId,
@@ -654,9 +532,9 @@ export class Coordinator extends DurableObject<Env> {
   }
 
   private currentOverlaps(changeId: string): Overlap[] {
-    const paths = this.allPathsOf(changeId);
+    const paths = this.store.allPaths(changeId);
     const overlaps: Overlap[] = [];
-    for (const [otherChangeId, other] of this.otherChanges(changeId)) {
+    for (const [otherChangeId, other] of this.store.otherActiveFootprints(changeId)) {
       const pairs = meetingPairs({ paths, otherPaths: other.paths });
       if (pairs.length > 0) {
         overlaps.push({ changeId: otherChangeId, intent: other.intent, paths: pairs });
@@ -665,108 +543,337 @@ export class Coordinator extends DurableObject<Env> {
     return overlaps;
   }
 
-  private reportPairs({ changeId, otherChangeId, pairs }: PairsParams): boolean {
-    let rowsWritten = 0;
-    for (const pair of pairs) {
-      rowsWritten += this.sql.exec(
-        'INSERT OR IGNORE INTO reported_overlap (change_id, other_change_id, path, other_path) VALUES (?, ?, ?, ?)',
-        changeId,
-        otherChangeId,
-        pair.path,
-        pair.otherPath
-      ).rowsWritten;
+  // A push queues a merge check with every change whose footprint meets it, and a new check of every pair that has
+  // a result, so a push that removes a conflict also removes its sequence.
+  private async queueMergeChecks({ changeId, overlaps }: QueueMergeChecksParams): Promise<void> {
+    const others = new Set([...overlaps.map((overlap) => overlap.changeId), ...this.store.checkedPartners(changeId)]);
+    let queued = 0;
+    for (const otherChangeId of others) {
+      if (pushedChange(this.store.findChange(otherChangeId)) === null) {
+        continue;
+      }
+      const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
+      this.store.queueJob({ key: `merge:${leftId}:${rightId}`, kind: 'merge', runAfter: Date.now() });
+      queued += 1;
     }
-    return rowsWritten > 0;
+    if (queued > 0) {
+      await this.ctx.storage.setAlarm(Date.now());
+    }
+  }
+
+  private async runMergeJob({ projectId, leftId, rightId }: MergeJobParams): Promise<JobOutcome> {
+    const left = pushedChange(this.store.findChange(leftId));
+    const right = pushedChange(this.store.findChange(rightId));
+    if (left === null || right === null) {
+      this.store.deleteMergeCheck({ leftId, rightId });
+      return 'done';
+    }
+    const previous = this.store.findMergeCheck({ leftId, rightId });
+    if (previous?.leftHead === left.headCommit && previous.rightHead === right.headCommit) {
+      return 'done';
+    }
+
+    let result: MergeResult;
+    try {
+      const [leftSide, rightSide] = await Promise.all([
+        this.changeSide({ projectId, changeId: left.id, head: left.headCommit, scope: 'read' }),
+        this.changeSide({ projectId, changeId: right.id, head: right.headCommit, scope: 'read' })
+      ]);
+      result = await onRunnerPool({
+        env: this.env,
+        projectId,
+        jobKey: `merge:${leftId}:${rightId}`,
+        task: (runner) => runner.mergeCheck({ left: leftSide, right: rightSide })
+      });
+    } catch (error) {
+      if (isError(error, HEAD_MOVED)) {
+        await this.recordPush({ projectId, changeId: leftId });
+        await this.recordPush({ projectId, changeId: rightId });
+        return 'again';
+      }
+      throw error;
+    }
+
+    this.store.saveMergeCheck({
+      leftId,
+      rightId,
+      leftHead: left.headCommit,
+      rightHead: right.headCommit,
+      outcome: result.outcome,
+      conflicts: result.conflicts
+    });
+    if (previous?.outcome !== result.outcome) {
+      this.announceMerge({ left, right, result });
+    }
+    log({ event: 'merge_checked', leftId, rightId, outcome: result.outcome, conflicts: result.conflicts.length });
+    const isCurrent =
+      this.store.findChange(leftId)?.headCommit === left.headCommit &&
+      this.store.findChange(rightId)?.headCommit === right.headCommit;
+    return isCurrent ? 'done' : 'again';
+  }
+
+  // A conflict puts the change that started first ahead of the other one. Both sides learn the outcome and the other
+  // change's intent.
+  private announceMerge({ left, right, result }: AnnounceMergeParams): void {
+    const outcome = result.outcome === 'conflict' ? 'sequenced' : 'parallel';
+    const landsFirst = outcome === 'sequenced' ? left.id : null;
+    for (const [change, other] of [
+      [left, right],
+      [right, left]
+    ] as const) {
+      this.emit({
+        changeId: change.id,
+        payload: {
+          type: 'merge_checked',
+          otherChange: { changeId: other.id, intent: other.intent },
+          outcome,
+          landsFirst,
+          conflicts: result.conflicts
+        }
+      });
+    }
+  }
+
+  private async runLandJob({ projectId, batchId }: LandJobParams): Promise<JobOutcome> {
+    const batch = this.store.findBatch(batchId);
+    if (batch?.state !== 'landing') {
+      return 'done';
+    }
+    const landing = batch.changeIds.map((changeId) => {
+      const change = pushedChange(this.store.findChange(changeId));
+      if (change === null) {
+        throw new Error(`Change ${changeId} of batch ${batchId} has no commits to land.`);
+      }
+      return change;
+    });
+
+    let result: LandResult;
+    try {
+      const plan = {
+        trunk: await this.trunkSide({ projectId, head: batch.trunkBefore, scope: 'write' }),
+        changes: await Promise.all(
+          landing.map((change) => this.landingChange({ projectId, change, batchId, approver: batch.approver }))
+        )
+      };
+      result = await onRunnerPool({
+        env: this.env,
+        projectId,
+        jobKey: `land:${batchId}`,
+        task: (runner) => runner.land(plan)
+      });
+    } catch (error) {
+      if (isError(error, HEAD_MOVED) || isError(error, LAND_CONFLICT)) {
+        logError({ event: 'landing_stopped', batchId, error });
+        this.failBatch(batchId);
+        return 'done';
+      }
+      throw error;
+    }
+    await this.applyLanding({ batchId, approver: batch.approver, result });
+    return 'done';
+  }
+
+  private async applyLanding({ batchId, approver, result }: ApplyLandingParams): Promise<void> {
+    for (const { changeId, commit } of result.landed) {
+      this.store.setLanded({ changeId, commit });
+      this.emit({ changeId, payload: { type: 'landed', batchId, landedCommit: commit, approver } });
+    }
+    this.store.finishBatch({ batchId, state: 'landed', trunkAfter: result.trunkHead });
+    this.store.setTrunkHead(result.trunkHead);
+    for (const change of this.store.activeChanges()) {
+      this.store.queueJob({ key: `restack:${change.id}`, kind: 'restack', runAfter: Date.now() });
+    }
+    await this.ctx.storage.setAlarm(Date.now());
+    log({ event: 'batch_landed', batchId, trunkHead: result.trunkHead, changes: result.landed.length });
+  }
+
+  private failBatch(batchId: string): void {
+    const batch = this.store.findBatch(batchId);
+    if (batch?.state !== 'landing') {
+      return;
+    }
+    this.store.reopen(batch.changeIds);
+    this.store.finishBatch({ batchId, state: 'failed', trunkAfter: null });
+    for (const changeId of batch.changeIds) {
+      this.emit({ changeId, payload: { type: 'landing_failed', batchId } });
+    }
+  }
+
+  // Each change becomes one trunk commit. Its message is the intent, and its note records the change, the intent,
+  // the owner, and the approver.
+  private async landingChange({ projectId, change, batchId, approver }: LandingChangeParams): Promise<LandingChange> {
+    const side = await this.changeSide({ projectId, changeId: change.id, head: change.headCommit, scope: 'read' });
+    const owner = change.owner ?? 'unknown';
+    return {
+      ...side,
+      changeId: change.id,
+      base: change.baseCommit,
+      message: `${change.intent}\n\nCommute-Change: ${change.id}`,
+      note: [
+        `change: ${change.id}`,
+        `intent: ${change.intent}`,
+        `owner: ${owner}`,
+        `approved-by: ${approver}`,
+        `batch: ${batchId}`
+      ].join('\n'),
+      authorName: owner,
+      authorEmail: `${change.id}@agents.commute.invalid`
+    };
+  }
+
+  // Brings a change onto the current trunk. A change that is already on it has nothing to do.
+  private async runRestackJob({ projectId, changeId }: ChangeRef): Promise<JobOutcome> {
+    const change = this.store.findChange(changeId);
+    const trunkHead = this.store.project()?.trunkHead ?? null;
+    if (
+      change?.state !== 'open' ||
+      change.baseCommit === null ||
+      change.headCommit === null ||
+      trunkHead === null ||
+      change.baseCommit === trunkHead
+    ) {
+      return 'done';
+    }
+
+    let result: RestackResult;
+    try {
+      const [changeSide, trunkSide] = await Promise.all([
+        this.changeSide({ projectId, changeId, head: change.headCommit, scope: 'write' }),
+        this.trunkSide({ projectId, head: trunkHead, scope: 'read' })
+      ]);
+      result = await onRunnerPool({
+        env: this.env,
+        projectId,
+        jobKey: `restack:${changeId}`,
+        task: (runner) => runner.restack({ change: changeSide, trunk: trunkSide })
+      });
+    } catch (error) {
+      if (isError(error, HEAD_MOVED)) {
+        await this.recordPush({ projectId, changeId });
+        return 'again';
+      }
+      throw error;
+    }
+    await this.applyRestack({ projectId, change, trunkHead, result });
+    return 'done';
+  }
+
+  private async applyRestack({ projectId, change, trunkHead, result }: ApplyRestackParams): Promise<void> {
+    const changeId = change.id;
+    if (result.headCommit === null) {
+      this.store.setRestackConflicts({ changeId, conflicts: result.conflicts });
+      this.emit({
+        changeId,
+        payload: { type: 'restack_conflict', trunkCommit: trunkHead, conflicts: result.conflicts }
+      });
+      log({ event: 'restack_conflict', projectId, changeId, conflicts: result.conflicts.length });
+      return;
+    }
+    this.store.setRestacked({ changeId, baseCommit: trunkHead, headCommit: result.headCommit });
+    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
+    const footprint = await diffCommits({ repo, fromCommit: trunkHead, toCommit: result.headCommit });
+    this.store.replacePushedFootprint({ changeId, paths: footprint });
+    const overlaps = this.recordOverlaps({ changeId, isPush: true });
+    await this.queueMergeChecks({ changeId, overlaps });
+    this.emit({ changeId, payload: { type: 'restacked', trunkCommit: trunkHead, headCommit: result.headCommit } });
+    log({ event: 'change_restacked', projectId, changeId, outcome: result.outcome, trunkHead });
+  }
+
+  // Why a change is not in the next batch. An empty list means the change is ready.
+  private waitReasons(change: ChangeRecord): WaitReason[] {
+    if (change.state === 'landing') {
+      return [{ code: 'LANDING', changeIds: [] }];
+    }
+    const trunkHead = this.store.project()?.trunkHead ?? null;
+    if (change.headCommit === change.baseCommit) {
+      return [{ code: 'NO_COMMITS', changeIds: [] }];
+    }
+    if (change.restackConflicts !== null) {
+      return [{ code: 'RESTACK_CONFLICT', changeIds: [] }];
+    }
+    if (change.baseCommit !== trunkHead) {
+      return [{ code: 'RESTACKING', changeIds: [] }];
+    }
+    const reasons: WaitReason[] = [];
+    const landsAfter = this.landsAfter(change.id);
+    if (landsAfter.length > 0) {
+      reasons.push({ code: 'LANDS_AFTER', changeIds: landsAfter });
+    }
+    const checked = new Set(
+      this.store
+        .currentMergeChecks(change.id)
+        .map((check) => (check.leftId === change.id ? check.rightId : check.leftId))
+    );
+    const unchecked = this.currentOverlaps(change.id)
+      .map((overlap) => overlap.changeId)
+      .filter(
+        (otherChangeId) => !checked.has(otherChangeId) && pushedChange(this.store.findChange(otherChangeId)) !== null
+      );
+    if (unchecked.length > 0) {
+      reasons.push({ code: 'CHECKING', changeIds: unchecked });
+    }
+    return reasons;
+  }
+
+  private landsAfter(changeId: string): string[] {
+    return this.store
+      .currentMergeChecks(changeId)
+      .filter((check) => check.outcome === 'conflict' && check.rightId === changeId)
+      .map((check) => check.leftId);
+  }
+
+  private landsBefore(changeId: string): string[] {
+    return this.store
+      .currentMergeChecks(changeId)
+      .filter((check) => check.outcome === 'conflict' && check.leftId === changeId)
+      .map((check) => check.rightId);
+  }
+
+  private async changeSide({ projectId, changeId, head, scope }: RepoHeadParams): Promise<RepoHead> {
+    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
+    const [info, jobToken] = await Promise.all([repo.info(), issueJobToken({ repo, scope })]);
+    return { remote: info.remote, token: jobToken.token, head };
+  }
+
+  private async trunkSide({ projectId, head, scope }: TrunkHeadParams): Promise<RepoHead> {
+    using repo = await this.env.ARTIFACTS.get(projectId);
+    const [info, jobToken] = await Promise.all([repo.info(), issueJobToken({ repo, scope })]);
+    return { remote: info.remote, token: jobToken.token, head };
   }
 
   private emit({ changeId, payload }: EmitParams): void {
     const { type, ...fields } = payload;
-    const row = this.sql
-      .exec<EventRow>(
-        'INSERT INTO event (change_id, at, type, payload) VALUES (?, ?, ?, ?) RETURNING seq, change_id, at, type, payload',
-        changeId,
-        now(),
-        type,
-        JSON.stringify(fields)
-      )
-      .one();
-    const message = JSON.stringify(eventFrom(row));
+    const record = this.store.insertEvent({ changeId, type, payload: fields });
+    const message = JSON.stringify(eventFrom(record));
     for (const socket of this.ctx.getWebSockets(changeId)) {
       if (socket.deserializeAttachment() === SOCKET_REPLAYED) {
         socket.send(message);
       }
     }
   }
-
-  private findChange(changeId: string): ChangeRow | null {
-    const [row] = this.sql
-      .exec<ChangeRow>(
-        'SELECT id, intent, state, base_commit, head_commit, created_at FROM change WHERE id = ?',
-        changeId
-      )
-      .toArray();
-    return row ?? null;
-  }
-
-  private footprintOf({ changeId, source }: FootprintOfParams): string[] {
-    return this.sql
-      .exec<{ path: string }>(
-        'SELECT path FROM footprint WHERE change_id = ? AND source = ? ORDER BY path',
-        changeId,
-        source
-      )
-      .toArray()
-      .map((row) => row.path);
-  }
-
-  private allPathsOf(changeId: string): string[] {
-    return this.sql
-      .exec<{ path: string }>('SELECT DISTINCT path FROM footprint WHERE change_id = ? ORDER BY path', changeId)
-      .toArray()
-      .map((row) => row.path);
-  }
-
-  // ceiling: compares a footprint with every path of every other change in flight. Debt — index paths by segment
-  // when one project holds thousands of changes in flight, which the post-demo scale benchmark measures.
-  private otherChanges(changeId: string): Map<string, OtherChange> {
-    const rows = this.sql.exec<FootprintRow>(
-      `SELECT DISTINCT footprint.change_id, change.intent, footprint.path
-       FROM footprint JOIN change ON change.id = footprint.change_id
-       WHERE footprint.change_id != ? AND change.state = 'open'
-       ORDER BY footprint.change_id, footprint.path`,
-      changeId
-    );
-    const others = new Map<string, OtherChange>();
-    for (const row of rows) {
-      const other = others.get(row.change_id) ?? { intent: row.intent, paths: [] };
-      other.paths.push(row.path);
-      others.set(row.change_id, other);
-    }
-    return others;
-  }
 }
 
-function eventFrom(row: EventRow): ChangeEvent {
+function eventFrom(record: EventRecord): ChangeEvent {
   return changeEventSchema.parse({
-    ...eventPayloadSchema.parse(parseJson(row.payload)),
-    seq: row.seq,
-    type: row.type,
-    changeId: row.change_id,
-    at: row.at
+    ...record.payload,
+    seq: record.seq,
+    type: record.type,
+    changeId: record.changeId,
+    at: record.at
   });
 }
 
-function pushedChange(change: ChangeRow | null): PushedChange | null {
+function pushedChange(change: ChangeRecord | null): PushedChange | null {
   if (
     change === null ||
-    change.state !== 'open' ||
-    change.base_commit === null ||
-    change.head_commit === null ||
-    change.head_commit === change.base_commit
+    (change.state !== 'open' && change.state !== 'landing') ||
+    change.baseCommit === null ||
+    change.headCommit === null ||
+    change.headCommit === change.baseCommit
   ) {
     return null;
   }
-  return { ...change, base_commit: change.base_commit, head_commit: change.head_commit };
+  return { ...change, baseCommit: change.baseCommit, headCommit: change.headCommit };
 }
 
 type OrderedPairParams = {
@@ -783,14 +890,14 @@ function changeNumber(changeId: string): number {
   return Number(changeId.slice('c-'.length));
 }
 
+function isError(error: unknown, message: string): boolean {
+  return error instanceof Error && error.message === message;
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
     return null;
   }
-}
-
-function now(): string {
-  return new Date().toISOString();
 }

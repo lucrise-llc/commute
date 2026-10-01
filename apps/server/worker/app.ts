@@ -9,7 +9,9 @@ import { healthHandler, healthRoute } from './routes/health';
 import { changeEventsHandler } from './routes/change-events';
 import { changeEventSchema, waitRequestSchema } from './schemas';
 import { getChangeHandler, getChangeRoute } from './routes/get-change';
+import { getLandingHandler, getLandingRoute } from './routes/get-landing';
 import { startChangeHandler, startChangeRoute } from './routes/start-change';
+import { approveBatchHandler, approveBatchRoute } from './routes/approve-batch';
 import { createProjectHandler, createProjectRoute } from './routes/create-project';
 
 const BAD_REQUEST = 400;
@@ -29,6 +31,8 @@ app.openapi(healthRoute, healthHandler);
 app.openapi(createProjectRoute, createProjectHandler);
 app.openapi(startChangeRoute, startChangeHandler);
 app.openapi(getChangeRoute, getChangeHandler);
+app.openapi(getLandingRoute, getLandingHandler);
+app.openapi(approveBatchRoute, approveBatchHandler);
 app.get('/api/projects/:projectId/changes/:changeId/events', changeEventsHandler);
 app.all('/git/*', (c) => handleGit({ request: c.req.raw, env: c.env }));
 

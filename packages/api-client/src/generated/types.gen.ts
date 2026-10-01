@@ -8,7 +8,15 @@ export type ChangeEvent = ({
     type: 'overlap_found';
 } & OverlapFoundEvent) | ({
     type: 'merge_checked';
-} & MergeCheckedEvent);
+} & MergeCheckedEvent) | ({
+    type: 'landed';
+} & LandedEvent) | ({
+    type: 'restacked';
+} & RestackedEvent) | ({
+    type: 'restack_conflict';
+} & RestackConflictEvent) | ({
+    type: 'landing_failed';
+} & LandingFailedEvent);
 
 export type OverlapFoundEvent = {
     seq: number;
@@ -39,6 +47,42 @@ export type MergeCheckedEvent = {
     outcome: 'parallel' | 'sequenced';
     landsFirst: string | null;
     conflicts: Array<string>;
+};
+
+export type LandedEvent = {
+    seq: number;
+    type: 'landed';
+    changeId: string;
+    at: string;
+    batchId: string;
+    landedCommit: string;
+    approver: string;
+};
+
+export type RestackedEvent = {
+    seq: number;
+    type: 'restacked';
+    changeId: string;
+    at: string;
+    trunkCommit: string;
+    headCommit: string;
+};
+
+export type RestackConflictEvent = {
+    seq: number;
+    type: 'restack_conflict';
+    changeId: string;
+    at: string;
+    trunkCommit: string;
+    conflicts: Array<string>;
+};
+
+export type LandingFailedEvent = {
+    seq: number;
+    type: 'landing_failed';
+    changeId: string;
+    at: string;
+    batchId: string;
 };
 
 export type WaitRequest = {
@@ -80,11 +124,14 @@ export type ChangeStarted = {
 export type StartChangeBody = {
     intent: string;
     paths: Array<string>;
+    owner?: string;
 };
 
 export type Change = {
     changeId: string;
     intent: string;
+    owner: string | null;
+    state: 'open' | 'landing' | 'landed';
     baseCommit: string;
     headCommit: string;
     declaredPaths: Array<string>;
@@ -92,7 +139,44 @@ export type Change = {
     overlaps: Array<Overlap>;
     landsAfter: Array<string>;
     landsBefore: Array<string>;
+    waitsFor: Array<WaitReason>;
+    batchId: string | null;
+    landedCommit: string | null;
     createdAt: string;
+};
+
+export type WaitReason = {
+    code: 'NO_COMMITS' | 'RESTACKING' | 'RESTACK_CONFLICT' | 'LANDS_AFTER' | 'CHECKING' | 'LANDING';
+    changeIds: Array<string>;
+};
+
+export type Landing = {
+    trunkHead: string | null;
+    ready: Array<{
+        changeId: string;
+        intent: string;
+        owner: string | null;
+    }>;
+    waiting: Array<{
+        changeId: string;
+        intent: string;
+        owner: string | null;
+        waitsFor: Array<WaitReason>;
+    }>;
+    batch: {
+        batchId: string;
+        changeIds: Array<string>;
+        approver: string;
+    } | null;
+};
+
+export type BatchApproved = {
+    batchId: string;
+};
+
+export type ApproveBatchBody = {
+    changeIds: Array<string>;
+    approver: string;
 };
 
 export type GetHealthData = {
@@ -206,3 +290,65 @@ export type GetChangeResponses = {
 };
 
 export type GetChangeResponse = GetChangeResponses[keyof GetChangeResponses];
+
+export type GetLandingData = {
+    body?: never;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/landing';
+};
+
+export type GetLandingErrors = {
+    /**
+     * PROJECT_NOT_FOUND: no project has this ID.
+     */
+    404: Error;
+};
+
+export type GetLandingError = GetLandingErrors[keyof GetLandingErrors];
+
+export type GetLandingResponses = {
+    /**
+     * The changes ready to land as the next batch, the changes that wait and why, and the batch that is landing.
+     */
+    200: Landing;
+};
+
+export type GetLandingResponse = GetLandingResponses[keyof GetLandingResponses];
+
+export type ApproveBatchData = {
+    body: ApproveBatchBody;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/batches';
+};
+
+export type ApproveBatchErrors = {
+    /**
+     * INVALID_REQUEST: the body does not match the schema.
+     */
+    400: Error;
+    /**
+     * PROJECT_NOT_FOUND: no project has this ID.
+     */
+    404: Error;
+    /**
+     * BATCH_NOT_READY: a change is not ready. LANDING_IN_PROGRESS: another batch is landing.
+     */
+    409: Error;
+};
+
+export type ApproveBatchError = ApproveBatchErrors[keyof ApproveBatchErrors];
+
+export type ApproveBatchResponses = {
+    /**
+     * The batch lands in the background. Each change gets a landed event, then the others restack.
+     */
+    202: BatchApproved;
+};
+
+export type ApproveBatchResponse = ApproveBatchResponses[keyof ApproveBatchResponses];

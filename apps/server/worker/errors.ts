@@ -5,6 +5,8 @@ export const ERROR_STATUS = {
   CHANGE_NOT_FOUND: 404,
   PROJECT_EXISTS: 409,
   TRUNK_EMPTY: 409,
+  BATCH_NOT_READY: 409,
+  LANDING_IN_PROGRESS: 409,
   FORK_FAILED: 502
 } as const;
 
@@ -15,6 +17,8 @@ const errorCodeSchema = z.enum([
   'CHANGE_NOT_FOUND',
   'PROJECT_EXISTS',
   'TRUNK_EMPTY',
+  'BATCH_NOT_READY',
+  'LANDING_IN_PROGRESS',
   'FORK_FAILED'
 ]);
 

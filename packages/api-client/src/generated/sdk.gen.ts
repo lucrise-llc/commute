@@ -2,8 +2,8 @@
 
 import { client } from './client.gen.ts';
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client/index.ts';
-import type { CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetHealthData, GetHealthResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
-import { zCreateProjectResponse, zGetChangeResponse, zGetHealthResponse, zStartChangeResponse } from './zod.gen.ts';
+import type { ApproveBatchData, ApproveBatchErrors, ApproveBatchResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetHealthData, GetHealthResponses, GetLandingData, GetLandingErrors, GetLandingResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
+import { zApproveBatchResponse, zCreateProjectResponse, zGetChangeResponse, zGetHealthResponse, zGetLandingResponse, zStartChangeResponse } from './zod.gen.ts';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -49,4 +49,20 @@ export const getChange = <ThrowOnError extends boolean = false>(options: Options
     responseValidator: async (data) => await zGetChangeResponse.parseAsync(data),
     url: '/api/projects/{projectId}/changes/{changeId}',
     ...options
+});
+
+export const getLanding = <ThrowOnError extends boolean = false>(options: Options<GetLandingData, ThrowOnError>): RequestResult<GetLandingResponses, GetLandingErrors, ThrowOnError> => (options.client ?? client).get<GetLandingResponses, GetLandingErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetLandingResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/landing',
+    ...options
+});
+
+export const approveBatch = <ThrowOnError extends boolean = false>(options: Options<ApproveBatchData, ThrowOnError>): RequestResult<ApproveBatchResponses, ApproveBatchErrors, ThrowOnError> => (options.client ?? client).post<ApproveBatchResponses, ApproveBatchErrors, ThrowOnError>({
+    responseValidator: async (data) => await zApproveBatchResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/batches',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

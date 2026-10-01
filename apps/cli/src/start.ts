@@ -18,7 +18,7 @@ const TRUNK_BRANCH = 'main';
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
-export const START_USAGE = 'commute start "<intent>" --paths <path,path> [--dir <directory>] [--json]';
+export const START_USAGE = 'commute start "<intent>" --paths <path,path> [--as <name>] [--dir <directory>] [--json]';
 
 export async function runStart(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -27,6 +27,7 @@ export async function runStart(args: string[]): Promise<number> {
     options: {
       paths: { type: 'string' },
       dir: { type: 'string' },
+      as: { type: 'string' },
       json: { type: 'boolean', default: false }
     }
   });
@@ -35,11 +36,12 @@ export async function runStart(args: string[]): Promise<number> {
     throw new Error(`Usage: ${START_USAGE}`);
   }
   const server = serverFromEnv();
+  const owner = values.as ?? (await configuredOwner());
 
   const { data, error } = await startChange({
     client: createClient({ baseUrl: server.url }),
     path: { projectId: server.projectId },
-    body: { intent, paths: normalizePaths(values.paths) }
+    body: { intent, paths: normalizePaths(values.paths), ...(owner === null ? {} : { owner }) }
   });
   if (data === undefined) {
     throw new Error(`commute start failed: ${describeApiError(error)}`);
@@ -60,6 +62,13 @@ export async function runStart(args: string[]): Promise<number> {
     console.log(`overlap  ${describeOverlap(overlap)}`);
   }
   return 0;
+}
+
+// The owner comes from --as, or from `git config --global commute.owner`.
+async function configuredOwner(): Promise<string | null> {
+  // git config exits 1 when the key is unset, which means no configured owner.
+  const owner = await git({ args: ['config', '--get', 'commute.owner'], cwd: process.cwd() }).catch(() => '');
+  return owner === '' ? null : owner;
 }
 
 // Accepts the paths the way people type them: "src/cart/, ./config/discounts.json".

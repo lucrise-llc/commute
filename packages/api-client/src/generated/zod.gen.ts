@@ -33,9 +33,49 @@ export const zMergeCheckedEvent = z.object({
     conflicts: z.array(z.string())
 });
 
+export const zLandedEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['landed']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/),
+    landedCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    approver: z.string()
+});
+
+export const zRestackedEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['restacked']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    trunkCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    headCommit: z.string().regex(/^[0-9a-f]{40}$/)
+});
+
+export const zRestackConflictEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['restack_conflict']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    trunkCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    conflicts: z.array(z.string())
+});
+
+export const zLandingFailedEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['landing_failed']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/)
+});
+
 export const zChangeEvent = z.discriminatedUnion('type', [
     zOverlapFoundEvent.extend({ type: z.literal('overlap_found') }),
-    zMergeCheckedEvent.extend({ type: z.literal('merge_checked') })
+    zMergeCheckedEvent.extend({ type: z.literal('merge_checked') }),
+    zLandedEvent.extend({ type: z.literal('landed') }),
+    zRestackedEvent.extend({ type: z.literal('restacked') }),
+    zRestackConflictEvent.extend({ type: z.literal('restack_conflict') }),
+    zLandingFailedEvent.extend({ type: z.literal('landing_failed') })
 ]);
 
 export const zWaitRequest = z.object({
@@ -76,12 +116,31 @@ export const zChangeStarted = z.object({
 
 export const zStartChangeBody = z.object({
     intent: z.string().min(1).max(500).regex(/^[^\p{Cc}]+$\/u/u),
-    paths: z.array(z.string().min(1).max(512)).min(1).max(100)
+    paths: z.array(z.string().min(1).max(512)).min(1).max(100),
+    owner: z.string().min(1).max(64).regex(/^[^\p{Cc}]+$\/u/u).optional()
+});
+
+export const zWaitReason = z.object({
+    code: z.enum([
+        'NO_COMMITS',
+        'RESTACKING',
+        'RESTACK_CONFLICT',
+        'LANDS_AFTER',
+        'CHECKING',
+        'LANDING'
+    ]),
+    changeIds: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/))
 });
 
 export const zChange = z.object({
     changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
     intent: z.string(),
+    owner: z.string().nullable(),
+    state: z.enum([
+        'open',
+        'landing',
+        'landed'
+    ]),
     baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
     headCommit: z.string().regex(/^[0-9a-f]{40}$/),
     declaredPaths: z.array(z.string()),
@@ -89,7 +148,39 @@ export const zChange = z.object({
     overlaps: z.array(zOverlap),
     landsAfter: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
     landsBefore: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
+    waitsFor: z.array(zWaitReason),
+    batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/).nullable(),
+    landedCommit: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
     createdAt: z.string()
+});
+
+export const zLanding = z.object({
+    trunkHead: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
+    ready: z.array(z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable()
+    })),
+    waiting: z.array(z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable(),
+        waitsFor: z.array(zWaitReason)
+    })),
+    batch: z.object({
+        batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/),
+        changeIds: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
+        approver: z.string()
+    }).nullable()
+});
+
+export const zBatchApproved = z.object({
+    batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/)
+});
+
+export const zApproveBatchBody = z.object({
+    changeIds: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)).min(1).max(50),
+    approver: z.string().min(1).max(64).regex(/^[^\p{Cc}]+$\/u/u)
 });
 
 /**
@@ -124,3 +215,23 @@ export const zGetChangePath = z.object({
  * The change as the coordinator knows it: its head, its footprint, and its overlaps.
  */
 export const zGetChangeResponse = zChange;
+
+export const zGetLandingPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/)
+});
+
+/**
+ * The changes ready to land as the next batch, the changes that wait and why, and the batch that is landing.
+ */
+export const zGetLandingResponse = zLanding;
+
+export const zApproveBatchBody2 = zApproveBatchBody;
+
+export const zApproveBatchPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/)
+});
+
+/**
+ * The batch lands in the background. Each change gets a landed event, then the others restack.
+ */
+export const zApproveBatchResponse = zBatchApproved;
