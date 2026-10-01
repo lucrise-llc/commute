@@ -1,6 +1,7 @@
 import type { MergeResult, MergeSide } from './runner';
 
 import { logError } from './log';
+import { HEAD_MOVED } from './runner';
 
 // Each project has its own runners, so one team's code never runs in a container that serves another project.
 const RUNNERS_PER_PROJECT = 2;
@@ -29,6 +30,9 @@ export async function mergeOnRunnerPool({
     try {
       return await env.RUNNER.getByName(runner).mergeCheck({ left, right });
     } catch (error) {
+      if (error instanceof Error && error.message === HEAD_MOVED) {
+        throw error;
+      }
       lastError = error;
       logError({ event: 'runner_failed', runner, pairKey, error });
     }

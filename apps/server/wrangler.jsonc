@@ -27,7 +27,7 @@
       "class_name": "Runner",
       "image": "./runner/Dockerfile",
       "instance_type": "basic",
-      "max_instances": 10
+      "max_instances": 20
     }
   ],
   "durable_objects": {

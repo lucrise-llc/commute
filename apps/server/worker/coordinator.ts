@@ -6,6 +6,7 @@ import type { ChangeRef, IssuedToken } from './repos';
 import type { MergeResult, MergeSide } from './runner';
 import type { Change, ChangeEvent, Overlap } from './schemas';
 
+import { HEAD_MOVED } from './runner';
 import { logError, log } from './log';
 import { mergeOnRunnerPool } from './runner-pool';
 import { diffCommits, meetingPairs } from './footprint';
@@ -20,9 +21,10 @@ const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
 const WEBSOCKET_POLICY_VIOLATION = 1_008;
-const MERGE_CHECKS_PER_ALARM = 5;
-const MERGE_ATTEMPTS_MAX = 3;
-const MERGE_RETRY_DELAY_MS = 5_000;
+// Retries wait 10, 20, 40, 80, then 160 seconds, which outlasts a container that stops answering for a few minutes.
+const MERGE_ATTEMPTS_MAX = 6;
+const MERGE_RETRY_BASE_DELAY_MS = 10_000;
+const MERGE_RETRY_BACKOFF_FACTOR = 2;
 const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8})\/events$/;
 
 const eventPayloadSchema = z.record(z.string(), z.unknown());
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS pending_merge (
   left_id TEXT NOT NULL,
   right_id TEXT NOT NULL,
   attempts INTEGER NOT NULL,
+  run_after INTEGER NOT NULL,
   PRIMARY KEY (left_id, right_id)
 );
 `;
@@ -193,6 +196,10 @@ type QueueMergeChecksParams = {
 type PairIds = {
   leftId: string;
   rightId: string;
+};
+
+type ReadSideParams = ChangeRef & {
+  head: string;
 };
 
 type AnnounceParams = PushedPair & {
@@ -318,17 +325,23 @@ export class Coordinator extends DurableObject<Env> {
     socket.close(WEBSOCKET_NORMAL_CLOSURE, 'Closed by the client.');
   }
 
-  // Runs queued merge checks. A check that fails stays queued until it runs out of attempts, and the alarm comes back
-  // while any check is queued.
+  // Runs one due merge check per alarm, so a run stays far below the alarm time limit, and sets the next alarm for the
+  // next due check.
   override async alarm(): Promise<void> {
-    const jobs = this.sql
-      .exec<PendingMergeRow>('SELECT left_id, right_id, attempts FROM pending_merge LIMIT ?', MERGE_CHECKS_PER_ALARM)
+    const [job] = this.sql
+      .exec<PendingMergeRow>(
+        'SELECT left_id, right_id, attempts FROM pending_merge WHERE run_after <= ? ORDER BY run_after LIMIT 1',
+        Date.now()
+      )
       .toArray();
-    for (const job of jobs) {
+    if (job !== undefined) {
       await this.runMergeCheck(job);
     }
-    if (this.sql.exec('SELECT left_id FROM pending_merge LIMIT 1').toArray().length > 0) {
-      await this.ctx.storage.setAlarm(Date.now() + MERGE_RETRY_DELAY_MS);
+    const [next] = this.sql
+      .exec<{ run_after: number }>('SELECT MIN(run_after) AS run_after FROM pending_merge')
+      .toArray();
+    if (next?.run_after !== undefined && next.run_after !== null) {
+      await this.ctx.storage.setAlarm(Math.max(next.run_after, Date.now()));
     }
   }
 
@@ -353,9 +366,11 @@ export class Coordinator extends DurableObject<Env> {
       }
       const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
       queued += this.sql.exec(
-        'INSERT OR IGNORE INTO pending_merge (left_id, right_id, attempts) VALUES (?, ?, 0)',
+        `INSERT INTO pending_merge (left_id, right_id, attempts, run_after) VALUES (?, ?, 0, ?)
+         ON CONFLICT (left_id, right_id) DO UPDATE SET attempts = 0, run_after = excluded.run_after`,
         leftId,
-        rightId
+        rightId,
+        Date.now()
       ).rowsWritten;
     }
     if (queued > 0) {
@@ -367,11 +382,12 @@ export class Coordinator extends DurableObject<Env> {
     const left = pushedChange(this.findChange(leftId));
     const right = pushedChange(this.findChange(rightId));
     const previous = this.findMergeCheck({ leftId, rightId });
-    if (
-      left === null ||
-      right === null ||
-      (previous?.left_head === left.head_commit && previous.right_head === right.head_commit)
-    ) {
+    if (left === null || right === null) {
+      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
+      this.sql.exec('DELETE FROM merge_check WHERE left_id = ? AND right_id = ?', leftId, rightId);
+      return;
+    }
+    if (previous?.left_head === left.head_commit && previous.right_head === right.head_commit) {
       this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
       return;
     }
@@ -381,16 +397,20 @@ export class Coordinator extends DurableObject<Env> {
       result = await this.mergeHeads({ left, right });
     } catch (error) {
       logError({ event: 'merge_check_failed', leftId, rightId, attempts: attempts + 1, error });
+      if (error instanceof Error && error.message === HEAD_MOVED) {
+        await this.rereadHeads({ left, right });
+      }
       if (attempts + 1 >= MERGE_ATTEMPTS_MAX) {
         this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
-      } else {
-        this.sql.exec(
-          'UPDATE pending_merge SET attempts = ? WHERE left_id = ? AND right_id = ?',
-          attempts + 1,
-          leftId,
-          rightId
-        );
+        return;
       }
+      this.sql.exec(
+        'UPDATE pending_merge SET attempts = ?, run_after = ? WHERE left_id = ? AND right_id = ?',
+        attempts + 1,
+        Date.now() + MERGE_RETRY_BASE_DELAY_MS * MERGE_RETRY_BACKOFF_FACTOR ** attempts,
+        leftId,
+        rightId
+      );
       return;
     }
 
@@ -416,11 +436,19 @@ export class Coordinator extends DurableObject<Env> {
     log({ event: 'merge_checked', leftId, rightId, outcome: result.outcome, conflicts: result.conflicts.length });
   }
 
+  // The repository holds a head that the coordinator did not record, for example after a push read failed. Reading
+  // the heads again records it and queues the pair for the new head.
+  private async rereadHeads({ left, right }: PushedPair): Promise<void> {
+    const projectId = this.projectId();
+    await this.recordPush({ projectId, changeId: left.id });
+    await this.recordPush({ projectId, changeId: right.id });
+  }
+
   private async mergeHeads({ left, right }: PushedPair): Promise<MergeResult> {
     const projectId = this.projectId();
     const [leftSide, rightSide] = await Promise.all([
-      this.readSide({ projectId, changeId: left.id }),
-      this.readSide({ projectId, changeId: right.id })
+      this.readSide({ projectId, changeId: left.id, head: left.head_commit }),
+      this.readSide({ projectId, changeId: right.id, head: right.head_commit })
     ]);
     return mergeOnRunnerPool({
       env: this.env,
@@ -431,10 +459,10 @@ export class Coordinator extends DurableObject<Env> {
     });
   }
 
-  private async readSide(change: ChangeRef): Promise<MergeSide> {
-    using repo = await this.env.ARTIFACTS.get(changeRepoName(change));
+  private async readSide({ projectId, changeId, head }: ReadSideParams): Promise<MergeSide> {
+    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
     const [info, readToken] = await Promise.all([repo.info(), issueReadToken(repo)]);
-    return { remote: info.remote, token: readToken.token };
+    return { remote: info.remote, token: readToken.token, head };
   }
 
   // A conflict puts the change that started first ahead of the other one. Both sides learn the outcome and the other
@@ -459,10 +487,15 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
+  // Only a result for the current heads of both changes sets an order; a result for older heads waits for its new check.
   private landingOrder(changeId: string): Pick<Change, 'landsAfter' | 'landsBefore'> {
     const rows = this.sql
       .exec<MergeCheckRow>(
-        "SELECT left_id, right_id, left_head, right_head, outcome FROM merge_check WHERE outcome = 'conflict' AND (left_id = ? OR right_id = ?)",
+        `SELECT merge_check.left_id, merge_check.right_id, merge_check.left_head, merge_check.right_head, merge_check.outcome
+         FROM merge_check
+         JOIN change AS left_change ON left_change.id = merge_check.left_id AND left_change.head_commit = merge_check.left_head
+         JOIN change AS right_change ON right_change.id = merge_check.right_id AND right_change.head_commit = merge_check.right_head
+         WHERE merge_check.outcome = 'conflict' AND (merge_check.left_id = ? OR merge_check.right_id = ?)`,
         changeId,
         changeId
       )
