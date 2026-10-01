@@ -64,10 +64,9 @@ export async function runStart(args: string[]): Promise<number> {
   return 0;
 }
 
-// The owner comes from --as, or from `git config --global commute.owner`.
+// The owner comes from --as, or from `git config commute.owner`.
 async function configuredOwner(): Promise<string | null> {
-  // git config exits 1 when the key is unset, which means no configured owner.
-  const owner = await git({ args: ['config', '--get', 'commute.owner'], cwd: process.cwd() }).catch(() => '');
+  const owner = await git({ args: ['config', '--get', '--default', '', 'commute.owner'], cwd: process.cwd() });
   return owner === '' ? null : owner;
 }
 

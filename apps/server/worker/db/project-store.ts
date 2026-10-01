@@ -1,7 +1,7 @@
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 
 import { alias } from 'drizzle-orm/sqlite-core';
-import { and, asc, eq, gt, inArray, lte, min, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } from 'drizzle-orm';
 
 import type { JOB_KINDS } from './schema';
 import type { MeetingPair } from '../footprint';
@@ -88,19 +88,18 @@ type PairParams = {
 
 type NewBatchParams = {
   approver: string;
-  changeIds: string[];
   trunkBefore: string;
 };
 
 type FinishBatchParams = {
   batchId: string;
   state: 'landed' | 'failed';
-  trunkAfter: string | null;
 };
 
 type QueueJobParams = {
-  key: string;
   kind: JobKind;
+  target: string;
+  partner?: string;
   runAfter: number;
 };
 
@@ -324,14 +323,7 @@ export class ProjectStore {
     const left = alias(change, 'left_change');
     const right = alias(change, 'right_change');
     return this.db
-      .select({
-        leftId: mergeCheck.leftId,
-        rightId: mergeCheck.rightId,
-        leftHead: mergeCheck.leftHead,
-        rightHead: mergeCheck.rightHead,
-        outcome: mergeCheck.outcome,
-        conflicts: mergeCheck.conflicts
-      })
+      .select(getColumns(mergeCheck))
       .from(mergeCheck)
       .innerJoin(
         left,
@@ -353,7 +345,7 @@ export class ProjectStore {
       .all();
   }
 
-  insertBatch({ approver, changeIds, trunkBefore }: NewBatchParams): string {
+  insertBatch({ approver, trunkBefore }: NewBatchParams): string {
     const row = this.db
       .update(project)
       .set({ batchCount: sql`${project.batchCount} + 1` })
@@ -363,10 +355,7 @@ export class ProjectStore {
       throw new Error('PROJECT_NOT_FOUND');
     }
     const batchId = `b-${row.batchCount}`;
-    this.db
-      .insert(batch)
-      .values({ id: batchId, approver, changeIds, state: 'landing', trunkBefore, createdAt: now() })
-      .run();
+    this.db.insert(batch).values({ id: batchId, approver, state: 'landing', trunkBefore, createdAt: now() }).run();
     return batchId;
   }
 
@@ -378,15 +367,26 @@ export class ProjectStore {
     return this.db.select().from(batch).where(eq(batch.state, 'landing')).get() ?? null;
   }
 
-  finishBatch({ batchId, state, trunkAfter }: FinishBatchParams): void {
-    this.db.update(batch).set({ state, trunkAfter }).where(eq(batch.id, batchId)).run();
+  batchChangeIds(batchId: string): string[] {
+    return this.db
+      .select({ id: change.id })
+      .from(change)
+      .where(eq(change.batchId, batchId))
+      .orderBy(asc(change.number))
+      .all()
+      .map((row) => row.id);
+  }
+
+  finishBatch({ batchId, state }: FinishBatchParams): void {
+    this.db.update(batch).set({ state }).where(eq(batch.id, batchId)).run();
   }
 
   // Queuing a job again resets its attempts, makes it due, and raises its version.
-  queueJob({ key, kind, runAfter }: QueueJobParams): void {
+  queueJob({ kind, target, partner, runAfter }: QueueJobParams): void {
+    const key = partner === undefined ? `${kind}:${target}` : `${kind}:${target}:${partner}`;
     this.db
       .insert(job)
-      .values({ key, kind, version: 1, attempts: 0, runAfter })
+      .values({ key, kind, target, partner: partner ?? null, version: 1, attempts: 0, runAfter })
       .onConflictDoUpdate({
         target: job.key,
         set: { version: sql`${job.version} + 1`, attempts: 0, runAfter }

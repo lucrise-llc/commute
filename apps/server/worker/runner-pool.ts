@@ -6,9 +6,6 @@ import { HEAD_MOVED, LAND_CONFLICT } from './runner';
 // Each project has its own runners, so one team's code never runs in a container that serves another project.
 const RUNNERS_PER_PROJECT = 2;
 
-// Failures that come from the repositories, not from the runner, so another runner would fail the same way.
-const REPOSITORY_ERRORS = new Set([HEAD_MOVED, LAND_CONFLICT]);
-
 type OnRunnerPoolParams<Result> = {
   env: Env;
   projectId: string;
@@ -31,7 +28,8 @@ export async function onRunnerPool<Result>({
     try {
       return await task(env.RUNNER.getByName(runner));
     } catch (error) {
-      if (error instanceof Error && REPOSITORY_ERRORS.has(error.message)) {
+      // These failures come from the repositories, not from the runner, so another runner would fail the same way.
+      if (error instanceof Error && (error.message === HEAD_MOVED || error.message === LAND_CONFLICT)) {
         throw error;
       }
       lastError = error;

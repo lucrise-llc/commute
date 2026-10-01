@@ -72,21 +72,23 @@ export const mergeCheck = sqliteTable(
   (table) => [primaryKey({ columns: [table.leftId, table.rightId] })]
 );
 
+// The changes of a batch name it in change.batch_id.
 export const batch = sqliteTable('batch', {
   id: text('id').primaryKey(),
   approver: text('approver').notNull(),
-  changeIds: text('change_ids', { mode: 'json' }).$type<string[]>().notNull(),
   state: text('state', { enum: BATCH_STATES }).notNull(),
   trunkBefore: text('trunk_before').notNull(),
-  trunkAfter: text('trunk_after'),
   createdAt: text('created_at').notNull()
 });
 
-// Work that runs from the alarm. A job queued again while it runs gets a new version, so the run that ends does not
-// delete or delay it.
+// Work that runs from the alarm. The target is the change to restack, the batch to land, or the left change of a
+// merge check, whose right change is the partner. A job queued again while it runs gets a new version, so the run
+// that ends does not delete or delay it.
 export const job = sqliteTable('job', {
   key: text('key').primaryKey(),
   kind: text('kind', { enum: JOB_KINDS }).notNull(),
+  target: text('target').notNull(),
+  partner: text('partner'),
   version: integer('version').notNull(),
   attempts: integer('attempts').notNull(),
   runAfter: integer('run_after').notNull()

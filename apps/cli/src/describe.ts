@@ -30,8 +30,14 @@ export function describeEvent(event: ChangeEvent): string {
     case 'restack_conflict': {
       return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}`;
     }
+    case 'landing_failed': {
+      return `landing  batch ${event.batchId} did not land; the change is open again`;
+    }
+    default: {
+      const unknown: never = event;
+      throw new Error(`Unknown event: ${JSON.stringify(unknown)}`);
+    }
   }
-  return `landing  batch ${event.batchId} did not land; the change is open again`;
 }
 
 function short(commit: string): string {

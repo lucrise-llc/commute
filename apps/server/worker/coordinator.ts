@@ -32,6 +32,9 @@ const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8
 const JOB_ATTEMPTS_MAX = 6;
 const JOB_RETRY_BASE_DELAY_MS = 10_000;
 const JOB_RETRY_BACKOFF_FACTOR = 2;
+// Jobs run in order of their due time. A landing is due at time zero, so it runs before queued merge checks and
+// restacks, which wait for it anyway.
+const LANDING_RUNS_FIRST = 0;
 
 type StartChangeParams = {
   projectId: string;
@@ -133,13 +136,8 @@ type ApplyLandingParams = {
   result: LandResult;
 };
 
-type RepoHeadParams = ChangeRef & {
-  head: string;
-  scope: 'read' | 'write';
-};
-
-type TrunkHeadParams = {
-  projectId: string;
+type RepoSideParams = {
+  repoName: string;
   head: string;
   scope: 'read' | 'write';
 };
@@ -165,12 +163,18 @@ type RecordOverlapsParams = {
 
 type MergeJobParams = {
   projectId: string;
+  jobKey: string;
   leftId: string;
   rightId: string;
 };
 
+type RestackJobParams = ChangeRef & {
+  jobKey: string;
+};
+
 type LandJobParams = {
   projectId: string;
+  jobKey: string;
   batchId: string;
 };
 
@@ -240,7 +244,7 @@ export class Coordinator extends DurableObject<Env> {
       return;
     }
     if (trunkHead !== baseCommit) {
-      this.store.queueJob({ key: `restack:${changeId}`, kind: 'restack', runAfter: Date.now() });
+      this.store.queueJob({ kind: 'restack', target: changeId, runAfter: Date.now() });
       await this.ctx.storage.setAlarm(Date.now());
     }
   }
@@ -260,8 +264,7 @@ export class Coordinator extends DurableObject<Env> {
       declaredPaths: this.store.footprint({ changeId, source: 'declared' }),
       footprint: this.store.footprint({ changeId, source: 'pushed' }),
       overlaps: change.state === 'landed' ? [] : this.currentOverlaps(changeId),
-      landsAfter: this.landsAfter(changeId),
-      landsBefore: this.landsBefore(changeId),
+      ...this.landingOrder(changeId),
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
       batchId: change.batchId,
       landedCommit: change.landedCommit,
@@ -289,7 +292,10 @@ export class Coordinator extends DurableObject<Env> {
       trunkHead: project.trunkHead,
       ready,
       waiting,
-      batch: batch === null ? null : { batchId: batch.id, changeIds: batch.changeIds, approver: batch.approver }
+      batch:
+        batch === null
+          ? null
+          : { batchId: batch.id, changeIds: this.store.batchChangeIds(batch.id), approver: batch.approver }
     };
   }
 
@@ -307,9 +313,9 @@ export class Coordinator extends DurableObject<Env> {
     if (trunkHead === null) {
       throw new Error('A ready change exists, but the project has no trunk head.');
     }
-    const batchId = this.store.insertBatch({ approver, changeIds, trunkBefore: trunkHead });
+    const batchId = this.store.insertBatch({ approver, trunkBefore: trunkHead });
     this.store.setLanding({ changeIds, batchId });
-    this.store.queueJob({ key: `land:${batchId}`, kind: 'land', runAfter: 0 });
+    this.store.queueJob({ kind: 'land', target: batchId, runAfter: LANDING_RUNS_FIRST });
     await this.ctx.storage.setAlarm(Date.now());
     log({ event: 'batch_approved', batchId, approver, changeIds });
     return { batchId };
@@ -374,50 +380,49 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
+  // A job that fails retries with backoff, and a job whose state moved runs again at once. Both count against the
+  // attempt limit.
   private async runJob(job: JobRecord): Promise<void> {
     const projectId = this.requireProject().id;
+    let runAfter: number;
     try {
       const outcome = await this.jobOutcome({ job, projectId });
       if (outcome === 'done') {
         this.store.finishJob(job);
-      } else {
-        this.store.retryJob({ key: job.key, version: job.version, attempts: job.attempts + 1, runAfter: Date.now() });
-      }
-    } catch (error) {
-      logError({ event: 'job_failed', jobKey: job.key, attempts: job.attempts + 1, error });
-      if (job.attempts + 1 >= JOB_ATTEMPTS_MAX) {
-        this.store.finishJob(job);
-        this.abandonJob(job);
         return;
       }
-      this.store.retryJob({
-        key: job.key,
-        version: job.version,
-        attempts: job.attempts + 1,
-        runAfter: Date.now() + JOB_RETRY_BASE_DELAY_MS * JOB_RETRY_BACKOFF_FACTOR ** job.attempts
-      });
+      runAfter = Date.now();
+    } catch (error) {
+      logError({ event: 'job_failed', jobKey: job.key, attempts: job.attempts + 1, error });
+      runAfter = Date.now() + JOB_RETRY_BASE_DELAY_MS * JOB_RETRY_BACKOFF_FACTOR ** job.attempts;
     }
+    if (job.attempts + 1 >= JOB_ATTEMPTS_MAX) {
+      this.store.finishJob(job);
+      this.abandonJob(job);
+      return;
+    }
+    this.store.retryJob({ key: job.key, version: job.version, attempts: job.attempts + 1, runAfter });
   }
 
   private jobOutcome({ job, projectId }: JobParams): Promise<JobOutcome> {
-    const [, first = '', second = ''] = job.key.split(':');
     if (job.kind === 'merge') {
-      return this.runMergeJob({ projectId, leftId: first, rightId: second });
+      if (job.partner === null) {
+        throw new Error(`Merge job ${job.key} has no partner.`);
+      }
+      return this.runMergeJob({ projectId, jobKey: job.key, leftId: job.target, rightId: job.partner });
     }
     if (job.kind === 'restack') {
-      return this.runRestackJob({ projectId, changeId: first });
+      return this.runRestackJob({ projectId, jobKey: job.key, changeId: job.target });
     }
-    return this.runLandJob({ projectId, batchId: first });
+    return this.runLandJob({ projectId, jobKey: job.key, batchId: job.target });
   }
 
   // A landing that runs out of attempts gives its changes back to the queue of ready work.
   private abandonJob(job: JobRecord): void {
-    if (job.kind !== 'land') {
-      logError({ event: 'job_abandoned', jobKey: job.key, error: 'attempts exhausted' });
-      return;
+    logError({ event: 'job_abandoned', jobKey: job.key, error: 'attempts exhausted' });
+    if (job.kind === 'land') {
+      this.failBatch(job.target);
     }
-    const [, batchId = ''] = job.key.split(':');
-    this.failBatch(batchId);
   }
 
   private requireProject(): ProjectRecord {
@@ -553,7 +558,7 @@ export class Coordinator extends DurableObject<Env> {
         continue;
       }
       const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
-      this.store.queueJob({ key: `merge:${leftId}:${rightId}`, kind: 'merge', runAfter: Date.now() });
+      this.store.queueJob({ kind: 'merge', target: leftId, partner: rightId, runAfter: Date.now() });
       queued += 1;
     }
     if (queued > 0) {
@@ -561,7 +566,7 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  private async runMergeJob({ projectId, leftId, rightId }: MergeJobParams): Promise<JobOutcome> {
+  private async runMergeJob({ projectId, jobKey, leftId, rightId }: MergeJobParams): Promise<JobOutcome> {
     const left = pushedChange(this.store.findChange(leftId));
     const right = pushedChange(this.store.findChange(rightId));
     if (left === null || right === null) {
@@ -576,13 +581,21 @@ export class Coordinator extends DurableObject<Env> {
     let result: MergeResult;
     try {
       const [leftSide, rightSide] = await Promise.all([
-        this.changeSide({ projectId, changeId: left.id, head: left.headCommit, scope: 'read' }),
-        this.changeSide({ projectId, changeId: right.id, head: right.headCommit, scope: 'read' })
+        this.repoSide({
+          repoName: changeRepoName({ projectId, changeId: left.id }),
+          head: left.headCommit,
+          scope: 'read'
+        }),
+        this.repoSide({
+          repoName: changeRepoName({ projectId, changeId: right.id }),
+          head: right.headCommit,
+          scope: 'read'
+        })
       ]);
       result = await onRunnerPool({
         env: this.env,
         projectId,
-        jobKey: `merge:${leftId}:${rightId}`,
+        jobKey,
         task: (runner) => runner.mergeCheck({ left: leftSide, right: rightSide })
       });
     } catch (error) {
@@ -634,12 +647,12 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  private async runLandJob({ projectId, batchId }: LandJobParams): Promise<JobOutcome> {
+  private async runLandJob({ projectId, jobKey, batchId }: LandJobParams): Promise<JobOutcome> {
     const batch = this.store.findBatch(batchId);
     if (batch?.state !== 'landing') {
       return 'done';
     }
-    const landing = batch.changeIds.map((changeId) => {
+    const landing = this.store.batchChangeIds(batchId).map((changeId) => {
       const change = pushedChange(this.store.findChange(changeId));
       if (change === null) {
         throw new Error(`Change ${changeId} of batch ${batchId} has no commits to land.`);
@@ -650,7 +663,7 @@ export class Coordinator extends DurableObject<Env> {
     let result: LandResult;
     try {
       const plan = {
-        trunk: await this.trunkSide({ projectId, head: batch.trunkBefore, scope: 'write' }),
+        trunk: await this.repoSide({ repoName: projectId, head: batch.trunkBefore, scope: 'write' }),
         changes: await Promise.all(
           landing.map((change) => this.landingChange({ projectId, change, batchId, approver: batch.approver }))
         )
@@ -658,7 +671,7 @@ export class Coordinator extends DurableObject<Env> {
       result = await onRunnerPool({
         env: this.env,
         projectId,
-        jobKey: `land:${batchId}`,
+        jobKey,
         task: (runner) => runner.land(plan)
       });
     } catch (error) {
@@ -678,10 +691,10 @@ export class Coordinator extends DurableObject<Env> {
       this.store.setLanded({ changeId, commit });
       this.emit({ changeId, payload: { type: 'landed', batchId, landedCommit: commit, approver } });
     }
-    this.store.finishBatch({ batchId, state: 'landed', trunkAfter: result.trunkHead });
+    this.store.finishBatch({ batchId, state: 'landed' });
     this.store.setTrunkHead(result.trunkHead);
     for (const change of this.store.activeChanges()) {
-      this.store.queueJob({ key: `restack:${change.id}`, kind: 'restack', runAfter: Date.now() });
+      this.store.queueJob({ kind: 'restack', target: change.id, runAfter: Date.now() });
     }
     await this.ctx.storage.setAlarm(Date.now());
     log({ event: 'batch_landed', batchId, trunkHead: result.trunkHead, changes: result.landed.length });
@@ -692,9 +705,10 @@ export class Coordinator extends DurableObject<Env> {
     if (batch?.state !== 'landing') {
       return;
     }
-    this.store.reopen(batch.changeIds);
-    this.store.finishBatch({ batchId, state: 'failed', trunkAfter: null });
-    for (const changeId of batch.changeIds) {
+    const changeIds = this.store.batchChangeIds(batchId);
+    this.store.reopen(changeIds);
+    this.store.finishBatch({ batchId, state: 'failed' });
+    for (const changeId of changeIds) {
       this.emit({ changeId, payload: { type: 'landing_failed', batchId } });
     }
   }
@@ -702,7 +716,11 @@ export class Coordinator extends DurableObject<Env> {
   // Each change becomes one trunk commit. Its message is the intent, and its note records the change, the intent,
   // the owner, and the approver.
   private async landingChange({ projectId, change, batchId, approver }: LandingChangeParams): Promise<LandingChange> {
-    const side = await this.changeSide({ projectId, changeId: change.id, head: change.headCommit, scope: 'read' });
+    const side = await this.repoSide({
+      repoName: changeRepoName({ projectId, changeId: change.id }),
+      head: change.headCommit,
+      scope: 'read'
+    });
     const owner = change.owner ?? 'unknown';
     return {
       ...side,
@@ -722,7 +740,7 @@ export class Coordinator extends DurableObject<Env> {
   }
 
   // Brings a change onto the current trunk. A change that is already on it has nothing to do.
-  private async runRestackJob({ projectId, changeId }: ChangeRef): Promise<JobOutcome> {
+  private async runRestackJob({ projectId, jobKey, changeId }: RestackJobParams): Promise<JobOutcome> {
     const change = this.store.findChange(changeId);
     const trunkHead = this.store.project()?.trunkHead ?? null;
     if (
@@ -738,13 +756,13 @@ export class Coordinator extends DurableObject<Env> {
     let result: RestackResult;
     try {
       const [changeSide, trunkSide] = await Promise.all([
-        this.changeSide({ projectId, changeId, head: change.headCommit, scope: 'write' }),
-        this.trunkSide({ projectId, head: trunkHead, scope: 'read' })
+        this.repoSide({ repoName: changeRepoName({ projectId, changeId }), head: change.headCommit, scope: 'write' }),
+        this.repoSide({ repoName: projectId, head: trunkHead, scope: 'read' })
       ]);
       result = await onRunnerPool({
         env: this.env,
         projectId,
-        jobKey: `restack:${changeId}`,
+        jobKey,
         task: (runner) => runner.restack({ change: changeSide, trunk: trunkSide })
       });
     } catch (error) {
@@ -795,7 +813,7 @@ export class Coordinator extends DurableObject<Env> {
       return [{ code: 'RESTACKING', changeIds: [] }];
     }
     const reasons: WaitReason[] = [];
-    const landsAfter = this.landsAfter(change.id);
+    const { landsAfter } = this.landingOrder(change.id);
     if (landsAfter.length > 0) {
       reasons.push({ code: 'LANDS_AFTER', changeIds: landsAfter });
     }
@@ -815,28 +833,18 @@ export class Coordinator extends DurableObject<Env> {
     return reasons;
   }
 
-  private landsAfter(changeId: string): string[] {
-    return this.store
-      .currentMergeChecks(changeId)
-      .filter((check) => check.outcome === 'conflict' && check.rightId === changeId)
-      .map((check) => check.leftId);
+  // A conflict puts the left change, the one that started first, ahead of the right one.
+  private landingOrder(changeId: string): Pick<Change, 'landsAfter' | 'landsBefore'> {
+    const conflicts = this.store.currentMergeChecks(changeId).filter((check) => check.outcome === 'conflict');
+    return {
+      landsAfter: conflicts.filter((check) => check.rightId === changeId).map((check) => check.leftId),
+      landsBefore: conflicts.filter((check) => check.leftId === changeId).map((check) => check.rightId)
+    };
   }
 
-  private landsBefore(changeId: string): string[] {
-    return this.store
-      .currentMergeChecks(changeId)
-      .filter((check) => check.outcome === 'conflict' && check.leftId === changeId)
-      .map((check) => check.rightId);
-  }
-
-  private async changeSide({ projectId, changeId, head, scope }: RepoHeadParams): Promise<RepoHead> {
-    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
-    const [info, jobToken] = await Promise.all([repo.info(), issueJobToken({ repo, scope })]);
-    return { remote: info.remote, token: jobToken.token, head };
-  }
-
-  private async trunkSide({ projectId, head, scope }: TrunkHeadParams): Promise<RepoHead> {
-    using repo = await this.env.ARTIFACTS.get(projectId);
+  // The remote of a repository with a short token for one runner job. Trunk's repository name is the project ID.
+  private async repoSide({ repoName, head, scope }: RepoSideParams): Promise<RepoHead> {
+    using repo = await this.env.ARTIFACTS.get(repoName);
     const [info, jobToken] = await Promise.all([repo.info(), issueJobToken({ repo, scope })]);
     return { remote: info.remote, token: jobToken.token, head };
   }

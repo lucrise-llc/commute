@@ -1,10 +1,8 @@
 CREATE TABLE `batch` (
 	`id` text PRIMARY KEY,
 	`approver` text NOT NULL,
-	`change_ids` text NOT NULL,
 	`state` text NOT NULL,
 	`trunk_before` text NOT NULL,
-	`trunk_after` text,
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
@@ -40,6 +38,8 @@ CREATE TABLE `footprint` (
 CREATE TABLE `job` (
 	`key` text PRIMARY KEY,
 	`kind` text NOT NULL,
+	`target` text NOT NULL,
+	`partner` text,
 	`version` integer NOT NULL,
 	`attempts` integer NOT NULL,
 	`run_after` integer NOT NULL

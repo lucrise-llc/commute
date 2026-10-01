@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e40b2095-933d-4990-9c6e-78f4bf846501",
+  "id": "b4f13b77-27f6-434a-b703-9e824d39e196",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -64,16 +64,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "change_ids",
-      "entityType": "columns",
-      "table": "batch"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "state",
       "entityType": "columns",
       "table": "batch"
@@ -85,16 +75,6 @@
       "default": null,
       "generated": null,
       "name": "trunk_before",
-      "entityType": "columns",
-      "table": "batch"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "trunk_after",
       "entityType": "columns",
       "table": "batch"
     },
@@ -315,6 +295,26 @@
       "default": null,
       "generated": null,
       "name": "kind",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "partner",
       "entityType": "columns",
       "table": "job"
     },

@@ -81,12 +81,9 @@ timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/h
 echo "restacked $commit"
 `;
 
-type RepoAccess = {
+export type RepoHead = {
   remote: string;
   token: string;
-};
-
-export type RepoHead = RepoAccess & {
   head: string;
 };
 

@@ -1,8 +1,8 @@
-import m0000 from './20261001231436_init/migration.sql';
+import m0000 from './20261001234039_init/migration.sql';
 
   export default {
     migrations: {
-      "20261001231436_init": m0000
+      "20261001234039_init": m0000
 }
   }
   
