@@ -1,0 +1,37 @@
+{
+  "name": "commute",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "prepare": "husky",
+    "dev": "npm run dev -w @commute/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "oxlint --type-aware",
+    "lint:fix": "oxlint --type-aware --fix",
+    "format": "oxfmt --check",
+    "format:write": "oxfmt",
+    "knip": "knip",
+    "check": "npm run typecheck && npm run lint && npm run format && npm run knip && npm run api:check",
+    "api:generate": "npm run openapi:update -w @commute/server && npm run generate -w @commute/api-client",
+    "api:check": "npm run test -w @commute/server && npm run generate -w @commute/api-client && git diff --exit-code -- packages/api-client/src/generated"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "eslint-plugin-perfectionist": "^4.15.1",
+    "husky": "^9.1.7",
+    "knip": "^6.39.0",
+    "lint-staged": "^17.6.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.2"
+  }
+}
