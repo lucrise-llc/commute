@@ -215,16 +215,43 @@ Acceptance: a conflict between two changes is resolved without a person, the
 checks pass, and a second change that hits the same conflict reuses the stored
 resolution.
 
-#### D7. Console: Fleet and Overlap screens
+#### D7. Console: code, changes, and the change page
 
-- **Fleet** lists every change in flight with its agent, state, footprint,
-  checks, kept results, and what it waits for. A side panel shows the ready
-  batch with its approval action, the overlaps, and the event feed.
-- **Overlap** shows the two changes, their intents and footprints, the
-  conflicting hunk, the resolution, and the checks after the restack with
-  their subtree hashes.
+The console uses the page structure that people know from Git hosts, so nobody
+learns a new layout. Commute's ideas appear in the places where people expect
+a merge button, check results, or a timeline. A change is not called a pull
+request, because each change is its own repository.
 
-Acceptance: the operator can follow the whole demo from these two screens.
+- **Code** shows trunk at its last landing: the file tree, a file view, the
+  README, and the commit history. Each folder shows the changes in flight that
+  touch it. A selector switches between trunk and the repository of any change.
+- **Changes** lists every change: in flight, landed, and closed. Each row shows
+  the intent, the owner, the agent, the state, the checks kept and run, and what
+  the change waits for. A side panel shows the ready batch with its approval
+  action, the overlaps, and the event feed.
+- **Change page** has four tabs:
+  - Conversation: the intent as the description, then a timeline of
+    coordinator events (push, overlap, sequence, restack, resolution, landing).
+    An overlap shows both changes, their intents and footprints, the
+    conflicting hunk, and the resolution.
+  - Commits: the commits of the change since its base on trunk.
+  - Checks: each check with its result, whether it was kept or ran, and the
+    subtree hashes before and after the last restack.
+  - Files changed: the diff of the change against its current base on trunk.
+- A **landing box** at the end of the change page shows whether the change
+  commutes with the changes in flight, what it waits for, whether its results
+  match its current content, and its landing batch with the approval action.
+  The page has no action to update the base, because the coordinator restacks.
+- The console reads files, trees, and commits through the Artifacts Workers
+  binding. It gets the head of each ref from the coordinator, because the
+  binding cannot list refs or resolve the notes ref.
+- Pages update from the WebSocket of the coordinator. No page polls.
+- The console has its own visual style. It copies the page structure, not the
+  branding of another product.
+
+Acceptance: a person who knows a common Git host browses trunk, opens a change,
+reads its diff, sees why it waits, and approves its batch without help. The
+operator follows the whole demo from the Changes list and the change page.
 
 #### D8. CLI
 
@@ -257,7 +284,7 @@ landings on every run.
   `--as <name>` or from the name in the CLI config.
 - The coordinator stores the owner with the change. The git note on the first
   commit includes the owner.
-- Fleet shows the owner of each change and has a "Mine" filter.
+- The Changes list shows the owner of each change and has a "Mine" filter.
 - The console runs behind Cloudflare Access. The console uses the email that
   Access gives for the person who signed in.
 - Any team member can approve a landing batch. The notes on each landed commit
@@ -360,8 +387,8 @@ has the data and the commands.
 |---|---|
 | October 1 to 2 | Open decisions and the open risks above |
 | October 3 to 6 | D1, D2, D3, D8 |
-| October 7 to 9 | D4, D5 |
-| October 10 to 11 | D6, D7, D11 |
+| October 7 to 9 | D4, D5, and the Code view of D7 |
+| October 10 to 11 | D6, the Changes list and the change page of D7, D11 |
 | October 12 | D9, D10, and a full rehearsal |
 | October 13 | Record the video, write the README run steps and the LICENSE, submit |
 | October 14 | Spare day. Submissions close at 11:59 PM PDT. |
@@ -418,7 +445,8 @@ These features complete the product. They are not part of the demo.
 
 ### Console
 
-- Change detail page: intent, notes, diff, results, findings, timeline.
+- Changes since the last review on the change page, after a restack.
+- Comments on lines of the diff, from people and reviewer agents.
 - Landing page: next batch, batches that form, landing history.
 - Trunk history with the batch and the resolution behind each commit.
 - Search across changes, intents, and paths.
