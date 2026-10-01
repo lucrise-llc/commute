@@ -13,13 +13,29 @@
           },
           {
             "$ref": "#/components/schemas/MergeCheckedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/LandedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RestackedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RestackConflictEvent"
+          },
+          {
+            "$ref": "#/components/schemas/LandingFailedEvent"
           }
         ],
         "discriminator": {
           "propertyName": "type",
           "mapping": {
             "overlap_found": "#/components/schemas/OverlapFoundEvent",
-            "merge_checked": "#/components/schemas/MergeCheckedEvent"
+            "merge_checked": "#/components/schemas/MergeCheckedEvent",
+            "landed": "#/components/schemas/LandedEvent",
+            "restacked": "#/components/schemas/RestackedEvent",
+            "restack_conflict": "#/components/schemas/RestackConflictEvent",
+            "landing_failed": "#/components/schemas/LandingFailedEvent"
           }
         }
       },
@@ -159,6 +175,161 @@
           "outcome",
           "landsFirst",
           "conflicts"
+        ]
+      },
+      "LandedEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "landed"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string",
+            "pattern": "^b-[1-9][0-9]{0,8}$",
+            "example": "b-12"
+          },
+          "landedCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "approver": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "batchId",
+          "landedCommit",
+          "approver"
+        ]
+      },
+      "RestackedEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "restacked"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "trunkCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "headCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "trunkCommit",
+          "headCommit"
+        ]
+      },
+      "RestackConflictEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "restack_conflict"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "trunkCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "trunkCommit",
+          "conflicts"
+        ]
+      },
+      "LandingFailedEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "landing_failed"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string",
+            "pattern": "^b-[1-9][0-9]{0,8}$",
+            "example": "b-12"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "batchId"
         ]
       },
       "WaitRequest": {
@@ -310,6 +481,13 @@
             },
             "minItems": 1,
             "maxItems": 100
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\p{Cc}]+$/u",
+            "example": "alice"
           }
         },
         "required": [
@@ -327,6 +505,20 @@
           },
           "intent": {
             "type": "string"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "landing",
+              "landed"
+            ]
           },
           "baseCommit": {
             "type": "string",
@@ -370,6 +562,27 @@
               "example": "c-157"
             }
           },
+          "waitsFor": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitReason"
+            }
+          },
+          "batchId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^b-[1-9][0-9]{0,8}$",
+            "example": "b-12"
+          },
+          "landedCommit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}$"
+          },
           "createdAt": {
             "type": "string"
           }
@@ -377,6 +590,8 @@
         "required": [
           "changeId",
           "intent",
+          "owner",
+          "state",
           "baseCommit",
           "headCommit",
           "declaredPaths",
@@ -384,7 +599,185 @@
           "overlaps",
           "landsAfter",
           "landsBefore",
+          "waitsFor",
+          "batchId",
+          "landedCommit",
           "createdAt"
+        ]
+      },
+      "WaitReason": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "NO_COMMITS",
+              "RESTACKING",
+              "RESTACK_CONFLICT",
+              "LANDS_AFTER",
+              "CHECKING",
+              "LANDING"
+            ]
+          },
+          "changeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "changeIds"
+        ]
+      },
+      "Landing": {
+        "type": "object",
+        "properties": {
+          "trunkHead": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "changeId": {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "owner": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "changeId",
+                "intent",
+                "owner"
+              ]
+            }
+          },
+          "waiting": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "changeId": {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "owner": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "waitsFor": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WaitReason"
+                  }
+                }
+              },
+              "required": [
+                "changeId",
+                "intent",
+                "owner",
+                "waitsFor"
+              ]
+            }
+          },
+          "batch": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "batchId": {
+                "type": "string",
+                "pattern": "^b-[1-9][0-9]{0,8}$",
+                "example": "b-12"
+              },
+              "changeIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                }
+              },
+              "approver": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "batchId",
+              "changeIds",
+              "approver"
+            ]
+          }
+        },
+        "required": [
+          "trunkHead",
+          "ready",
+          "waiting",
+          "batch"
+        ]
+      },
+      "BatchApproved": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "pattern": "^b-[1-9][0-9]{0,8}$",
+            "example": "b-12"
+          }
+        },
+        "required": [
+          "batchId"
+        ]
+      },
+      "ApproveBatchBody": {
+        "type": "object",
+        "properties": {
+          "changeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "approver": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\p{Cc}]+$/u",
+            "example": "alice"
+          }
+        },
+        "required": [
+          "changeIds",
+          "approver"
         ]
       }
     },
@@ -572,6 +965,114 @@
           },
           "404": {
             "description": "CHANGE_NOT_FOUND: the project has no open change with this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/landing": {
+      "get": {
+        "operationId": "getLanding",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The changes ready to land as the next batch, the changes that wait and why, and the batch that is landing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Landing"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND: no project has this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/batches": {
+      "post": {
+        "operationId": "approveBatch",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveBatchBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The batch lands in the background. Each change gets a landed event, then the others restack.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchApproved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST: the body does not match the schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND: no project has this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "BATCH_NOT_READY: a change is not ready. LANDING_IN_PROGRESS: another batch is landing.",
             "content": {
               "application/json": {
                 "schema": {

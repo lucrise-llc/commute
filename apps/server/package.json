@@ -9,14 +9,17 @@
     "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "openapi:update": "vitest run test/openapi.test.ts --update",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate"
   },
   "devDependencies": {
+    "drizzle-kit": "1.0.0-rc.4",
     "vitest": "^5.0.3",
     "wrangler": "^4.146.0"
   },
   "dependencies": {
     "@hono/zod-openapi": "^1.6.3",
+    "drizzle-orm": "1.0.0-rc.4",
     "hono": "^4.13.12",
     "zod": "^4.6.5"
   }

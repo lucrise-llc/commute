@@ -1,5 +1,5 @@
-const WRITE_TOKEN_TTL_SECONDS = 3_600;
-const READ_TOKEN_TTL_SECONDS = 600;
+const AGENT_TOKEN_TTL_SECONDS = 3_600;
+const JOB_TOKEN_TTL_SECONDS = 600;
 
 export type ChangeRef = {
   projectId: string;
@@ -25,17 +25,22 @@ export type IssuedToken = {
   tokenExpiresAt: string;
 };
 
-export function issueWriteToken(repo: ArtifactsRepo): Promise<IssuedToken> {
-  return issueToken({ repo, scope: 'write', ttlSeconds: WRITE_TOKEN_TTL_SECONDS });
+// The write token an agent or a project owner pushes with.
+export function issueAgentToken(repo: ArtifactsRepo): Promise<IssuedToken> {
+  return issueToken({ repo, scope: 'write', ttlSeconds: AGENT_TOKEN_TTL_SECONDS });
 }
 
-export function issueReadToken(repo: ArtifactsRepo): Promise<IssuedToken> {
-  return issueToken({ repo, scope: 'read', ttlSeconds: READ_TOKEN_TTL_SECONDS });
-}
-
-type IssueTokenParams = {
+type JobTokenParams = {
   repo: ArtifactsRepo;
   scope: 'read' | 'write';
+};
+
+// A short token for one runner job.
+export function issueJobToken({ repo, scope }: JobTokenParams): Promise<IssuedToken> {
+  return issueToken({ repo, scope, ttlSeconds: JOB_TOKEN_TTL_SECONDS });
+}
+
+type IssueTokenParams = JobTokenParams & {
   ttlSeconds: number;
 };
 

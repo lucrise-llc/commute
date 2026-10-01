@@ -30,7 +30,7 @@ export default defineConfig({
   env: {
     builtin: true
   },
-  ignorePatterns: ['poc/**', '**/dist/**', '**/generated/**', '**/worker-configuration.d.ts'],
+  ignorePatterns: ['poc/**', '**/dist/**', '**/generated/**', 'apps/server/drizzle/**', '**/worker-configuration.d.ts'],
   rules: {
     'id-length': ['error', { min: 2, exceptions: ['c'] }],
     'max-params': ['error', { max: 2 }],

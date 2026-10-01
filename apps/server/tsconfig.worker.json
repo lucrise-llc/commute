@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["es2024"],
-    "types": ["./worker-configuration.d.ts"]
+    "types": ["./worker-configuration.d.ts"],
+    "allowJs": true
   },
   "include": ["worker-configuration.d.ts", "worker/**/*.ts"]
 }
