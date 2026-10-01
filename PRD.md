@@ -230,14 +230,14 @@ request, because each change is its own repository.
   the change waits for. A side panel shows the ready batch with its approval
   action, the overlaps, and the event feed.
 - **Change page** has four tabs:
-  - Conversation: the intent as the description, then a timeline of
+  - Activity: the intent as the description, then a timeline of
     coordinator events (push, overlap, sequence, restack, resolution, landing).
     An overlap shows both changes, their intents and footprints, the
     conflicting hunk, and the resolution.
   - Commits: the commits of the change since its base on trunk.
   - Checks: each check with its result, whether it was kept or ran, and the
     subtree hashes before and after the last restack.
-  - Files changed: the diff of the change against its current base on trunk.
+  - Files: the diff of the change against its current base on trunk.
 - A **landing box** at the end of the change page shows whether the change
   commutes with the changes in flight, what it waits for, whether its results
   match its current content, and its landing batch with the approval action.
