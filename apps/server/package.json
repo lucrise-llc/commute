@@ -1,0 +1,23 @@
+{
+  "name": "@commute/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "openapi:update": "vitest run test/openapi.test.ts --update",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.3",
+    "wrangler": "^4.146.0"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^1.6.3",
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
+  }
+}

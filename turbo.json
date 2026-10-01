@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    },
+    "@commute/server#dev": {
+      "dependsOn": ["@commute/console#build"],
+      "persistent": true,
+      "cache": false
+    },
+    "@commute/server#deploy": {
+      "dependsOn": ["@commute/console#build"],
+      "cache": false
+    }
+  }
+}

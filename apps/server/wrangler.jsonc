@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "commute",
+  "account_id": "ef2e81e746f2503a8ca3fa19fd88ba30",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "../console/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/git/*"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
