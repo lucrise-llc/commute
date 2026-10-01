@@ -11,5 +11,29 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "vars": {
+    "ARTIFACTS_GIT_ORIGIN": "https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-dev"
+  },
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "commute-dev",
+      "remote": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COORDINATOR",
+        "class_name": "Coordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Coordinator"]
+    }
+  ]
 }

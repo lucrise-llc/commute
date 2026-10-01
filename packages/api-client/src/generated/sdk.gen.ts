@@ -2,8 +2,8 @@
 
 import { client } from './client.gen.ts';
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client/index.ts';
-import type { GetHealthData, GetHealthResponses } from './types.gen.ts';
-import { zGetHealthResponse } from './zod.gen.ts';
+import type { CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetHealthData, GetHealthResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
+import { zCreateProjectResponse, zGetChangeResponse, zGetHealthResponse, zStartChangeResponse } from './zod.gen.ts';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -22,5 +22,31 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({
     responseValidator: async (data) => await zGetHealthResponse.parseAsync(data),
     url: '/api/health',
+    ...options
+});
+
+export const createProject = <ThrowOnError extends boolean = false>(options: Options<CreateProjectData, ThrowOnError>): RequestResult<CreateProjectResponses, CreateProjectErrors, ThrowOnError> => (options.client ?? client).post<CreateProjectResponses, CreateProjectErrors, ThrowOnError>({
+    responseValidator: async (data) => await zCreateProjectResponse.parseAsync(data),
+    url: '/api/projects',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const startChange = <ThrowOnError extends boolean = false>(options: Options<StartChangeData, ThrowOnError>): RequestResult<StartChangeResponses, StartChangeErrors, ThrowOnError> => (options.client ?? client).post<StartChangeResponses, StartChangeErrors, ThrowOnError>({
+    responseValidator: async (data) => await zStartChangeResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/changes',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getChange = <ThrowOnError extends boolean = false>(options: Options<GetChangeData, ThrowOnError>): RequestResult<GetChangeResponses, GetChangeErrors, ThrowOnError> => (options.client ?? client).get<GetChangeResponses, GetChangeErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetChangeResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/changes/{changeId}',
     ...options
 });

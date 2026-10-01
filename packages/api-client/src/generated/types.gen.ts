@@ -4,8 +4,75 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type ChangeEvent = OverlapFoundEvent;
+
+export type OverlapFoundEvent = {
+    seq: number;
+    type: 'overlap_found';
+    changeId: string;
+    at: string;
+    overlap: Overlap;
+};
+
+export type Overlap = {
+    changeId: string;
+    intent: string;
+    paths: Array<{
+        path: string;
+        otherPath: string;
+    }>;
+};
+
+export type WaitRequest = {
+    after: number;
+};
+
 export type Health = {
     status: 'ok';
+};
+
+export type ProjectCreated = {
+    projectId: string;
+    remote: string;
+    token: string;
+    tokenExpiresAt: string;
+};
+
+export type Error = {
+    error: string;
+    issues?: Array<{
+        path: string;
+        message: string;
+    }>;
+};
+
+export type CreateProjectBody = {
+    projectId: string;
+};
+
+export type ChangeStarted = {
+    changeId: string;
+    remote: string;
+    token: string;
+    tokenExpiresAt: string;
+    baseCommit: string;
+    overlaps: Array<Overlap>;
+};
+
+export type StartChangeBody = {
+    intent: string;
+    paths: Array<string>;
+};
+
+export type Change = {
+    changeId: string;
+    intent: string;
+    baseCommit: string;
+    headCommit: string;
+    declaredPaths: Array<string>;
+    footprint: Array<string>;
+    overlaps: Array<Overlap>;
+    createdAt: string;
 };
 
 export type GetHealthData = {
@@ -23,3 +90,99 @@ export type GetHealthResponses = {
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
+export type CreateProjectData = {
+    body: CreateProjectBody;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * INVALID_REQUEST: the body does not match the schema.
+     */
+    400: Error;
+    /**
+     * PROJECT_EXISTS: a project with this ID exists.
+     */
+    409: Error;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    /**
+     * The project exists with an empty trunk. The token lets the owner push the first commit to trunk.
+     */
+    201: ProjectCreated;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type StartChangeData = {
+    body: StartChangeBody;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/changes';
+};
+
+export type StartChangeErrors = {
+    /**
+     * INVALID_REQUEST: the body does not match the schema.
+     */
+    400: Error;
+    /**
+     * PROJECT_NOT_FOUND: no project has this ID.
+     */
+    404: Error;
+    /**
+     * TRUNK_EMPTY: trunk has no commit to fork from.
+     */
+    409: Error;
+    /**
+     * FORK_FAILED: Artifacts could not fork trunk.
+     */
+    502: Error;
+};
+
+export type StartChangeError = StartChangeErrors[keyof StartChangeErrors];
+
+export type StartChangeResponses = {
+    /**
+     * The change has its own repository, forked from trunk. The response lists the changes in flight whose footprints meet the declared paths.
+     */
+    201: ChangeStarted;
+};
+
+export type StartChangeResponse = StartChangeResponses[keyof StartChangeResponses];
+
+export type GetChangeData = {
+    body?: never;
+    path: {
+        projectId: string;
+        changeId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/changes/{changeId}';
+};
+
+export type GetChangeErrors = {
+    /**
+     * CHANGE_NOT_FOUND: the project has no open change with this ID.
+     */
+    404: Error;
+};
+
+export type GetChangeError = GetChangeErrors[keyof GetChangeErrors];
+
+export type GetChangeResponses = {
+    /**
+     * The change as the coordinator knows it: its head, its footprint, and its overlaps.
+     */
+    200: Change;
+};
+
+export type GetChangeResponse = GetChangeResponses[keyof GetChangeResponses];

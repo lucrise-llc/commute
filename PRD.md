@@ -124,7 +124,8 @@ person passes overlap news to the other.
 - The response has the change ID, the Commute remote of the change, and a write
   token that expires in 60 minutes.
 - The agent uses plain `git clone`, `git commit`, and `git push`.
-- The intent is stored as a git note on the first commit.
+- The coordinator stores the intent with the change. Each landed commit
+  carries the intent in a git note.
 
 Acceptance: an agent goes from `commute start` to its first push with standard
 Git only. Two agents in parallel never share refs, stash, or index.
@@ -277,11 +278,11 @@ landings on every run.
 
 - `commute start` records the owner of the change. The owner comes from
   `--as <name>` or from the name in the CLI config.
-- The coordinator stores the owner with the change. The git note on the first
+- The coordinator stores the owner with the change. The git note on each landed
   commit includes the owner.
 - The Changes list shows the owner of each change and has a "Mine" filter.
-- The console runs behind Cloudflare Access. The console uses the email that
-  Access gives for the person who signed in.
+- The console has no sign-in. A person types their name once, and the console
+  keeps it in the browser.
 - Any team member can approve a landing batch. The notes on each landed commit
   record who approved the batch.
 
@@ -327,7 +328,6 @@ required items are done early.
 | Coordinator, one per project | Durable Objects |
 | Runners for merges, checks, and the resolver agent | Containers, from an image that includes Git |
 | Push events | The Commute remote, after Artifacts accepts the push |
-| Console sign-in | Cloudflare Access |
 
 Commute does not use Artifacts event subscriptions for pushes. A push
 subscription covers one repository, so each change needs its own. In the PoC, a
@@ -463,6 +463,10 @@ These features complete the product. They are not part of the demo.
 
 ### Teams
 
+- **Sign-in.** People sign in with Cloudflare Access through a hostname Access
+  application, because a Worker-level policy rejects WebSockets. The Worker
+  verifies the Access token, because a Worker with static assets receives no
+  `ctx.access`.
 - **Organizations and roles.** People belong to an organization. Roles control
   who can start changes, approve batches, and change settings.
 - **Owners by path.** A team assigns owners to paths. A change that touches an
