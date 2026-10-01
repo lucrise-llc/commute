@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.146.0/config-schema.json",
+  "name": "commute-poc-probe",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "account_id": "ef2e81e746f2503a8ca3fa19fd88ba30",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "commute-poc" }],
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "queues": {
+    "consumers": [
+      { "queue": "commute-poc-events", "max_batch_size": 1, "max_batch_timeout": 1 }
+    ]
+  },
+  "vars": {
+    "ARTIFACTS_GIT_ORIGIN": "https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc"
+  }
+}

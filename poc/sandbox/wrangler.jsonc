@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.146.0/config-schema.json",
+  "name": "commute-poc-sandbox",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "account_id": "ef2e81e746f2503a8ca3fa19fd88ba30",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "commute-poc" }],
+  "containers": [{ "class_name": "Runner", "scheduling_policy": "durable_object" }],
+  "durable_objects": { "bindings": [{ "class_name": "Runner", "name": "RUNNER" }] },
+  "exports": { "Runner": { "type": "durable-object", "storage": "sqlite" } }
+}
