@@ -23,7 +23,7 @@ tooling below ignores it. `poc/FINDINGS.md` has the measured behavior of Artifac
 | CLI | TypeScript that Node 24 runs directly, with `parseArgs` from `node:util` |
 | Lint, format, unused code | oxlint with type-aware rules, oxfmt, knip |
 | Task runner | Turborepo, for `dev` and `deploy` |
-| Tests | Vitest |
+| OpenAPI check | Vitest, which compares the served document with `openapi.json` |
 
 The console adds Radix UI primitives, TanStack Query, and React Router when the first view needs them.
 
@@ -33,12 +33,11 @@ The console adds Radix UI primitives, TanStack Query, and React Router when the 
 apps/server/            The `commute` Worker
   worker/               Worker code: the Hono app, the Commute remote, the coordinator, the runners
   runner/               Dockerfile of the runner image
-  test/                 Server tests, including the OpenAPI document check
+  test/                 The OpenAPI document check
   openapi.json          The API contract, written from the routes
 apps/console/           The React console, a Vite project
 apps/cli/               The `commute` CLI
 packages/api-client/    The typed API client, generated from openapi.json
-e2e/                    End-to-end tests, a workspace that starts with the first test
 ```
 
 ## Dev environment
@@ -46,7 +45,7 @@ e2e/                    End-to-end tests, a workspace that starts with the first
 - Run `npm install` at the root. Use the Node version in `.node-version`.
 - `npm run dev` builds the console, then starts two servers:
   - `http://localhost:8787` is `wrangler dev`. It serves the API, the Commute remote, and the last console build, as
-    production does. End-to-end tests and agents use this address.
+    production does. Agents and verification runs use this address.
   - `http://localhost:5173` is the Vite dev server of the console. It reloads on save and proxies `/api`, WebSockets
     included, to port 8787. Use it for console work.
 - Artifacts has no local simulator. The Artifacts binding sets `remote: true`, so `npm run dev` calls the live service
@@ -69,23 +68,29 @@ npm run lint                         # lint:fix applies the autofixes
 npm run format                       # format:write rewrites
 npm run knip                         # unused files, exports, and dependencies
 npm run api:generate                 # rewrite openapi.json and the API client after a route change
-npm run test -w @commute/server      # server tests, including the OpenAPI document check
+npm run test -w @commute/server      # the OpenAPI document check
 npm run build -w @commute/console    # production build of the console, which the Worker serves
 npm run cf-typegen -w @commute/server  # regenerate worker-configuration.d.ts after a wrangler.jsonc change
 npx commute                          # run the CLI from the workspace
 ```
 
-## Testing
+To try the agent flow locally, create a project, push a first commit to its trunk remote with the returned token,
+then start changes:
 
-- End-to-end tests are the default. A test drives the CLI and plain git against `npm run dev`, as an agent does, and
-  asserts what the agent and the console receive.
-- Test a unit on its own only when an end-to-end test cannot reach its failures, such as the footprint index. Write
-  the list of ways it can fail before the code. The list is the test plan.
-- Use no mocks for code we own: real Durable Objects, real Artifacts, real git. Mock only an external service that we
-  cannot run, such as the model API of the resolver agent.
-- A bug fix starts with a test that reproduces the bug and fails before the fix.
-- The console has no rendering tests. A UI change attaches screenshots to its PR.
-- A test stays in the tree only when it guards behavior that a person, an agent, or a caller depends on.
+```bash
+curl -X POST localhost:8787/api/projects -H 'content-type: application/json' -d '{"projectId":"demo"}'
+COMMUTE_URL=http://localhost:8787 COMMUTE_PROJECT=demo npx commute start "<intent>" --paths <path,path>
+cd c-1 && git push && npx commute wait
+```
+
+## Verification
+
+- The demo has no test suite. Do not write tests.
+- `npm run check` is the gate before a push: types, lint, format, unused code, and the check that `openapi.json` and
+  the generated client match the routes.
+- Verify a change by running its flow against `npm run dev` with the CLI and plain git, as an agent does. Put the
+  commands and their output in the PR.
+- A UI change attaches screenshots to its PR.
 
 ## Architecture and conventions
 
@@ -94,6 +99,10 @@ npx commute                          # run the CLI from the workspace
   `apps/console/dist`.
 - The console calls the API only through `@commute/api-client`, on the same origin. It imports nothing from
   `apps/server`.
+- The coordinator owns the life of a change. Routes and the Commute remote call it through `c.env.COORDINATOR`, one
+  Durable Object per project.
+- A change token never appears in a URL, an argument, or output. `commute start` writes it to `.git/commute/token`
+  with mode 600, and a repo-local credential helper (`commute credential`) gives it to git.
 - Each JSON route lives in `worker/routes/<name>.ts`. The file exports `<name>Route` from `createRoute` and
   `<name>Handler`, and `worker/app.ts` registers the pair. Each route sets an `operationId` that starts with a verb
   (`getHealth`, `listChanges`, `startChange`). The generated client names its functions after it.

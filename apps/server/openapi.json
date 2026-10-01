@@ -6,6 +6,99 @@
   },
   "components": {
     "schemas": {
+      "ChangeEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/OverlapFoundEvent"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "overlap_found": "#/components/schemas/OverlapFoundEvent"
+          }
+        }
+      },
+      "OverlapFoundEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "overlap_found"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "overlap": {
+            "$ref": "#/components/schemas/Overlap"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "overlap"
+        ]
+      },
+      "Overlap": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "otherPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "otherPath"
+              ]
+            }
+          }
+        },
+        "required": [
+          "changeId",
+          "intent",
+          "paths"
+        ]
+      },
+      "WaitRequest": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "after"
+        ]
+      },
       "Health": {
         "type": "object",
         "properties": {
@@ -18,6 +111,187 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "ProjectCreated": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+            "example": "storefront"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "tokenExpiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "remote",
+          "token",
+          "tokenExpiresAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CreateProjectBody": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+            "example": "storefront"
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "ChangeStarted": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "tokenExpiresAt": {
+            "type": "string"
+          },
+          "baseCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "overlaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Overlap"
+            }
+          }
+        },
+        "required": [
+          "changeId",
+          "remote",
+          "token",
+          "tokenExpiresAt",
+          "baseCommit",
+          "overlaps"
+        ]
+      },
+      "StartChangeBody": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "example": "src/cart/pricing.ts"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "intent",
+          "paths"
+        ]
+      },
+      "Change": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "baseCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "headCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "declaredPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "footprint": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overlaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Overlap"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeId",
+          "intent",
+          "baseCommit",
+          "headCommit",
+          "declaredPaths",
+          "footprint",
+          "overlaps",
+          "createdAt"
         ]
       }
     },
@@ -34,6 +308,181 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "post": {
+        "operationId": "createProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The project exists with an empty trunk. The token lets the owner push the first commit to trunk.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST: the body does not match the schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PROJECT_EXISTS: a project with this ID exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/changes": {
+      "post": {
+        "operationId": "startChange",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartChangeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The change has its own repository, forked from trunk. The response lists the changes in flight whose footprints meet the declared paths.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST: the body does not match the schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND: no project has this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TRUNK_EMPTY: trunk has no commit to fork from.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "FORK_FAILED: Artifacts could not fork trunk.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/changes/{changeId}": {
+      "get": {
+        "operationId": "getChange",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            },
+            "required": true,
+            "name": "changeId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The change as the coordinator knows it: its head, its footprint, and its overlaps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Change"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CHANGE_NOT_FOUND: the project has no open change with this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

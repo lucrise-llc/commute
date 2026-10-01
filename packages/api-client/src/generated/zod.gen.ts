@@ -2,11 +2,106 @@
 
 import * as z from 'zod';
 
+export const zOverlap = z.object({
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    intent: z.string(),
+    paths: z.array(z.object({
+        path: z.string(),
+        otherPath: z.string()
+    }))
+});
+
+export const zOverlapFoundEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['overlap_found']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    overlap: zOverlap
+});
+
+export const zChangeEvent = zOverlapFoundEvent;
+
+export const zWaitRequest = z.object({
+    after: z.int().gte(0)
+});
+
 export const zHealth = z.object({
     status: z.enum(['ok'])
+});
+
+export const zProjectCreated = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    remote: z.string(),
+    token: z.string(),
+    tokenExpiresAt: z.string()
+});
+
+export const zError = z.object({
+    error: z.string(),
+    issues: z.array(z.object({
+        path: z.string(),
+        message: z.string()
+    })).optional()
+});
+
+export const zCreateProjectBody = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/)
+});
+
+export const zChangeStarted = z.object({
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    remote: z.string(),
+    token: z.string(),
+    tokenExpiresAt: z.string(),
+    baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    overlaps: z.array(zOverlap)
+});
+
+export const zStartChangeBody = z.object({
+    intent: z.string().min(1).max(500),
+    paths: z.array(z.string().min(1).max(512)).min(1).max(100)
+});
+
+export const zChange = z.object({
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    intent: z.string(),
+    baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    headCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    declaredPaths: z.array(z.string()),
+    footprint: z.array(z.string()),
+    overlaps: z.array(zOverlap),
+    createdAt: z.string()
 });
 
 /**
  * The Worker serves requests.
  */
 export const zGetHealthResponse = zHealth;
+
+export const zCreateProjectBody2 = zCreateProjectBody;
+
+/**
+ * The project exists with an empty trunk. The token lets the owner push the first commit to trunk.
+ */
+export const zCreateProjectResponse = zProjectCreated;
+
+export const zStartChangeBody2 = zStartChangeBody;
+
+export const zStartChangePath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/)
+});
+
+/**
+ * The change has its own repository, forked from trunk. The response lists the changes in flight whose footprints meet the declared paths.
+ */
+export const zStartChangeResponse = zChangeStarted;
+
+export const zGetChangePath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+});
+
+/**
+ * The change as the coordinator knows it: its head, its footprint, and its overlaps.
+ */
+export const zGetChangeResponse = zChange;
