@@ -47,11 +47,14 @@ Two more problems came up often:
 - Tell agents what happened through events, so that no agent polls.
 - Give the operator one screen for the whole fleet and one approval per landing
   batch.
+- Let several people run agents on one project without any person passing
+  overlap news to another person.
 
 ## Non-goals for the demo
 
 - Code review by people inside the product.
-- Organizations, roles, and permissions beyond one token per change.
+- Organizations, roles, and permissions beyond one token per change and one
+  owner per change.
 - Issues, code search, and project planning.
 - Import from or sync with other Git hosts.
 
@@ -62,6 +65,7 @@ Two more problems came up often:
 | Implementer agent | A repository in seconds. Early news of overlaps. A clear signal when its change is ready or blocked. |
 | Resolver agent | The conflicting hunk and the intent of both changes. |
 | Operator (a person) | One view of the fleet. One decision per landing batch. Trust that every result names the content it checked. |
+| Team member (a person who runs agents) | A view of their own changes. News only when a decision needs them. No need to tell other people about overlaps. |
 
 ## Concepts
 
@@ -69,6 +73,7 @@ Two more problems came up often:
 |---|---|
 | Change | One unit of work with an intent. It lives in its own Artifacts repository, forked from trunk. |
 | Intent | One or two sentences that say what the change is for. The agent writes it at the start. It is stored as a git note. |
+| Owner | The person who started the change. It is stored with the change and as a git note. |
 | Footprint | The paths that a change touches. The agent declares them at the start. The coordinator measures them from tree diffs on every push. |
 | Trunk | The repository that changes land on. Only a landing writes to trunk. |
 | Overlap | Two changes in flight whose footprints meet. |
@@ -103,6 +108,9 @@ The demo must show three claims working for real:
 2. A check result survives a restack when the subtrees it reads did not change.
 3. Overlaps are known at the start of the work, and conflicts are resolved with
    the intent of both changes.
+
+The demo also shows a team. Two people run agents on one project, and neither
+person passes overlap news to the other.
 
 ### Requirements
 
@@ -216,12 +224,28 @@ coordinator.
 
 #### D10. Demo harness
 
-- 20 agents work on a public demo repository at the same time.
+- Two people each run 10 agents on a public demo repository at the same time.
 - A script starts the agents and replays the run so that the demo is
   repeatable.
 
 Acceptance: the script produces the same overlaps, sequences, conflict, and
 landings on every run.
+
+#### D11. Team layer
+
+- `commute start` records the owner of the change. The owner comes from
+  `--as <name>` or from the name in the CLI config.
+- The coordinator stores the owner with the change. The git note on the first
+  commit includes the owner.
+- Fleet shows the owner of each change and has a "Mine" filter.
+- The console runs behind Cloudflare Access. The console uses the email that
+  Access gives for the person who signed in.
+- Any team member can approve a landing batch. The notes on each landed commit
+  record who approved the batch.
+
+Acceptance: two people run agents on one project. An overlap between their
+changes is sequenced and resolved, and neither person sends a message to the
+other. Each landed commit names its owner and its approver.
 
 ### If time allows
 
@@ -239,9 +263,9 @@ required items are done early.
 | Minutes | Beat | What the viewer sees |
 |---|---|---|
 | 1 | Why | The problem in numbers: conflicts are cheap, waiting and lost results are expensive. |
-| 1.5 | Start | 20 agents start. Overlaps show up at the start. Most changes run in parallel. Two pairs are sequenced. |
-| 1.5 | Land | The operator approves a batch. Its changes land in any order. A counter shows the checks kept. |
-| 2 | Conflict | A change restacks onto the new trunk and conflicts. The resolver uses both intents and stores the resolution. A later change hits the same conflict, and the stored resolution applies. |
+| 1.5 | Start | Alice and Bob each start 10 agents. Overlaps show up at the start. Most changes run in parallel. Two pairs are sequenced, and one pair crosses from Alice to Bob. |
+| 1.5 | Land | Bob approves a batch that has changes from both people. Its changes land in any order. A counter shows the checks kept. |
+| 2 | Conflict | Alice's change lands. Bob's change restacks onto the new trunk and conflicts. The resolver uses both intents and stores the resolution. Neither person acts. A later change hits the same conflict, and the stored resolution applies. |
 | 1 | Scale | The benchmark: 100,000 changes in flight, with measured lookup time and landing rate. |
 | 1 | Agent view | The CLI: `commute start`, plain Git, `commute wait`. |
 
@@ -251,6 +275,7 @@ required items are done early.
 - Share of check results kept after a restack.
 - Overlaps found at the start against overlaps found at landing.
 - Operator decisions per 100 changes.
+- Messages between people about overlaps. The target is zero.
 - Overlap lookup time with 100,000 changes in flight.
 
 ### Architecture
@@ -262,6 +287,7 @@ required items are done early.
 | Coordinator, one per project | Durable Objects |
 | Merges, checks, resolver agent | Sandbox containers |
 | Push events | Artifacts event subscriptions |
+| Console sign-in | Cloudflare Access |
 
 The flow for one change:
 
@@ -291,7 +317,7 @@ The flow for one change:
 | October 1 to 2 | Open decisions and the risks above |
 | October 3 to 6 | D1, D2, D3, D8 |
 | October 7 to 9 | D4, D5 |
-| October 10 to 11 | D6, D7 |
+| October 10 to 11 | D6, D7, D11 |
 | October 12 | D9, D10, and a full rehearsal |
 | October 13 | Record the video, write the README run steps and the LICENSE, submit |
 | October 14 | Spare day. Submissions close at 11:59 PM PDT. |
@@ -361,9 +387,29 @@ These features complete the product. They are not part of the demo.
   databases and other services.
 - **Data location.** Let a project choose the jurisdiction of its repositories.
 
+### Teams
+
+- **Organizations and roles.** People belong to an organization. Roles control
+  who can start changes, approve batches, and change settings.
+- **Owners by path.** A team assigns owners to paths. A change that touches an
+  owned path needs that owner's approval before it can land.
+- **Owner sign-off.** A change is ready only after its owner signs off. Batches
+  then land on one approval from the person on duty, or with no approval when
+  the team allows it.
+- **Review by a second person.** A team can require a second person to approve
+  a change, based on its paths or its size.
+- **Notifications.** Send a message in Slack or by email to the owner when a
+  change is sequenced behind another person's change, or when a resolver
+  changes it.
+- **Override permissions.** Only the owners of the two changes, or a team lead,
+  can swap a sequence or ask for a split.
+- **Views for each person and each team.** Filters for owner, team, and path.
+- **Audit log.** A record of every approval, override, and token for each
+  change.
+
 ### Accounts and integration
 
-- Organizations, roles, and permissions.
+- Single sign-on for organizations, beyond Cloudflare Access.
 - Import a repository from another Git host, and mirror trunk back to it.
 - Landing rules, for example a required approval or a required check.
 - Billing and usage limits.
