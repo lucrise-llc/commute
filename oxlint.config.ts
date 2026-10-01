@@ -61,7 +61,7 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ['apps/server/worker/**/*.ts', 'apps/server/console/**/*.{ts,tsx}'],
+      files: ['apps/server/worker/**/*.ts', 'apps/console/src/**/*.{ts,tsx}'],
       rules: {
         'no-console': 'error'
       }
@@ -79,7 +79,7 @@ export default defineConfig({
       }
     },
     {
-      files: ['apps/server/console/**/*.{ts,tsx}'],
+      files: ['apps/console/src/**/*.{ts,tsx}'],
       plugins: ['react'],
       rules: {
         'react/rules-of-hooks': 'error',

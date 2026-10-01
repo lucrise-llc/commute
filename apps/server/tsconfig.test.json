@@ -4,5 +4,5 @@
     "lib": ["es2024"],
     "types": ["./worker-configuration.d.ts"]
   },
-  "include": ["worker-configuration.d.ts", "worker/**/*.ts", "test/**/*.ts"]
+  "include": ["worker-configuration.d.ts", "worker/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }
