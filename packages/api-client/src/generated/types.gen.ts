@@ -4,7 +4,11 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
-export type ChangeEvent = OverlapFoundEvent;
+export type ChangeEvent = ({
+    type: 'overlap_found';
+} & OverlapFoundEvent) | ({
+    type: 'merge_checked';
+} & MergeCheckedEvent);
 
 export type OverlapFoundEvent = {
     seq: number;
@@ -21,6 +25,20 @@ export type Overlap = {
         path: string;
         otherPath: string;
     }>;
+};
+
+export type MergeCheckedEvent = {
+    seq: number;
+    type: 'merge_checked';
+    changeId: string;
+    at: string;
+    otherChange: {
+        changeId: string;
+        intent: string;
+    };
+    outcome: 'parallel' | 'sequenced';
+    landsFirst: string | null;
+    conflicts: Array<string>;
 };
 
 export type WaitRequest = {
@@ -72,6 +90,8 @@ export type Change = {
     declaredPaths: Array<string>;
     footprint: Array<string>;
     overlaps: Array<Overlap>;
+    landsAfter: Array<string>;
+    landsBefore: Array<string>;
     createdAt: string;
 };
 

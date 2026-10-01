@@ -337,8 +337,9 @@ to 7.4 seconds after the push. The event from the Commute remote arrived before
 `git push` returned. The data is in
 [poc/FINDINGS.md](poc/FINDINGS.md).
 
-The coordinator keeps a pool of runners. When a runner does not answer, the
-coordinator sends the job to another runner.
+The coordinator keeps a pool of runners for its project, so no container serves
+two projects. When a runner does not answer, the coordinator sends the job to
+another runner.
 
 The flow for one change:
 

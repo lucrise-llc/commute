@@ -75,7 +75,7 @@ const overlapPathSchema = z.object({
   otherPath: z.string()
 });
 
-export const overlapSchema = z
+const overlapSchema = z
   .object({
     changeId: changeIdSchema,
     intent: z.string(),
@@ -103,6 +103,8 @@ export const changeSchema = z
     declaredPaths: z.array(z.string()),
     footprint: z.array(z.string()),
     overlaps: z.array(overlapSchema),
+    landsAfter: z.array(changeIdSchema),
+    landsBefore: z.array(changeIdSchema),
     createdAt: z.string()
   })
   .openapi('Change');
@@ -117,7 +119,25 @@ const overlapFoundEventSchema = z
   })
   .openapi('OverlapFoundEvent');
 
-export const changeEventSchema = z.discriminatedUnion('type', [overlapFoundEventSchema]).openapi('ChangeEvent');
+const mergeCheckedEventSchema = z
+  .object({
+    seq: z.number().int(),
+    type: z.literal('merge_checked'),
+    changeId: changeIdSchema,
+    at: z.string(),
+    otherChange: z.object({
+      changeId: changeIdSchema,
+      intent: z.string()
+    }),
+    outcome: z.enum(['parallel', 'sequenced']),
+    landsFirst: changeIdSchema.nullable(),
+    conflicts: z.array(z.string())
+  })
+  .openapi('MergeCheckedEvent');
+
+export const changeEventSchema = z
+  .discriminatedUnion('type', [overlapFoundEventSchema, mergeCheckedEventSchema])
+  .openapi('ChangeEvent');
 
 export const waitRequestSchema = z
   .object({

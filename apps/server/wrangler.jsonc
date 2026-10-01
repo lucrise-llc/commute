@@ -22,11 +22,23 @@
       "remote": true
     }
   ],
+  "containers": [
+    {
+      "class_name": "Runner",
+      "image": "./runner/Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 20
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
         "name": "COORDINATOR",
         "class_name": "Coordinator"
+      },
+      {
+        "name": "RUNNER",
+        "class_name": "Runner"
       }
     ]
   },
@@ -34,6 +46,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["Coordinator"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Runner"]
     }
   ]
 }
