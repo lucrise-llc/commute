@@ -157,7 +157,8 @@ Commands:
 ## What the spike did not test
 
 - The account limit on event subscriptions. Decision 1 removes the need.
-- One coordinator with 100,000 changes in flight (D9).
+- One coordinator with 100,000 changes in flight. The scale benchmark is a
+  post-demo feature.
 - `interceptOutboundHttp`, which keeps tokens out of the container. The PoC
   put a read token with a 10-minute life in the container.
 - Large pushes through the proxy. The probe reads the whole push body, up to
