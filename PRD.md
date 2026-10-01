@@ -264,15 +264,6 @@ overlap page.
 
 Acceptance: an agent needs only these two commands plus Git.
 
-#### D9. Scale benchmark
-
-- A load test puts 100,000 synthetic changes in flight against one coordinator.
-- It measures the overlap lookup time and the landings per minute.
-- Real Artifacts repositories are used only for the agents in the demo.
-
-Acceptance: the demo shows measured numbers and names the limit of a single
-coordinator.
-
 #### D10. Demo harness
 
 - Two people each run 10 agents on a public demo repository at the same time.
@@ -309,7 +300,7 @@ required items are done early.
 2. Overlap prediction from the intent alone, so that `--paths` becomes optional.
 3. An MCP server over the CLI commands.
 
-### Demo storyline (about 8 minutes)
+### Demo storyline (about 7 minutes)
 
 | Minutes | Beat | What the viewer sees |
 |---|---|---|
@@ -317,7 +308,6 @@ required items are done early.
 | 1.5 | Start | Alice and Bob each start 10 agents. Overlaps show up at the start. Most changes run in parallel. Two pairs are sequenced, and one pair crosses from Alice to Bob. |
 | 1.5 | Land | Bob approves a batch that has changes from both people. Its changes land in any order. A counter shows the checks kept. |
 | 2 | Conflict | Alice's change lands. Bob's change restacks onto the new trunk and conflicts. The resolver uses both intents and stores the resolution. Neither person acts. A later change hits the same conflict, and the stored resolution applies. |
-| 1 | Scale | The benchmark: 100,000 changes in flight, with measured lookup time and landing rate. |
 | 1 | Agent view | The CLI: `commute start`, plain Git, `commute wait`. |
 
 ### Measures
@@ -327,7 +317,6 @@ required items are done early.
 - Overlaps found at the start against overlaps found at landing.
 - Operator decisions per 100 changes.
 - Messages between people about overlaps. The target is zero.
-- Overlap lookup time with 100,000 changes in flight.
 
 ### Architecture
 
@@ -381,7 +370,6 @@ has the data and the commands.
 
 | Risk | What we measure | Fallback |
 |---|---|---|
-| One coordinator with 100,000 changes in flight | Overlap lookup time and landings per minute (D9) | Split the footprint index by top-level path |
 | Large pushes through the Commute remote | Push time for a large pack, with the body streamed | A size limit for pushes in the demo |
 | Runner image with Git | Build time and cold start of a custom image | A snapshot with Git |
 
@@ -393,7 +381,7 @@ has the data and the commands.
 | October 3 to 6 | D1, D2, D3, D8 |
 | October 7 to 9 | D4, D5, and the Code view of D7 |
 | October 10 to 11 | D6, the Changes list and the change page of D7, D11 |
-| October 12 | D9, D10, and a full rehearsal |
+| October 12 | D10 and a full rehearsal |
 | October 13 | Record the video, write the README run steps and the LICENSE, submit |
 | October 14 | Spare day. Submissions close at 11:59 PM PDT. |
 
@@ -458,6 +446,9 @@ These features complete the product. They are not part of the demo.
 
 ### Scale and platform
 
+- **Scale benchmark.** A load test puts 100,000 synthetic changes in flight
+  against one coordinator. It measures the overlap lookup time and the landings
+  per minute, and names the limit of one coordinator.
 - **Sharded coordinator.** Split the footprint index by top-level path across
   several Durable Objects, so one project can hold hundreds of thousands of
   changes in flight.
