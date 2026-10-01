@@ -6,8 +6,8 @@ import { createClient, getChange, zChangeEvent } from '@commute/api-client';
 import type { ChangeContext } from './change-context.ts';
 
 import { git } from './git.ts';
+import { describeEvent } from './describe.ts';
 import { describeApiError } from './server.ts';
-import { describeOverlap } from './overlaps.ts';
 import { readChangeContext } from './change-context.ts';
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
@@ -47,7 +47,7 @@ export async function runWait(args: string[]): Promise<number> {
     return EXIT_CODE_NO_EVENT;
   }
   await git({ args: ['config', 'commute.cursor', String(event.seq)], cwd });
-  console.log(values.json ? JSON.stringify(event) : `overlap  ${describeOverlap(event.overlap)}`);
+  console.log(values.json ? JSON.stringify(event) : describeEvent(event));
   return 0;
 }
 

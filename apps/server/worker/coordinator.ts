@@ -1,14 +1,17 @@
+import { z } from '@hono/zod-openapi';
 import { DurableObject } from 'cloudflare:workers';
 
 import type { MeetingPair } from './footprint';
-import type { ChangeRef, WriteToken } from './repos';
+import type { ChangeRef, IssuedToken } from './repos';
+import type { MergeResult, MergeSide } from './runner';
 import type { Change, ChangeEvent, Overlap } from './schemas';
 
 import { logError, log } from './log';
+import { mergeOnRunnerPool } from './runner-pool';
 import { diffCommits, meetingPairs } from './footprint';
-import { changeRepoName, issueWriteToken } from './repos';
 import { artifactsErrorCode, errorCodeOf } from './errors';
-import { overlapSchema, waitRequestSchema } from './schemas';
+import { changeEventSchema, waitRequestSchema } from './schemas';
+import { changeRepoName, issueReadToken, issueWriteToken } from './repos';
 
 const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
@@ -17,7 +20,12 @@ const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
 const WEBSOCKET_POLICY_VIOLATION = 1_008;
+const MERGE_CHECKS_PER_ALARM = 5;
+const MERGE_ATTEMPTS_MAX = 3;
+const MERGE_RETRY_DELAY_MS = 5_000;
 const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8})\/events$/;
+
+const eventPayloadSchema = z.record(z.string(), z.unknown());
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS project (
@@ -50,7 +58,23 @@ CREATE TABLE IF NOT EXISTS event (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   change_id TEXT NOT NULL,
   at TEXT NOT NULL,
-  overlap TEXT NOT NULL
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS merge_check (
+  left_id TEXT NOT NULL,
+  right_id TEXT NOT NULL,
+  left_head TEXT NOT NULL,
+  right_head TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  conflicts TEXT NOT NULL,
+  PRIMARY KEY (left_id, right_id)
+);
+CREATE TABLE IF NOT EXISTS pending_merge (
+  left_id TEXT NOT NULL,
+  right_id TEXT NOT NULL,
+  attempts INTEGER NOT NULL,
+  PRIMARY KEY (left_id, right_id)
 );
 `;
 
@@ -73,7 +97,28 @@ type EventRow = {
   seq: number;
   change_id: string;
   at: string;
-  overlap: string;
+  type: string;
+  payload: string;
+};
+
+type MergeCheckRow = {
+  left_id: string;
+  right_id: string;
+  left_head: string;
+  right_head: string;
+  outcome: string;
+};
+
+type PendingMergeRow = {
+  left_id: string;
+  right_id: string;
+  attempts: number;
+};
+
+// A change with commits of its own: the only kind a merge check can compare.
+type PushedChange = ChangeRow & {
+  base_commit: string;
+  head_commit: string;
 };
 
 type OtherChange = {
@@ -87,7 +132,7 @@ type StartChangeParams = {
   paths: string[];
 };
 
-type ChangeStarted = WriteToken & {
+type ChangeStarted = IssuedToken & {
   changeId: string;
   baseCommit: string;
   overlaps: Overlap[];
@@ -95,7 +140,7 @@ type ChangeStarted = WriteToken & {
 
 type ForkedChange = {
   baseCommit: string;
-  writeToken: WriteToken;
+  writeToken: IssuedToken;
 };
 
 type PairsParams = {
@@ -114,9 +159,44 @@ type FootprintOfParams = {
   source: 'declared' | 'pushed';
 };
 
+type EventPayload =
+  | {
+      type: 'overlap_found';
+      overlap: Overlap;
+    }
+  | {
+      type: 'merge_checked';
+      otherChange: {
+        changeId: string;
+        intent: string;
+      };
+      outcome: 'parallel' | 'sequenced';
+      landsFirst: string | null;
+      conflicts: string[];
+    };
+
 type EmitParams = {
   changeId: string;
-  overlap: Overlap;
+  payload: EventPayload;
+};
+
+type PushedPair = {
+  left: PushedChange;
+  right: PushedChange;
+};
+
+type QueueMergeChecksParams = {
+  changeId: string;
+  overlaps: Overlap[];
+};
+
+type PairIds = {
+  leftId: string;
+  rightId: string;
+};
+
+type AnnounceParams = PushedPair & {
+  result: MergeResult;
 };
 
 // One coordinator per project. It owns the life of each change, the footprint index, and the event stream that
@@ -131,7 +211,7 @@ export class Coordinator extends DurableObject<Env> {
     this.sql.exec(SCHEMA);
   }
 
-  async createProject(projectId: string): Promise<WriteToken> {
+  async createProject(projectId: string): Promise<IssuedToken> {
     if (this.hasProject()) {
       throw new Error('PROJECT_EXISTS');
     }
@@ -181,6 +261,7 @@ export class Coordinator extends DurableObject<Env> {
       declaredPaths: this.footprintOf({ changeId, source: 'declared' }),
       footprint: this.footprintOf({ changeId, source: 'pushed' }),
       overlaps: this.currentOverlaps(changeId),
+      ...this.landingOrder(changeId),
       createdAt: change.created_at
     };
   }
@@ -220,7 +301,7 @@ export class Coordinator extends DurableObject<Env> {
       return;
     }
     const rows = this.sql.exec<EventRow>(
-      'SELECT seq, change_id, at, overlap FROM event WHERE change_id = ? AND seq > ? ORDER BY seq LIMIT ?',
+      'SELECT seq, change_id, at, type, payload FROM event WHERE change_id = ? AND seq > ? ORDER BY seq LIMIT ?',
       changeId,
       request.data.after,
       EVENTS_REPLAY_MAX
@@ -235,6 +316,176 @@ export class Coordinator extends DurableObject<Env> {
   // waits in the closing state. The client's code can be a reserved one, such as 1005, which cannot be sent back.
   override webSocketClose(socket: WebSocket): void {
     socket.close(WEBSOCKET_NORMAL_CLOSURE, 'Closed by the client.');
+  }
+
+  // Runs queued merge checks. A check that fails stays queued until it runs out of attempts, and the alarm comes back
+  // while any check is queued.
+  override async alarm(): Promise<void> {
+    const jobs = this.sql
+      .exec<PendingMergeRow>('SELECT left_id, right_id, attempts FROM pending_merge LIMIT ?', MERGE_CHECKS_PER_ALARM)
+      .toArray();
+    for (const job of jobs) {
+      await this.runMergeCheck(job);
+    }
+    if (this.sql.exec('SELECT left_id FROM pending_merge LIMIT 1').toArray().length > 0) {
+      await this.ctx.storage.setAlarm(Date.now() + MERGE_RETRY_DELAY_MS);
+    }
+  }
+
+  // A push queues a merge check with every change whose footprint meets it, and a new check of every pair that has
+  // a result, so a push that removes a conflict also removes its sequence.
+  private async queueMergeChecks({ changeId, overlaps }: QueueMergeChecksParams): Promise<void> {
+    const checked = this.sql
+      .exec<{ other_id: string }>(
+        `SELECT CASE WHEN left_id = ? THEN right_id ELSE left_id END AS other_id
+         FROM merge_check WHERE left_id = ? OR right_id = ?`,
+        changeId,
+        changeId,
+        changeId
+      )
+      .toArray()
+      .map((row) => row.other_id);
+    const others = new Set([...overlaps.map((overlap) => overlap.changeId), ...checked]);
+    let queued = 0;
+    for (const otherChangeId of others) {
+      if (pushedChange(this.findChange(otherChangeId)) === null) {
+        continue;
+      }
+      const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
+      queued += this.sql.exec(
+        'INSERT OR IGNORE INTO pending_merge (left_id, right_id, attempts) VALUES (?, ?, 0)',
+        leftId,
+        rightId
+      ).rowsWritten;
+    }
+    if (queued > 0) {
+      await this.ctx.storage.setAlarm(Date.now());
+    }
+  }
+
+  private async runMergeCheck({ left_id: leftId, right_id: rightId, attempts }: PendingMergeRow): Promise<void> {
+    const left = pushedChange(this.findChange(leftId));
+    const right = pushedChange(this.findChange(rightId));
+    const previous = this.findMergeCheck({ leftId, rightId });
+    if (
+      left === null ||
+      right === null ||
+      (previous?.left_head === left.head_commit && previous.right_head === right.head_commit)
+    ) {
+      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
+      return;
+    }
+
+    let result: MergeResult;
+    try {
+      result = await this.mergeHeads({ left, right });
+    } catch (error) {
+      logError({ event: 'merge_check_failed', leftId, rightId, attempts: attempts + 1, error });
+      if (attempts + 1 >= MERGE_ATTEMPTS_MAX) {
+        this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
+      } else {
+        this.sql.exec(
+          'UPDATE pending_merge SET attempts = ? WHERE left_id = ? AND right_id = ?',
+          attempts + 1,
+          leftId,
+          rightId
+        );
+      }
+      return;
+    }
+
+    this.sql.exec(
+      `INSERT OR REPLACE INTO merge_check (left_id, right_id, left_head, right_head, outcome, conflicts)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      leftId,
+      rightId,
+      left.head_commit,
+      right.head_commit,
+      result.outcome,
+      JSON.stringify(result.conflicts)
+    );
+    const isCurrent =
+      this.findChange(leftId)?.head_commit === left.head_commit &&
+      this.findChange(rightId)?.head_commit === right.head_commit;
+    if (isCurrent) {
+      this.sql.exec('DELETE FROM pending_merge WHERE left_id = ? AND right_id = ?', leftId, rightId);
+    }
+    if (previous?.outcome !== result.outcome) {
+      this.announce({ left, right, result });
+    }
+    log({ event: 'merge_checked', leftId, rightId, outcome: result.outcome, conflicts: result.conflicts.length });
+  }
+
+  private async mergeHeads({ left, right }: PushedPair): Promise<MergeResult> {
+    const projectId = this.projectId();
+    const [leftSide, rightSide] = await Promise.all([
+      this.readSide({ projectId, changeId: left.id }),
+      this.readSide({ projectId, changeId: right.id })
+    ]);
+    return mergeOnRunnerPool({
+      env: this.env,
+      projectId,
+      pairKey: `${left.id}/${right.id}`,
+      left: leftSide,
+      right: rightSide
+    });
+  }
+
+  private async readSide(change: ChangeRef): Promise<MergeSide> {
+    using repo = await this.env.ARTIFACTS.get(changeRepoName(change));
+    const [info, readToken] = await Promise.all([repo.info(), issueReadToken(repo)]);
+    return { remote: info.remote, token: readToken.token };
+  }
+
+  // A conflict puts the change that started first ahead of the other one. Both sides learn the outcome and the other
+  // change's intent.
+  private announce({ left, right, result }: AnnounceParams): void {
+    const outcome = result.outcome === 'conflict' ? 'sequenced' : 'parallel';
+    const landsFirst = outcome === 'sequenced' ? left.id : null;
+    for (const [change, other] of [
+      [left, right],
+      [right, left]
+    ] as const) {
+      this.emit({
+        changeId: change.id,
+        payload: {
+          type: 'merge_checked',
+          otherChange: { changeId: other.id, intent: other.intent },
+          outcome,
+          landsFirst,
+          conflicts: result.conflicts
+        }
+      });
+    }
+  }
+
+  private landingOrder(changeId: string): Pick<Change, 'landsAfter' | 'landsBefore'> {
+    const rows = this.sql
+      .exec<MergeCheckRow>(
+        "SELECT left_id, right_id, left_head, right_head, outcome FROM merge_check WHERE outcome = 'conflict' AND (left_id = ? OR right_id = ?)",
+        changeId,
+        changeId
+      )
+      .toArray();
+    return {
+      landsAfter: rows.filter((row) => row.right_id === changeId).map((row) => row.left_id),
+      landsBefore: rows.filter((row) => row.left_id === changeId).map((row) => row.right_id)
+    };
+  }
+
+  private findMergeCheck({ leftId, rightId }: PairIds): MergeCheckRow | null {
+    const [row] = this.sql
+      .exec<MergeCheckRow>(
+        'SELECT left_id, right_id, left_head, right_head, outcome FROM merge_check WHERE left_id = ? AND right_id = ?',
+        leftId,
+        rightId
+      )
+      .toArray();
+    return row ?? null;
+  }
+
+  private projectId(): string {
+    return this.sql.exec<{ id: string }>('SELECT id FROM project').one().id;
   }
 
   private hasProject(): boolean {
@@ -325,6 +576,7 @@ export class Coordinator extends DurableObject<Env> {
     }
     this.sql.exec('UPDATE change SET head_commit = ? WHERE id = ?', head.hash, changeId);
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
+    await this.queueMergeChecks({ changeId, overlaps });
     log({
       event: 'push_recorded',
       projectId,
@@ -352,11 +604,17 @@ export class Coordinator extends DurableObject<Env> {
       overlaps.push({ changeId: otherChangeId, intent: other.intent, paths: pairs });
       const reversed = meetingPairs({ paths: other.paths, otherPaths: paths });
       if (this.reportPairs({ changeId: otherChangeId, otherChangeId: changeId, pairs: reversed })) {
-        this.emit({ changeId: otherChangeId, overlap: { changeId, intent: change.intent, paths: reversed } });
+        this.emit({
+          changeId: otherChangeId,
+          payload: { type: 'overlap_found', overlap: { changeId, intent: change.intent, paths: reversed } }
+        });
       }
       const isNewForChange = this.reportPairs({ changeId, otherChangeId, pairs });
       if (isPush && isNewForChange) {
-        this.emit({ changeId, overlap: { changeId: otherChangeId, intent: other.intent, paths: pairs } });
+        this.emit({
+          changeId,
+          payload: { type: 'overlap_found', overlap: { changeId: otherChangeId, intent: other.intent, paths: pairs } }
+        });
       }
     }
     return overlaps;
@@ -388,13 +646,15 @@ export class Coordinator extends DurableObject<Env> {
     return rowsWritten > 0;
   }
 
-  private emit({ changeId, overlap }: EmitParams): void {
+  private emit({ changeId, payload }: EmitParams): void {
+    const { type, ...fields } = payload;
     const row = this.sql
       .exec<EventRow>(
-        'INSERT INTO event (change_id, at, overlap) VALUES (?, ?, ?) RETURNING seq, change_id, at, overlap',
+        'INSERT INTO event (change_id, at, type, payload) VALUES (?, ?, ?, ?) RETURNING seq, change_id, at, type, payload',
         changeId,
         now(),
-        JSON.stringify(overlap)
+        type,
+        JSON.stringify(fields)
       )
       .one();
     const message = JSON.stringify(eventFrom(row));
@@ -454,13 +714,40 @@ export class Coordinator extends DurableObject<Env> {
 }
 
 function eventFrom(row: EventRow): ChangeEvent {
-  return {
+  return changeEventSchema.parse({
+    ...eventPayloadSchema.parse(parseJson(row.payload)),
     seq: row.seq,
-    type: 'overlap_found',
+    type: row.type,
     changeId: row.change_id,
-    at: row.at,
-    overlap: overlapSchema.parse(JSON.parse(row.overlap))
-  };
+    at: row.at
+  });
+}
+
+function pushedChange(change: ChangeRow | null): PushedChange | null {
+  if (
+    change === null ||
+    change.state !== 'open' ||
+    change.base_commit === null ||
+    change.head_commit === null ||
+    change.head_commit === change.base_commit
+  ) {
+    return null;
+  }
+  return { ...change, base_commit: change.base_commit, head_commit: change.head_commit };
+}
+
+type OrderedPairParams = {
+  changeId: string;
+  otherChangeId: string;
+};
+
+// A pair is stored with the change that started first on the left.
+function orderedPair({ changeId, otherChangeId }: OrderedPairParams): [string, string] {
+  return changeNumber(changeId) < changeNumber(otherChangeId) ? [changeId, otherChangeId] : [otherChangeId, changeId];
+}
+
+function changeNumber(changeId: string): number {
+  return Number(changeId.slice('c-'.length));
 }
 
 function parseJson(text: string): unknown {

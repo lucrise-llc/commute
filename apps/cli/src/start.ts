@@ -9,7 +9,7 @@ import { createClient, startChange } from '@commute/api-client';
 import type { ServerConfig } from './server.ts';
 
 import { git } from './git.ts';
-import { describeOverlap } from './overlaps.ts';
+import { describeOverlap } from './describe.ts';
 import { writeChangeContext } from './change-context.ts';
 import { describeApiError, serverFromEnv } from './server.ts';
 

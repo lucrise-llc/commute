@@ -10,12 +10,16 @@
         "oneOf": [
           {
             "$ref": "#/components/schemas/OverlapFoundEvent"
+          },
+          {
+            "$ref": "#/components/schemas/MergeCheckedEvent"
           }
         ],
         "discriminator": {
           "propertyName": "type",
           "mapping": {
-            "overlap_found": "#/components/schemas/OverlapFoundEvent"
+            "overlap_found": "#/components/schemas/OverlapFoundEvent",
+            "merge_checked": "#/components/schemas/MergeCheckedEvent"
           }
         }
       },
@@ -85,6 +89,76 @@
           "changeId",
           "intent",
           "paths"
+        ]
+      },
+      "MergeCheckedEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "merge_checked"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "otherChange": {
+            "type": "object",
+            "properties": {
+              "changeId": {
+                "type": "string",
+                "pattern": "^c-[1-9][0-9]{0,8}$",
+                "example": "c-157"
+              },
+              "intent": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "changeId",
+              "intent"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "parallel",
+              "sequenced"
+            ]
+          },
+          "landsFirst": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "otherChange",
+          "outcome",
+          "landsFirst",
+          "conflicts"
         ]
       },
       "WaitRequest": {
@@ -280,6 +354,22 @@
               "$ref": "#/components/schemas/Overlap"
             }
           },
+          "landsAfter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            }
+          },
+          "landsBefore": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            }
+          },
           "createdAt": {
             "type": "string"
           }
@@ -292,6 +382,8 @@
           "declaredPaths",
           "footprint",
           "overlaps",
+          "landsAfter",
+          "landsBefore",
           "createdAt"
         ]
       }

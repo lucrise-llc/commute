@@ -19,7 +19,24 @@ export const zOverlapFoundEvent = z.object({
     overlap: zOverlap
 });
 
-export const zChangeEvent = zOverlapFoundEvent;
+export const zMergeCheckedEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['merge_checked']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    otherChange: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string()
+    }),
+    outcome: z.enum(['parallel', 'sequenced']),
+    landsFirst: z.string().regex(/^c-[1-9][0-9]{0,8}$/).nullable(),
+    conflicts: z.array(z.string())
+});
+
+export const zChangeEvent = z.discriminatedUnion('type', [
+    zOverlapFoundEvent.extend({ type: z.literal('overlap_found') }),
+    zMergeCheckedEvent.extend({ type: z.literal('merge_checked') })
+]);
 
 export const zWaitRequest = z.object({
     after: z.int().gte(0)
@@ -70,6 +87,8 @@ export const zChange = z.object({
     declaredPaths: z.array(z.string()),
     footprint: z.array(z.string()),
     overlaps: z.array(zOverlap),
+    landsAfter: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
+    landsBefore: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
     createdAt: z.string()
 });
 

@@ -94,6 +94,11 @@ cd c-1 && git push && npx commute wait
 
 ## Architecture and conventions
 
+- Commute is a hosted platform: one deployment serves the projects of many teams. Scope state, names, and compute by
+  project, and share nothing across projects that holds a team's data or runs its code. The demo has no auth and no
+  tenant model; when they arrive, the tenant scopes the project ID, and the naming helpers in `worker/repos.ts` and
+  `worker/runner-pool.ts` are the places that change.
+
 - `apps/server/worker/index.ts` is the Worker entry. `worker/app.ts` builds the `OpenAPIHono` app. JSON routes are
   under `/api/*`. The Commute remote is under `/git/*`. Every other path serves the console build from
   `apps/console/dist`.
@@ -101,6 +106,9 @@ cd c-1 && git push && npx commute wait
   `apps/server`.
 - The coordinator owns the life of a change. Routes and the Commute remote call it through `c.env.COORDINATOR`, one
   Durable Object per project.
+- Merge checks run in `Runner` Durable Objects, two per project, each with a container from
+  `apps/server/runner/Dockerfile`. The image sets the command, and `start()` passes only `enableInternet`. The
+  coordinator queues checks and runs them from its alarm, never inside a request.
 - A change token never appears in a URL, an argument, or output. `commute start` writes it to `.git/commute/token`
   with mode 600, and a repo-local credential helper (`commute credential`) gives it to git for the Commute server
   only.
