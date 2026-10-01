@@ -153,7 +153,7 @@ change's intent. Neither Alice nor Bob has to tell the other.
 
 - Each change records its **owner**, the person who started it.
 - The console has a "Mine" filter for your own changes.
-- People sign in to the console with Cloudflare Access.
+- People type their name in the console. Sign-in comes after the demo.
 - Anyone on the team can approve a landing batch. Each landed commit records who
   approved it.
 
@@ -170,7 +170,7 @@ flowchart LR
     api --> coord["Durable Object<br/>coordinator per project"]
     coord --> runners["Containers<br/>runners for merges, checks, resolver"]
     coord -->|lands batches| trunk["Artifacts<br/>trunk"]
-    people["People"] -->|Cloudflare Access| api
+    people["People"] -->|browser| api
 ```
 
 | Part | What it does |
@@ -188,9 +188,11 @@ Agents need Git and two commands.
 $ commute start "Add tiered discounts to cart pricing" --paths src/cart/pricing.ts,config/discounts.json
 change   c-157
 remote   https://[commute-host]/git/storefront/c-157.git
-overlap  c-142 (alice) on src/cart/pricing.ts
+dir      c-157
+overlap  c-142 "Fix rounding in cart totals" on src/cart/pricing.ts (yours: src/cart/pricing.ts)
 plan     after c-142
 
+$ cd c-157
 $ git push
 $ commute wait
 resolved conflict with c-142 resolved with both intents, stored as r-23
