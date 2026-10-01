@@ -76,13 +76,15 @@ Two more problems came up often:
 | Owner | The person who started the change. It is stored with the change and as a git note. |
 | Footprint | The paths that a change touches. The agent declares them at the start. The coordinator measures them from tree diffs on every push. |
 | Trunk | The repository that changes land on. Only a landing writes to trunk. |
-| Overlap | Two changes in flight whose footprints meet. |
+| Overlap | Two changes in flight whose footprints meet. A path meets the same path and each of its parent directories. |
 | Sequence | An order that the coordinator sets between two changes that collide. |
 | Commute | Two changes commute when they merge cleanly in either order. |
 | Result | The outcome of a check. Its key is the hash of each subtree that the check reads, plus the version of the check. |
-| Resolution | How a conflict was resolved. Its key is the content of the conflict. |
+| Resolution | How a conflict was resolved. Its key is the hash of the conflict hunk: its base, ours, and theirs lines. |
 | Landing batch | A set of changes that commute with each other and with trunk. A person approves the batch. |
 | Coordinator | One per project. It holds the footprint index, the sequences, the result keys, and the landing queue. It sends every event. |
+| Commute remote | The Git address of a change. A Worker forwards Git traffic to the Artifacts repository of the change and tells the coordinator about each push. |
+| Runner | A container that runs merges, checks, and the resolver agent. Its image includes Git. |
 | Event | A message from the coordinator: overlap found, check done, restacked, resolved, or landed. |
 
 ## Principles
@@ -119,8 +121,8 @@ person passes overlap news to the other.
 `commute start` forks trunk into a new Artifacts repository for the change.
 
 - The command takes an intent and a list of paths (`--paths`).
-- The response has the change ID, the Git remote, and a write token that expires
-  in 60 minutes.
+- The response has the change ID, the Commute remote of the change, and a write
+  token that expires in 60 minutes.
 - The agent uses plain `git clone`, `git commit`, and `git push`.
 - The intent is stored as a git note on the first commit.
 
@@ -129,12 +131,20 @@ Git only. Two agents in parallel never share refs, stash, or index.
 
 #### D2. Coordinator and overlap check
 
-A Durable Object per project receives every push event from Artifacts.
+A Durable Object per project learns about every push from the Commute remote.
 
-- On each push, the coordinator computes the changed paths from tree diffs.
-- It updates the footprint index.
-- For each change in flight whose footprint meets the new footprint, it runs a
-  three-way merge in a Sandbox container.
+- The Commute remote forwards each push to Artifacts. When Artifacts accepts the
+  push, the remote sends the ref updates to the coordinator.
+- On each push, the coordinator computes the changed paths. It reads the trees
+  of both commits through the Artifacts Workers binding and follows only the
+  subtrees whose hashes differ. This step needs no container.
+- It updates the footprint index. A path in the index meets the same path and
+  each of its parent directories, so a file in one change and a directory with
+  the same name in another change overlap.
+- For each change in flight whose footprint meets the new footprint, it runs
+  `git merge-tree --write-tree` on the pair in a runner. One merge of the pair
+  gives the same result as both landing orders. A meeting footprint alone never
+  sets a sequence.
 - If the merge is clean, both changes stay parallel. If the merge has a
   conflict, the coordinator sets a sequence.
 - At `commute start`, the coordinator checks the declared paths against the
@@ -142,12 +152,15 @@ A Durable Object per project receives every push event from Artifacts.
 
 Acceptance: a pair of changes that touch the same file without a conflict stays
 parallel. A pair with a conflict gets a sequence, and both agents receive the
-intent of the other change.
+intent of the other change. A change that adds a file and a change that adds a
+directory at the same path get a sequence.
 
 #### D3. Events and `commute wait`
 
 - The coordinator sends events over a WebSocket: overlap found, check done,
   restacked, resolved, landed.
+- Push events come from the Commute remote, so the coordinator knows about a
+  push before `git push` returns.
 - `commute wait` blocks until the next event for the change arrives, then
   prints it.
 
@@ -157,9 +170,13 @@ Acceptance: no agent and no console view polls for status during the demo.
 
 - A project file declares each check: its name, its command, and the paths it
   reads.
-- Checks run in Sandbox containers.
+- Checks run in runners.
 - The key of a result is the hash of each subtree that the check reads, plus the
   check version.
+- One result store holds the results of every change in the project. A change
+  reuses a result that another change produced under the same key.
+- Each check declares the narrowest paths that it reads. A check that reads the
+  repository root runs again after every landing.
 - After a restack, the coordinator keeps every result whose key did not change.
   Only the other checks run again.
 - The console shows, for each check, the subtree hash before and after the
@@ -182,29 +199,63 @@ check runs again for a change whose subtrees did not move.
 
 #### D6. Resolver agent
 
-- When a restack produces a conflict, the coordinator starts a resolver agent.
+- When a restack produces a conflict, the coordinator starts a resolver agent
+  in a runner.
 - The resolver receives the conflicting hunk and the intent and notes of both
   changes.
 - The resolver commits a resolution. The checks for the affected subtrees run
   on the result.
-- The coordinator stores the resolution with the content of the conflict as its
-  key. When the same conflict occurs again, the stored resolution applies and
-  the resolver does not run.
+- The coordinator stores the resolution. Its key is the hash of the conflict
+  hunk: its base, ours, and theirs lines, read from the `git merge-tree` output.
+  When the same conflict occurs again, the stored resolution applies and the
+  resolver does not run. Git rerere is not used, because `git merge-tree` does
+  not apply it.
 
 Acceptance: a conflict between two changes is resolved without a person, the
 checks pass, and a second change that hits the same conflict reuses the stored
 resolution.
 
-#### D7. Console: Fleet and Overlap screens
+#### D7. Console: code, changes, the change page, and the overlap page
 
-- **Fleet** lists every change in flight with its agent, state, footprint,
-  checks, kept results, and what it waits for. A side panel shows the ready
-  batch with its approval action, the overlaps, and the event feed.
-- **Overlap** shows the two changes, their intents and footprints, the
-  conflicting hunk, the resolution, and the checks after the restack with
-  their subtree hashes.
+The console uses the page structure that people know from Git hosts, so nobody
+learns a new layout. Commute's ideas appear in the places where people expect
+a merge button, check results, or a timeline. A change is not called a pull
+request, because each change is its own repository.
 
-Acceptance: the operator can follow the whole demo from these two screens.
+- **Code** shows trunk at its last landing: the file tree, a file view, the
+  README, and the commit history. Each folder shows the changes in flight that
+  touch it. A selector switches between trunk and the repository of any change.
+- **Changes** lists every change: in flight, landed, and closed. Each row shows
+  the intent, the owner, the agent, the state, the checks kept and run, and what
+  the change waits for. A side panel shows the ready batch with its approval
+  action, the overlaps, and the event feed.
+- **Change page** has four tabs:
+  - Activity: the intent as the description, then a timeline of
+    coordinator events (push, overlap, sequence, restack, resolution, landing).
+    An overlap event links to the overlap page.
+  - Commits: the commits of the change since its base on trunk.
+  - Checks: each check with its result, whether it was kept or ran, and the
+    subtree hashes before and after the last restack.
+  - Files: the diff of the change against its current base on trunk.
+- A **landing box** at the end of the change page shows whether the change
+  commutes with the changes in flight, what it waits for, whether its results
+  match its current content, and its landing batch with the approval action.
+  The page has no action to update the base, because the coordinator restacks.
+- The **overlap page**, linked from the change pages of both changes, shows the
+  two changes side by side with their intents and footprints, the conflicting
+  hunk, the resolution with both intents, and the checks after the restack.
+- The console reads files, trees, and commits through the Artifacts Workers
+  binding. It gets the head of each ref from the coordinator, because the
+  binding cannot list refs or resolve the notes ref.
+- Pages update from the WebSocket of the coordinator. No page polls.
+- The console has its own visual style: a light theme with its own mark and
+  icons. It copies the page structure, not the branding of another product.
+  Colors come from CSS variables, so a dark theme needs no redesign.
+
+Acceptance: a person who knows a common Git host browses trunk, opens a change,
+reads its diff, sees why it waits, and approves its batch without help. The
+operator follows the whole demo from the Changes list, the change page, and the
+overlap page.
 
 #### D8. CLI
 
@@ -237,7 +288,7 @@ landings on every run.
   `--as <name>` or from the name in the CLI config.
 - The coordinator stores the owner with the change. The git note on the first
   commit includes the owner.
-- Fleet shows the owner of each change and has a "Mine" filter.
+- The Changes list shows the owner of each change and has a "Mine" filter.
 - The console runs behind Cloudflare Access. The console uses the email that
   Access gives for the person who signed in.
 - Any team member can approve a landing batch. The notes on each landed commit
@@ -282,42 +333,66 @@ required items are done early.
 
 | Part | Cloudflare product |
 |---|---|
-| API and console | Workers |
+| API, console, and the Commute remote | Workers |
 | Trunk and one repository per change | Artifacts |
 | Coordinator, one per project | Durable Objects |
-| Merges, checks, resolver agent | Sandbox containers |
-| Push events | Artifacts event subscriptions |
+| Runners for merges, checks, and the resolver agent | Containers, from an image that includes Git |
+| Push events | The Commute remote, after Artifacts accepts the push |
 | Console sign-in | Cloudflare Access |
+
+Commute does not use Artifacts event subscriptions for pushes. A push
+subscription covers one repository, so each change needs its own. In the PoC, a
+new subscription missed every push in its first 4.5 seconds and delivered its
+first event for a push 7.7 seconds after it was created. Its events arrived up
+to 7.4 seconds after the push. The event from the Commute remote arrived before
+`git push` returned. The data is in
+[poc/FINDINGS.md](poc/FINDINGS.md).
+
+The coordinator keeps a pool of runners. When a runner does not answer, the
+coordinator sends the job to another runner.
 
 The flow for one change:
 
-1. The agent runs `commute start`. The API forks trunk and returns a remote and
-   a token.
+1. The agent runs `commute start`. The API forks trunk and returns the Commute
+   remote and a token.
 2. The coordinator checks the declared paths against the footprint index.
-3. The agent pushes. Artifacts sends a push event to the coordinator.
-4. The coordinator updates the footprint and runs merge checks for overlapping
-   pairs.
+3. The agent pushes to the Commute remote. The remote forwards the push to
+   Artifacts and then tells the coordinator.
+4. The coordinator updates the footprint from tree reads and runs merge checks
+   in a runner for overlapping pairs.
 5. The coordinator runs the checks whose keys changed.
 6. The change joins a landing batch. The operator approves the batch.
 7. Changes in the batch land on trunk. The coordinator restacks every affected
    change and starts the resolver for each conflict.
 
-### Risks to settle first (October 1 to 2)
+### Risks settled on October 1
+
+The PoC in [poc/](poc/) measured each risk. [poc/FINDINGS.md](poc/FINDINGS.md)
+has the data and the commands.
+
+| Risk | Result | Consequence |
+|---|---|---|
+| Account | Artifacts is enabled on the account. | None. |
+| Containers | The managed image boots in under 0.1 s but has no Git. Installing Git takes 10 to 36 s. A snapshot with Git boots in 0.6 to 3.9 s. `git merge-tree` takes 10 to 19 ms. One container id stopped answering. | Runners use an image that includes Git. The coordinator keeps a pool of runners. |
+| Artifacts | A fork takes 2.6 to 4.5 s, and five forks at once take 5 s. Tree reads return the hash of each child. Forks keep git notes. | The coordinator computes footprints without a container. |
+| Push events | Event subscriptions cover one repository each and arrive 0.3 to 7.4 s after a push. The Commute remote event arrives before `git push` returns. | Push events come from the Commute remote. |
+
+### Open risks
 
 | Risk | What we measure | Fallback |
 |---|---|---|
-| Sandbox containers | Git is available, cold start time, `git merge-tree` works, a test suite runs | isomorphic-git merges in a Worker, and a demo repository with small checks |
-| Artifacts | Fork time, push event delay, whether tree reads return child hashes | Read subtree hashes with `git rev-parse` in the Sandbox |
-| Account | Workers Paid plan with Artifacts enabled | None. This blocks the build. |
+| One coordinator with 100,000 changes in flight | Overlap lookup time and landings per minute (D9) | Split the footprint index by top-level path |
+| Large pushes through the Commute remote | Push time for a large pack, with the body streamed | A size limit for pushes in the demo |
+| Runner image with Git | Build time and cold start of a custom image | A snapshot with Git |
 
 ### Schedule
 
 | Dates | Work |
 |---|---|
-| October 1 to 2 | Open decisions and the risks above |
+| October 1 to 2 | Open decisions and the open risks above |
 | October 3 to 6 | D1, D2, D3, D8 |
-| October 7 to 9 | D4, D5 |
-| October 10 to 11 | D6, D7, D11 |
+| October 7 to 9 | D4, D5, and the Code view of D7 |
+| October 10 to 11 | D6, the Changes list and the change page of D7, D11 |
 | October 12 | D9, D10, and a full rehearsal |
 | October 13 | Record the video, write the README run steps and the LICENSE, submit |
 | October 14 | Spare day. Submissions close at 11:59 PM PDT. |
@@ -333,7 +408,9 @@ These features complete the product. They are not part of the demo.
 - **Stack as one gate.** Run the checks for a stack once, on the top change.
   Show each layer as an interdiff for review. Land the whole stack atomically.
 - **Semantic conflict rules.** Detect conflicts that Git cannot see, such as two
-  database migrations in the wrong order, a generated file, or a lockfile.
+  database migrations in the wrong order, a generated file, or a lockfile. One
+  approach: before a batch lands, run the checks whose keys change on the
+  merged tree of the batch.
 - **Operator overrides.** Let the operator swap the order of a sequence or ask
   two agents to split a shared file.
 - **Shared resolution memory.** Share stored resolutions across projects that
@@ -362,8 +439,9 @@ These features complete the product. They are not part of the demo.
 - **Overlap prediction.** Predict the footprint from the intent and the code it
   names, so declared paths become optional.
 - **MCP server.** Expose `start`, `wait`, `context`, and `note` as MCP tools.
-- **Agent identity.** Each session has its own identity and a token with the
-  least access it needs.
+- **Agent identity.** Each session has its own identity and a Commute token
+  with the least access it needs. The Commute remote checks the Commute token
+  and holds the Artifacts token.
 - **Fleet presence.** Show which files each agent is working on now and what it
   waits for.
 - **Notifications for people.** Send a message to a person only when a decision
@@ -371,10 +449,12 @@ These features complete the product. They are not part of the demo.
 
 ### Console
 
-- Change detail page: intent, notes, diff, results, findings, timeline.
+- Changes since the last review on the change page, after a restack.
+- Comments on lines of the diff, from people and reviewer agents.
 - Landing page: next batch, batches that form, landing history.
 - Trunk history with the batch and the resolution behind each commit.
 - Search across changes, intents, and paths.
+- A dark theme.
 
 ### Scale and platform
 
@@ -385,6 +465,9 @@ These features complete the product. They are not part of the demo.
   agent from a cached dependency snapshot.
 - **Check runners.** Run heavier check suites, including suites that need
   databases and other services.
+- **No tokens in runners.** The coordinator adds the Artifacts credentials to
+  the Git traffic of a runner at the network boundary, so runners hold no
+  tokens.
 - **Data location.** Let a project choose the jurisdiction of its repositories.
 
 ### Teams

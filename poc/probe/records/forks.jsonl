@@ -1,0 +1,7 @@
+{"name":"c1","allBranches":false,"roundTripMs":5705,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c1.git","getMs":513,"forkMs":4533,"readyMs":45,"readyPolls":1,"readyErrors":[]}
+{"name":"c2","allBranches":true,"roundTripMs":3463,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c2.git","getMs":40,"forkMs":2849,"readyMs":47,"readyPolls":1,"readyErrors":[]}
+{"name":"c3","allBranches":false,"roundTripMs":3556,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c3.git","getMs":208,"forkMs":2570,"readyMs":29,"readyPolls":1,"readyErrors":[]}
+{"name":"c4","allBranches":false,"roundTripMs":3577,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c4.git","getMs":46,"forkMs":2745,"readyMs":51,"readyPolls":1,"readyErrors":[]}
+{"name":"c5","allBranches":false,"roundTripMs":4054,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c5.git","getMs":54,"forkMs":3231,"readyMs":33,"readyPolls":1,"readyErrors":[]}
+{"name":"c7","allBranches":false,"roundTripMs":4063,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c7.git","getMs":35,"forkMs":3235,"readyMs":31,"readyPolls":1,"readyErrors":[]}
+{"name":"c6","allBranches":false,"roundTripMs":4084,"remote":"https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-poc/c6.git","getMs":262,"forkMs":3001,"readyMs":66,"readyPolls":1,"readyErrors":[]}
