@@ -36,7 +36,9 @@ agent fixes a text conflict in about a minute. The cost moves to other places:
 ![Each change is a fork of trunk with its own repository, refs, and token](docs/img/repo-per-change.svg)
 
 `commute start` forks trunk into a new repository for the change. The agent
-gets a Git remote and a write token that expires after 60 minutes. Agents never
+gets a Commute remote and a write token that expires after 60 minutes. The
+Commute remote forwards Git traffic to the repository of the change, so the
+coordinator sees each push as it happens. Agents never
 share refs, a stash, or an index, so one agent cannot damage another agent's
 work. Agents use plain `git clone`, `git commit`, and `git push`.
 
@@ -126,14 +128,14 @@ sequenceDiagram
     participant A as Agent
     participant C as Commute
     participant K as Coordinator
-    participant S as Sandbox
+    participant S as Runner
     participant P as Person
     A->>C: commute start "intent" --paths src/cart/pricing.ts
     C->>C: Fork trunk into a new repository
     C->>K: Register the intent and the footprint
     K-->>A: Overlaps and a plan: parallel, or after another change
     A->>C: git push
-    C-->>K: Push event
+    C-->>K: Push, before git push returns
     K->>S: Merge check, only for overlapping changes
     K->>S: Run the checks whose keys changed
     K-->>A: Event: checks done (commute wait)
@@ -161,21 +163,22 @@ Commute runs on Cloudflare.
 
 ```mermaid
 flowchart LR
-    agents["Agents<br/>(plain git + CLI)"] -->|git push| repos["Artifacts<br/>one repository per change"]
+    agents["Agents<br/>(plain git + CLI)"] -->|git push| remote["Workers<br/>Commute remote"]
+    remote -->|forwards Git traffic| repos["Artifacts<br/>one repository per change"]
+    remote -->|push| coord
     agents -->|commute start, commute wait| api["Workers<br/>API and console"]
     api --> coord["Durable Object<br/>coordinator per project"]
-    repos -->|push events| coord
-    coord --> sandbox["Sandbox containers<br/>merges, checks, resolver"]
+    coord --> runners["Containers<br/>runners for merges, checks, resolver"]
     coord -->|lands batches| trunk["Artifacts<br/>trunk"]
     people["People"] -->|Cloudflare Access| api
 ```
 
 | Part | What it does |
 |---|---|
-| Artifacts | Holds trunk and one repository per change. It forks trunk for each change and sends an event on each push. |
+| Artifacts | Holds trunk and one repository per change. It forks trunk for each change. |
 | Durable Objects | Hold one coordinator per project: the footprint index, the order between changes, the result keys, and the landing queue. |
-| Sandbox containers | Run the three-way merges, the checks, and the resolver agent. |
-| Workers | Serve the API, the console, and the events that agents wait for. |
+| Containers | Run the merge checks, the checks, and the resolver agent, from an image that includes Git. |
+| Workers | Serve the API, the console, the Commute remote, and the events that agents wait for. |
 
 ## Using it
 
@@ -184,7 +187,7 @@ Agents need Git and two commands.
 ```console
 $ commute start "Add tiered discounts to cart pricing" --paths src/cart/pricing.ts,config/discounts.json
 change   c-157
-remote   https://[account].artifacts.cloudflare.net/git/storefront/c-157.git
+remote   https://[commute-host]/git/storefront/c-157.git
 overlap  c-142 (alice) on src/cart/pricing.ts
 plan     after c-142
 
