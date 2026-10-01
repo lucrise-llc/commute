@@ -58,7 +58,7 @@ export const zChangeStarted = z.object({
 });
 
 export const zStartChangeBody = z.object({
-    intent: z.string().min(1).max(500),
+    intent: z.string().min(1).max(500).regex(/^[^\p{Cc}]+$\/u/u),
     paths: z.array(z.string().min(1).max(512)).min(1).max(100)
 });
 

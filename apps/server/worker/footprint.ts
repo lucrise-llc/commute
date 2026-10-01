@@ -1,6 +1,8 @@
 const TREE_READS_MAX = 2_000;
 const FOOTPRINT_PATHS_MAX = 1_000;
 const TREE_READS_PER_STEP = 2;
+const TREE_ENTRIES_MAX = 20_000;
+const CONTROL_CHARACTER = /\p{Cc}/u;
 
 export type MeetingPair = {
   path: string;
@@ -8,7 +10,7 @@ export type MeetingPair = {
 };
 
 export function isCanonicalPath(path: string): boolean {
-  if (path.startsWith('/') || path.endsWith('/') || path.includes('\0')) {
+  if (path.startsWith('/') || path.endsWith('/') || CONTROL_CHARACTER.test(path)) {
     return false;
   }
   return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
@@ -72,6 +74,9 @@ export async function diffCommits({ repo, fromCommit, toCommit }: DiffParams): P
     const [fromEntries, toEntries] = await Promise.all([repo.readTree(next.fromTree), repo.readTree(next.toTree)]);
     if (fromEntries === null || toEntries === null) {
       throw new Error('TREE_NOT_FOUND');
+    }
+    if (fromEntries.length + toEntries.length > TREE_ENTRIES_MAX) {
+      throw new Error('FOOTPRINT_TOO_LARGE');
     }
     const fromByName = new Map(fromEntries.map((entry) => [entry.name, entry]));
     const toByName = new Map(toEntries.map((entry) => [entry.name, entry]));

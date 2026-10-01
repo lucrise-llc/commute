@@ -14,6 +14,7 @@ const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
 const READY_POLL_INTERVAL_MS = 100;
 const EVENTS_REPLAY_MAX = 100;
+const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
 const WEBSOCKET_POLICY_VIOLATION = 1_008;
 const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8})\/events$/;
@@ -209,7 +210,8 @@ export class Coordinator extends DurableObject<Env> {
   }
 
   // A waiting client sends {"after": <seq>} once it is connected. The coordinator replays the events it missed, and
-  // later events arrive as they happen.
+  // later events arrive as they happen. A socket gets live events only after its replay, so an older event cannot
+  // arrive after a newer one.
   override webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): void {
     const [changeId] = this.ctx.getTags(socket);
     const request = waitRequestSchema.safeParse(typeof message === 'string' ? parseJson(message) : null);
@@ -226,6 +228,7 @@ export class Coordinator extends DurableObject<Env> {
     for (const row of rows) {
       socket.send(JSON.stringify(eventFrom(row)));
     }
+    socket.serializeAttachment(SOCKET_REPLAYED);
   }
 
   // A client closes the stream once it has its event. The close handshake needs the server's reply, or the client
@@ -396,7 +399,9 @@ export class Coordinator extends DurableObject<Env> {
       .one();
     const message = JSON.stringify(eventFrom(row));
     for (const socket of this.ctx.getWebSockets(changeId)) {
-      socket.send(message);
+      if (socket.deserializeAttachment() === SOCKET_REPLAYED) {
+        socket.send(message);
+      }
     }
   }
 
@@ -434,7 +439,7 @@ export class Coordinator extends DurableObject<Env> {
     const rows = this.sql.exec<FootprintRow>(
       `SELECT DISTINCT footprint.change_id, change.intent, footprint.path
        FROM footprint JOIN change ON change.id = footprint.change_id
-       WHERE footprint.change_id != ? AND change.state IN ('starting', 'open')
+       WHERE footprint.change_id != ? AND change.state = 'open'
        ORDER BY footprint.change_id, footprint.path`,
       changeId
     );

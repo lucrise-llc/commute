@@ -102,7 +102,8 @@ cd c-1 && git push && npx commute wait
 - The coordinator owns the life of a change. Routes and the Commute remote call it through `c.env.COORDINATOR`, one
   Durable Object per project.
 - A change token never appears in a URL, an argument, or output. `commute start` writes it to `.git/commute/token`
-  with mode 600, and a repo-local credential helper (`commute credential`) gives it to git.
+  with mode 600, and a repo-local credential helper (`commute credential`) gives it to git for the Commute server
+  only.
 - Each JSON route lives in `worker/routes/<name>.ts`. The file exports `<name>Route` from `createRoute` and
   `<name>Handler`, and `worker/app.ts` registers the pair. Each route sets an `operationId` that starts with a verb
   (`getHealth`, `listChanges`, `startChange`). The generated client names its functions after it.

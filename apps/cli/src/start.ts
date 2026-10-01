@@ -88,14 +88,10 @@ async function createWorkingCopy({ directory, change, server }: WorkingCopyParam
   await writeFile(tokenFile, `${change.token}\n`, { mode: PRIVATE_FILE_MODE });
   await chmod(tokenFile, PRIVATE_FILE_MODE);
 
-  await git({ args: ['config', '--add', 'credential.helper', ''], cwd: directory });
+  const helperKey = `credential.${new URL(change.remote).origin}.helper`;
+  await git({ args: ['config', '--add', helperKey, ''], cwd: directory });
   await git({
-    args: [
-      'config',
-      '--add',
-      'credential.helper',
-      `!${shellQuote(process.execPath)} ${shellQuote(CLI_PATH)} credential`
-    ],
+    args: ['config', '--add', helperKey, `!${shellQuote(process.execPath)} ${shellQuote(CLI_PATH)} credential`],
     cwd: directory
   });
   await writeChangeContext({

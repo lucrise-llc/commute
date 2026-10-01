@@ -8,6 +8,7 @@ const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const INTENT_LENGTH_MAX = 500;
 const DECLARED_PATHS_MAX = 100;
 const REPO_PATH_LENGTH_MAX = 512;
+const NO_CONTROL_CHARACTERS = /^[^\p{Cc}]+$/u;
 
 export const projectIdSchema = z.string().regex(PROJECT_ID_PATTERN).openapi({ example: 'storefront' });
 
@@ -19,7 +20,10 @@ const repoPathSchema = z
   .string()
   .min(1)
   .max(REPO_PATH_LENGTH_MAX)
-  .refine(isCanonicalPath, 'A path is relative, separates segments with /, and has no empty, . or .. segment.')
+  .refine(
+    isCanonicalPath,
+    'A path is relative, separates segments with /, and has no empty, . or .. segment or control character.'
+  )
   .openapi({ example: 'src/cart/pricing.ts' });
 
 export const errorSchema = z
@@ -53,7 +57,11 @@ export const projectCreatedSchema = z
 
 export const startChangeBodySchema = z
   .object({
-    intent: z.string().min(1).max(INTENT_LENGTH_MAX),
+    intent: z
+      .string()
+      .min(1)
+      .max(INTENT_LENGTH_MAX)
+      .regex(NO_CONTROL_CHARACTERS, 'An intent has no line breaks or control characters.'),
     paths: z
       .array(repoPathSchema)
       .min(1)
