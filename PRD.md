@@ -215,7 +215,7 @@ Acceptance: a conflict between two changes is resolved without a person, the
 checks pass, and a second change that hits the same conflict reuses the stored
 resolution.
 
-#### D7. Console: code, changes, and the change page
+#### D7. Console: code, changes, the change page, and the overlap page
 
 The console uses the page structure that people know from Git hosts, so nobody
 learns a new layout. Commute's ideas appear in the places where people expect
@@ -232,8 +232,7 @@ request, because each change is its own repository.
 - **Change page** has four tabs:
   - Activity: the intent as the description, then a timeline of
     coordinator events (push, overlap, sequence, restack, resolution, landing).
-    An overlap shows both changes, their intents and footprints, the
-    conflicting hunk, and the resolution.
+    An overlap event links to the overlap page.
   - Commits: the commits of the change since its base on trunk.
   - Checks: each check with its result, whether it was kept or ran, and the
     subtree hashes before and after the last restack.
@@ -242,16 +241,21 @@ request, because each change is its own repository.
   commutes with the changes in flight, what it waits for, whether its results
   match its current content, and its landing batch with the approval action.
   The page has no action to update the base, because the coordinator restacks.
+- The **overlap page**, linked from the change pages of both changes, shows the
+  two changes side by side with their intents and footprints, the conflicting
+  hunk, the resolution with both intents, and the checks after the restack.
 - The console reads files, trees, and commits through the Artifacts Workers
   binding. It gets the head of each ref from the coordinator, because the
   binding cannot list refs or resolve the notes ref.
 - Pages update from the WebSocket of the coordinator. No page polls.
-- The console has its own visual style. It copies the page structure, not the
-  branding of another product.
+- The console has its own visual style: a light theme with its own mark and
+  icons. It copies the page structure, not the branding of another product.
+  Colors come from CSS variables, so a dark theme needs no redesign.
 
 Acceptance: a person who knows a common Git host browses trunk, opens a change,
 reads its diff, sees why it waits, and approves its batch without help. The
-operator follows the whole demo from the Changes list and the change page.
+operator follows the whole demo from the Changes list, the change page, and the
+overlap page.
 
 #### D8. CLI
 
@@ -450,6 +454,7 @@ These features complete the product. They are not part of the demo.
 - Landing page: next batch, batches that form, landing history.
 - Trunk history with the batch and the resolution behind each commit.
 - Search across changes, intents, and paths.
+- A dark theme.
 
 ### Scale and platform
 
