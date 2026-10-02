@@ -71,7 +71,7 @@ type ForkedChange = {
 };
 
 // A change with commits of its own: the only kind a merge check compares.
-export type RefHead = {
+type RefHead = {
   repoName: string;
   head: string;
   base: string | null;
