@@ -22,7 +22,7 @@ const CLI_PATH = fileURLToPath(new URL('../../cli/src/main.ts', import.meta.url)
 const STEP_TIMEOUT_MS = 900_000;
 const ID_RADIX = 36;
 const NAME_WIDTH = 8;
-const START_CONCURRENCY = 5;
+const START_CONCURRENCY = 3;
 const START_STAGGER_MS = 200;
 const WAIT_TIMEOUT_SECONDS = '900';
 const CHANGE_LINE = /^change\s+(c-\d+)$/m;
@@ -48,7 +48,7 @@ const events = await followEvents();
 step('Alice and Bob start 20 agents; each agent edits, commits, and pushes as soon as it starts');
 const changeIds = new Map<string, string>();
 const agentRuns: Array<Promise<void>> = [];
-// Five starts run at a time, sent in the order of AGENTS and a little apart. The coordinator numbers a change when its
+// Three starts run at a time, sent in the order of AGENTS and a little apart. The coordinator numbers a change when its
 // start arrives, so alice-2 gets a lower number than alice-5, and alice-3 a lower number than bob-2.
 const starting = new Set<Promise<void>>();
 for (const agent of AGENTS) {
