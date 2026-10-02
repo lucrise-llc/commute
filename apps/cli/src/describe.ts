@@ -30,6 +30,10 @@ export function describeEvent(event: ChangeEvent): string {
     case 'restack_conflict': {
       return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}`;
     }
+    case 'checks_done': {
+      const failed = event.failed.length === 0 ? 'none failed' : `failed: ${event.failed.join(', ')}`;
+      return `checks   ${event.kept} kept, ${event.ran} ran; ${failed}`;
+    }
     case 'landing_failed': {
       return `landing  batch ${event.batchId} did not land; the change is open again`;
     }

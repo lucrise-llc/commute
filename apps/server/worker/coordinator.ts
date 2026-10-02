@@ -6,8 +6,8 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
 import type { ChangeRef, IssuedToken } from './repos';
 import type { Change, ChangeEvent, Landing, Overlap, WaitReason } from './schemas';
-import type { ChangeRecord, EventRecord, JobRecord, ProjectRecord } from './db/project-store';
-import type { LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
+import type { CheckRun, LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
+import type { ChangeCheckRecord, ChangeRecord, EventRecord, JobRecord, ProjectRecord } from './db/project-store';
 
 import { log, logError } from './log';
 import { onRunnerPool } from './runner-pool';
@@ -15,13 +15,17 @@ import migrations from '../drizzle/migrations';
 import { ProjectStore } from './db/project-store';
 import { HEAD_MOVED, LAND_CONFLICT } from './runner';
 import { diffCommits, meetingPairs } from './footprint';
+import { resultKey, subtreeHashes } from './check-keys';
 import { artifactsErrorCode, errorCodeOf } from './errors';
 import { changeEventSchema, waitRequestSchema } from './schemas';
+import { PROJECT_FILE_PATH, readProjectFile } from './project-file';
 import { changeRepoName, issueAgentToken, issueJobToken } from './repos';
 
 const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
 const READY_POLL_INTERVAL_MS = 100;
+const FORK_ATTEMPTS_MAX = 3;
+const FORK_RETRY_DELAY_MS = 500;
 const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
@@ -102,6 +106,12 @@ type EventPayload =
       conflicts: string[];
     }
   | {
+      type: 'checks_done';
+      kept: number;
+      ran: number;
+      failed: string[];
+    }
+  | {
       type: 'landing_failed';
       batchId: string;
     };
@@ -170,6 +180,16 @@ type MergeJobParams = {
 
 type RestackJobParams = ChangeRef & {
   jobKey: string;
+};
+
+type CheckJobParams = ChangeRef & {
+  jobKey: string;
+  name: string;
+};
+
+type EvaluateChecksParams = ChangeRef & {
+  repo: ArtifactsRepo;
+  head: string;
 };
 
 type LandJobParams = {
@@ -266,6 +286,7 @@ export class Coordinator extends DurableObject<Env> {
       overlaps: change.state === 'landed' ? [] : this.currentOverlaps(changeId),
       ...this.landingOrder(changeId),
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
+      checks: this.store.changeChecks(changeId).map((check) => this.checkView(check)),
       batchId: change.batchId,
       landedCommit: change.landedCommit,
       createdAt: change.createdAt
@@ -414,6 +435,12 @@ export class Coordinator extends DurableObject<Env> {
     if (job.kind === 'restack') {
       return this.runRestackJob({ projectId, jobKey: job.key, changeId: job.target });
     }
+    if (job.kind === 'check') {
+      if (job.partner === null) {
+        throw new Error(`Check job ${job.key} has no check name.`);
+      }
+      return this.runCheckJob({ projectId, jobKey: job.key, changeId: job.target, name: job.partner });
+    }
     return this.runLandJob({ projectId, jobKey: job.key, batchId: job.target });
   }
 
@@ -444,7 +471,26 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  private async forkTrunk({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
+  // Artifacts sometimes answers a fork with INTERNAL_ERROR (twice in about 50 forks during verification), so a fork
+  // that fails that way runs again on a clean name.
+  private async forkTrunk(change: ChangeRef): Promise<ForkedChange> {
+    for (let attempt = 1; attempt <= FORK_ATTEMPTS_MAX; attempt += 1) {
+      try {
+        return await this.forkTrunkOnce(change);
+      } catch (error) {
+        const code = artifactsErrorCode(error);
+        if (attempt === FORK_ATTEMPTS_MAX || (code !== 'INTERNAL_ERROR' && code !== 'UPSTREAM_UNAVAILABLE')) {
+          throw error;
+        }
+        logError({ event: 'fork_retry', ...change, attempt, error });
+        await this.env.ARTIFACTS.delete(changeRepoName(change));
+        await scheduler.wait(FORK_RETRY_DELAY_MS * attempt);
+      }
+    }
+    throw new Error(`Fork of ${change.changeId} failed ${FORK_ATTEMPTS_MAX} times.`);
+  }
+
+  private async forkTrunkOnce({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
     const repoName = changeRepoName({ projectId, changeId });
     using trunk = await this.env.ARTIFACTS.get(projectId);
     const forked = await trunk.fork(repoName, { defaultBranchOnly: true });
@@ -493,6 +539,7 @@ export class Coordinator extends DurableObject<Env> {
     this.store.setHead({ changeId, commit: head.hash });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
+    await this.evaluateChecks({ projectId, changeId, repo, head: head.hash });
     log({
       event: 'push_recorded',
       projectId,
@@ -794,7 +841,143 @@ export class Coordinator extends DurableObject<Env> {
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
     this.emit({ changeId, payload: { type: 'restacked', trunkCommit: trunkHead, headCommit: result.headCommit } });
+    await this.evaluateChecks({ projectId, changeId, repo, head: result.headCommit });
     log({ event: 'change_restacked', projectId, changeId, outcome: result.outcome, trunkHead });
+  }
+
+  // Reads the checks that the head declares in commute.json and keys each one to the subtrees it reads. A key with a
+  // result is kept; a key without one queues a run. A project file that does not parse fails as a check named after it.
+  private async evaluateChecks({ projectId, changeId, repo, head }: EvaluateChecksParams): Promise<void> {
+    const projectFile = await readProjectFile({ repo, commit: head });
+    const previous = new Map(this.store.changeChecks(changeId).map((check) => [check.name, check]));
+    const checks: ChangeCheckRecord[] = [];
+    if (!projectFile.isValid) {
+      const key = `project-file:${head}`;
+      this.store.saveCheckResult({
+        key,
+        name: PROJECT_FILE_PATH,
+        outcome: 'fail',
+        exitCode: 1,
+        output: projectFile.error,
+        ranFor: changeId,
+        ranAt: new Date().toISOString()
+      });
+      checks.push({
+        changeId,
+        name: PROJECT_FILE_PATH,
+        head,
+        key,
+        command: '',
+        reads: {},
+        previousReads: null,
+        kept: false,
+        outcome: 'fail'
+      });
+    }
+    for (const declaration of projectFile.isValid ? projectFile.checks : []) {
+      const reads = await subtreeHashes({ repo, commit: head, paths: declaration.reads });
+      const key = await resultKey({ check: declaration, hashes: reads });
+      const result = this.store.findCheckResult(key);
+      const before = previous.get(declaration.name);
+      checks.push({
+        changeId,
+        name: declaration.name,
+        head,
+        key,
+        command: declaration.command,
+        reads,
+        previousReads: before === undefined || before.head === head ? (before?.previousReads ?? null) : before.reads,
+        kept: result !== null,
+        outcome: result?.outcome ?? 'pending'
+      });
+    }
+    this.store.replaceChangeChecks({ changeId, checks });
+
+    const pending = checks.filter((check) => check.outcome === 'pending');
+    for (const check of pending) {
+      this.store.queueJob({ kind: 'check', target: changeId, partner: check.name, runAfter: Date.now() });
+    }
+    if (pending.length > 0) {
+      await this.ctx.storage.setAlarm(Date.now());
+    } else if (checks.length > 0) {
+      this.announceChecks(changeId);
+    }
+    log({ event: 'checks_evaluated', projectId, changeId, head, checks: checks.length, pending: pending.length });
+  }
+
+  private async runCheckJob({ projectId, jobKey, changeId, name }: CheckJobParams): Promise<JobOutcome> {
+    const check = this.store.findChangeCheck({ changeId, name });
+    const change = this.store.findChange(changeId);
+    if (check?.outcome !== 'pending' || change?.headCommit !== check.head) {
+      return 'done';
+    }
+    if (this.store.findCheckResult(check.key) === null) {
+      let run: CheckRun;
+      try {
+        const side = await this.repoSide({
+          repoName: changeRepoName({ projectId, changeId }),
+          head: check.head,
+          scope: 'read'
+        });
+        run = await onRunnerPool({
+          env: this.env,
+          projectId,
+          jobKey,
+          task: (runner) => runner.runCheck({ change: side, command: check.command })
+        });
+      } catch (error) {
+        if (isError(error, HEAD_MOVED)) {
+          await this.recordPush({ projectId, changeId });
+          return 'again';
+        }
+        throw error;
+      }
+      this.store.saveCheckResult({
+        key: check.key,
+        name,
+        outcome: run.exitCode === 0 ? 'pass' : 'fail',
+        exitCode: run.exitCode,
+        output: run.output,
+        ranFor: changeId,
+        ranAt: new Date().toISOString()
+      });
+      log({ event: 'check_ran', projectId, changeId, name, exitCode: run.exitCode });
+    }
+    const result = this.store.findCheckResult(check.key);
+    if (result !== null) {
+      for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome })) {
+        if (this.store.changeChecks(waitingChangeId).every((waiting) => waiting.outcome !== 'pending')) {
+          this.announceChecks(waitingChangeId);
+        }
+      }
+    }
+    return 'done';
+  }
+
+  private announceChecks(changeId: string): void {
+    const checks = this.store.changeChecks(changeId);
+    this.emit({
+      changeId,
+      payload: {
+        type: 'checks_done',
+        kept: checks.filter((check) => check.kept).length,
+        ran: checks.filter((check) => !check.kept).length,
+        failed: checks.filter((check) => check.outcome === 'fail').map((check) => check.name)
+      }
+    });
+  }
+
+  private checkView(check: ChangeCheckRecord): Change['checks'][number] {
+    const result = check.outcome === 'pending' ? null : this.store.findCheckResult(check.key);
+    return {
+      name: check.name,
+      outcome: check.outcome,
+      kept: check.kept,
+      reads: check.reads,
+      previousReads: check.previousReads,
+      exitCode: result?.exitCode ?? null,
+      output: result?.output ?? null
+    };
   }
 
   // Why a change is not in the next batch. An empty list means the change is ready.
@@ -813,6 +996,12 @@ export class Coordinator extends DurableObject<Env> {
       return [{ code: 'RESTACKING', changeIds: [] }];
     }
     const reasons: WaitReason[] = [];
+    const checks = this.store.changeChecks(change.id);
+    if (checks.some((check) => check.head !== change.headCommit || check.outcome === 'pending')) {
+      reasons.push({ code: 'CHECKS', changeIds: [] });
+    } else if (checks.some((check) => check.outcome === 'fail')) {
+      reasons.push({ code: 'CHECKS_FAILED', changeIds: [] });
+    }
     const { landsAfter } = this.landingOrder(change.id);
     if (landsAfter.length > 0) {
       reasons.push({ code: 'LANDS_AFTER', changeIds: landsAfter });

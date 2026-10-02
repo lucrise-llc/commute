@@ -15,6 +15,8 @@ export type ChangeEvent = ({
 } & RestackedEvent) | ({
     type: 'restack_conflict';
 } & RestackConflictEvent) | ({
+    type: 'checks_done';
+} & ChecksDoneEvent) | ({
     type: 'landing_failed';
 } & LandingFailedEvent);
 
@@ -75,6 +77,16 @@ export type RestackConflictEvent = {
     at: string;
     trunkCommit: string;
     conflicts: Array<string>;
+};
+
+export type ChecksDoneEvent = {
+    seq: number;
+    type: 'checks_done';
+    changeId: string;
+    at: string;
+    kept: number;
+    ran: number;
+    failed: Array<string>;
 };
 
 export type LandingFailedEvent = {
@@ -140,14 +152,29 @@ export type Change = {
     landsAfter: Array<string>;
     landsBefore: Array<string>;
     waitsFor: Array<WaitReason>;
+    checks: Array<ChangeCheck>;
     batchId: string | null;
     landedCommit: string | null;
     createdAt: string;
 };
 
 export type WaitReason = {
-    code: 'NO_COMMITS' | 'RESTACKING' | 'RESTACK_CONFLICT' | 'LANDS_AFTER' | 'CHECKING' | 'LANDING';
+    code: 'NO_COMMITS' | 'RESTACKING' | 'RESTACK_CONFLICT' | 'LANDS_AFTER' | 'CHECKING' | 'CHECKS' | 'CHECKS_FAILED' | 'LANDING';
     changeIds: Array<string>;
+};
+
+export type ChangeCheck = {
+    name: string;
+    outcome: 'pending' | 'pass' | 'fail';
+    kept: boolean;
+    reads: {
+        [key: string]: string;
+    };
+    previousReads: {
+        [key: string]: string;
+    } | null;
+    exitCode: number | null;
+    output: string | null;
 };
 
 export type Landing = {

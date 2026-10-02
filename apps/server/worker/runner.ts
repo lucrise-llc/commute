@@ -81,6 +81,23 @@ timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/h
 echo "restacked $commit"
 `;
 
+// Checks out a change at its head and runs one check command there. The command does not see the fetch credentials.
+const CHECK_SCRIPT = `${PRELUDE}
+fetch_head "$CHANGE_TOKEN" "$CHANGE_REMOTE" refs/change "$CHANGE_HEAD"
+git checkout -q --detach refs/change || exit 3
+unset CHANGE_TOKEN CHANGE_REMOTE
+output=$(mktemp)
+timeout "$CHECK_TIMEOUT_SECONDS" bash -c "$CHECK_COMMAND" > "$output" 2>&1
+status=$?
+tail -c "$CHECK_OUTPUT_BYTES" "$output"
+rm -f "$output"
+printf '\ncommute-check-exit %s\n' "$status"
+`;
+
+const CHECK_TIMEOUT_SECONDS = 90;
+const CHECK_OUTPUT_BYTES = 2_000;
+const CHECK_EXIT_PREFIX = 'commute-check-exit ';
+
 export type RepoHead = {
   remote: string;
   token: string;
@@ -125,6 +142,16 @@ export type RestackResult = {
   outcome: 'restacked' | 'fast_forward' | 'up_to_date' | 'conflict';
   headCommit: string | null;
   conflicts: string[];
+};
+
+export type CheckRun = {
+  exitCode: number;
+  output: string;
+};
+
+type RunCheckParams = {
+  change: RepoHead;
+  command: string;
 };
 
 type MergeCheckParams = {
@@ -228,6 +255,30 @@ export class Runner extends DurableObject<Env> {
       return { outcome, headCommit, conflicts: [] };
     }
     throw new Error(`The restack script ended without a result: ${outputLines.at(-1) ?? 'no output'}`);
+  }
+
+  async runCheck({ change, command }: RunCheckParams): Promise<CheckRun> {
+    const output = await this.run({
+      script: CHECK_SCRIPT,
+      env: {
+        ...sideEnv({ prefix: 'CHANGE', side: change }),
+        CHECK_COMMAND: command,
+        CHECK_TIMEOUT_SECONDS: String(CHECK_TIMEOUT_SECONDS),
+        CHECK_OUTPUT_BYTES: String(CHECK_OUTPUT_BYTES)
+      },
+      secrets: [change.token]
+    });
+    if (output.exitCode !== EXIT_CODE_DONE) {
+      throw scriptError(output);
+    }
+    const exitLine = output.stdout.lastIndexOf(CHECK_EXIT_PREFIX);
+    if (exitLine === -1) {
+      throw new Error('The check script ended without an exit code.');
+    }
+    return {
+      exitCode: Number(output.stdout.slice(exitLine + CHECK_EXIT_PREFIX.length).trim()),
+      output: output.stdout.slice(0, exitLine).trimEnd()
+    };
   }
 
   private async run({ script, env, secrets }: RunParams): Promise<ScriptOutput> {

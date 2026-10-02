@@ -61,6 +61,16 @@ export const zRestackConflictEvent = z.object({
     conflicts: z.array(z.string())
 });
 
+export const zChecksDoneEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['checks_done']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    kept: z.int(),
+    ran: z.int(),
+    failed: z.array(z.string())
+});
+
 export const zLandingFailedEvent = z.object({
     seq: z.int(),
     type: z.enum(['landing_failed']),
@@ -75,6 +85,7 @@ export const zChangeEvent = z.discriminatedUnion('type', [
     zLandedEvent.extend({ type: z.literal('landed') }),
     zRestackedEvent.extend({ type: z.literal('restacked') }),
     zRestackConflictEvent.extend({ type: z.literal('restack_conflict') }),
+    zChecksDoneEvent.extend({ type: z.literal('checks_done') }),
     zLandingFailedEvent.extend({ type: z.literal('landing_failed') })
 ]);
 
@@ -127,9 +138,25 @@ export const zWaitReason = z.object({
         'RESTACK_CONFLICT',
         'LANDS_AFTER',
         'CHECKING',
+        'CHECKS',
+        'CHECKS_FAILED',
         'LANDING'
     ]),
     changeIds: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/))
+});
+
+export const zChangeCheck = z.object({
+    name: z.string(),
+    outcome: z.enum([
+        'pending',
+        'pass',
+        'fail'
+    ]),
+    kept: z.boolean(),
+    reads: z.record(z.string(), z.string()),
+    previousReads: z.record(z.string(), z.string()).nullable(),
+    exitCode: z.int().nullable(),
+    output: z.string().nullable()
 });
 
 export const zChange = z.object({
@@ -149,6 +176,7 @@ export const zChange = z.object({
     landsAfter: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
     landsBefore: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
     waitsFor: z.array(zWaitReason),
+    checks: z.array(zChangeCheck),
     batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/).nullable(),
     landedCommit: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
     createdAt: z.string()
