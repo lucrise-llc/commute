@@ -1021,6 +1021,261 @@
           "changeIds",
           "approver"
         ]
+      },
+      "ChangeListItem": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "landing",
+              "landed"
+            ]
+          },
+          "footprint": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "kept": {
+                "type": "integer"
+              },
+              "ran": {
+                "type": "integer"
+              },
+              "pending": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kept",
+              "ran",
+              "pending",
+              "failed"
+            ]
+          },
+          "waitsFor": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitReason"
+            }
+          },
+          "landsAfter": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            }
+          },
+          "resolvedConflicts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeId",
+          "intent",
+          "owner",
+          "state",
+          "footprint",
+          "checks",
+          "waitsFor",
+          "landsAfter",
+          "resolvedConflicts",
+          "createdAt"
+        ]
+      },
+      "Tree": {
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "path": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "tree",
+                    "blob",
+                    "exec",
+                    "symlink",
+                    "gitlink"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "head",
+          "path",
+          "entries"
+        ]
+      },
+      "Blob": {
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "head",
+          "path",
+          "size",
+          "text"
+        ]
+      },
+      "CommitList": {
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "author": {
+                  "type": "string"
+                },
+                "authoredAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hash",
+                "message",
+                "author",
+                "authoredAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "head",
+          "commits"
+        ]
+      },
+      "Diff": {
+        "type": "object",
+        "properties": {
+          "baseCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "headCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "before": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "after": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "isText": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "before",
+                "after",
+                "isText"
+              ]
+            }
+          },
+          "isTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "baseCommit",
+          "headCommit",
+          "files",
+          "isTruncated"
+        ]
       }
     },
     "parameters": {}
@@ -1158,6 +1413,46 @@
           },
           "502": {
             "description": "FORK_FAILED: Artifacts could not fork trunk.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listChanges",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every change of the project, newest first: in flight and landed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChangeListItem"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND: the project does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1315,6 +1610,257 @@
           },
           "409": {
             "description": "BATCH_NOT_READY: a change is not ready. LANDING_IN_PROGRESS: another batch is landing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/refs/{ref}/tree": {
+      "get": {
+        "operationId": "getTree",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "trunk"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                }
+              ],
+              "example": "trunk"
+            },
+            "required": true,
+            "name": "ref",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "example": "src/cart/pricing.ts"
+            },
+            "required": false,
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The folder at the path, at the head of the ref.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tree"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "REF_NOT_FOUND or PATH_NOT_FOUND: the ref has no head, or the head has no folder there.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/refs/{ref}/blob": {
+      "get": {
+        "operationId": "getBlob",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "trunk"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                }
+              ],
+              "example": "trunk"
+            },
+            "required": true,
+            "name": "ref",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "example": "src/cart/pricing.ts"
+            },
+            "required": true,
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file at the path, at the head of the ref.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "REF_NOT_FOUND or PATH_NOT_FOUND: the ref has no head, or the head has no file there.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/refs/{ref}/commits": {
+      "get": {
+        "operationId": "listCommits",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "trunk"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^c-[1-9][0-9]{0,8}$",
+                  "example": "c-157"
+                }
+              ],
+              "example": "trunk"
+            },
+            "required": true,
+            "name": "ref",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newest commits of trunk, or the commits of a change since its base, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "REF_NOT_FOUND: the ref has no head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/changes/{changeId}/diff": {
+      "get": {
+        "operationId": "getDiff",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            },
+            "required": true,
+            "name": "changeId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The files of the change that differ from its base on trunk.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diff"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "REF_NOT_FOUND: the change has no head.",
             "content": {
               "application/json": {
                 "schema": {

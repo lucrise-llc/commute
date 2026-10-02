@@ -28,7 +28,7 @@ const personNameSchema = z
   .regex(NO_CONTROL_CHARACTERS, 'A name has no line breaks or control characters.')
   .openapi({ example: 'alice' });
 
-const repoPathSchema = z
+export const repoPathSchema = z
   .string()
   .min(1)
   .max(REPO_PATH_LENGTH_MAX)
@@ -175,6 +175,86 @@ export const changeSchema = z
     createdAt: z.string()
   })
   .openapi('Change');
+
+// A row of the Changes list. checks counts the checks of the current head by how each one stands.
+export const changeListItemSchema = z
+  .object({
+    changeId: changeIdSchema,
+    intent: z.string(),
+    owner: z.string().nullable(),
+    state: z.enum(['open', 'landing', 'landed']),
+    footprint: z.array(z.string()),
+    checks: z.object({
+      kept: z.number().int(),
+      ran: z.number().int(),
+      pending: z.number().int(),
+      failed: z.number().int()
+    }),
+    waitsFor: z.array(waitReasonSchema),
+    landsAfter: z.array(changeIdSchema),
+    resolvedConflicts: z.number().int(),
+    createdAt: z.string()
+  })
+  .openapi('ChangeListItem');
+
+// A ref is trunk or the repository of a change.
+export const refSchema = z.union([z.literal('trunk'), changeIdSchema]).openapi({ example: 'trunk' });
+
+export const treeSchema = z
+  .object({
+    head: commitSchema,
+    path: z.string(),
+    entries: z.array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+        type: z.enum(['tree', 'blob', 'exec', 'symlink', 'gitlink'])
+      })
+    )
+  })
+  .openapi('Tree');
+
+// text is null when the file is not UTF-8 or is larger than the bound.
+export const blobSchema = z
+  .object({
+    head: commitSchema,
+    path: z.string(),
+    size: z.number().int(),
+    text: z.string().nullable()
+  })
+  .openapi('Blob');
+
+export const commitListSchema = z
+  .object({
+    head: commitSchema,
+    commits: z.array(
+      z.object({
+        hash: commitSchema,
+        message: z.string(),
+        author: z.string(),
+        authoredAt: z.string()
+      })
+    )
+  })
+  .openapi('CommitList');
+
+// Each changed file of a change against its base, with the text of both sides. A side is null when the file does
+// not exist there or is not text.
+export const diffSchema = z
+  .object({
+    baseCommit: commitSchema,
+    headCommit: commitSchema,
+    files: z.array(
+      z.object({
+        path: z.string(),
+        before: z.string().nullable(),
+        after: z.string().nullable(),
+        isText: z.boolean()
+      })
+    ),
+    isTruncated: z.boolean()
+  })
+  .openapi('Diff');
 
 const changeSummarySchema = z.object({
   changeId: changeIdSchema,
@@ -340,4 +420,5 @@ export type Change = z.infer<typeof changeSchema>;
 export type ChangeEvent = z.infer<typeof changeEventSchema>;
 export type WaitReason = z.infer<typeof waitReasonSchema>;
 export type Landing = z.infer<typeof landingSchema>;
+export type ChangeListItem = z.infer<typeof changeListItemSchema>;
 export type ResolvedConflict = z.infer<typeof resolvedConflictSchema>;

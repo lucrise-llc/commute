@@ -2,8 +2,8 @@
 
 import { client } from './client.gen.ts';
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client/index.ts';
-import type { ApproveBatchData, ApproveBatchErrors, ApproveBatchResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetHealthData, GetHealthResponses, GetLandingData, GetLandingErrors, GetLandingResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
-import { zApproveBatchResponse, zCreateProjectResponse, zGetChangeResponse, zGetHealthResponse, zGetLandingResponse, zStartChangeResponse } from './zod.gen.ts';
+import type { ApproveBatchData, ApproveBatchErrors, ApproveBatchResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetBlobData, GetBlobErrors, GetBlobResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetDiffData, GetDiffErrors, GetDiffResponses, GetHealthData, GetHealthResponses, GetLandingData, GetLandingErrors, GetLandingResponses, GetTreeData, GetTreeErrors, GetTreeResponses, ListChangesData, ListChangesErrors, ListChangesResponses, ListCommitsData, ListCommitsErrors, ListCommitsResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
+import { zApproveBatchResponse, zCreateProjectResponse, zGetBlobResponse, zGetChangeResponse, zGetDiffResponse, zGetHealthResponse, zGetLandingResponse, zGetTreeResponse, zListChangesResponse, zListCommitsResponse, zStartChangeResponse } from './zod.gen.ts';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -33,6 +33,12 @@ export const createProject = <ThrowOnError extends boolean = false>(options: Opt
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+export const listChanges = <ThrowOnError extends boolean = false>(options: Options<ListChangesData, ThrowOnError>): RequestResult<ListChangesResponses, ListChangesErrors, ThrowOnError> => (options.client ?? client).get<ListChangesResponses, ListChangesErrors, ThrowOnError>({
+    responseValidator: async (data) => await zListChangesResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/changes',
+    ...options
 });
 
 export const startChange = <ThrowOnError extends boolean = false>(options: Options<StartChangeData, ThrowOnError>): RequestResult<StartChangeResponses, StartChangeErrors, ThrowOnError> => (options.client ?? client).post<StartChangeResponses, StartChangeErrors, ThrowOnError>({
@@ -65,4 +71,28 @@ export const approveBatch = <ThrowOnError extends boolean = false>(options: Opti
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+export const getTree = <ThrowOnError extends boolean = false>(options: Options<GetTreeData, ThrowOnError>): RequestResult<GetTreeResponses, GetTreeErrors, ThrowOnError> => (options.client ?? client).get<GetTreeResponses, GetTreeErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetTreeResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/refs/{ref}/tree',
+    ...options
+});
+
+export const getBlob = <ThrowOnError extends boolean = false>(options: Options<GetBlobData, ThrowOnError>): RequestResult<GetBlobResponses, GetBlobErrors, ThrowOnError> => (options.client ?? client).get<GetBlobResponses, GetBlobErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetBlobResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/refs/{ref}/blob',
+    ...options
+});
+
+export const listCommits = <ThrowOnError extends boolean = false>(options: Options<ListCommitsData, ThrowOnError>): RequestResult<ListCommitsResponses, ListCommitsErrors, ThrowOnError> => (options.client ?? client).get<ListCommitsResponses, ListCommitsErrors, ThrowOnError>({
+    responseValidator: async (data) => await zListCommitsResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/refs/{ref}/commits',
+    ...options
+});
+
+export const getDiff = <ThrowOnError extends boolean = false>(options: Options<GetDiffData, ThrowOnError>): RequestResult<GetDiffResponses, GetDiffErrors, ThrowOnError> => (options.client ?? client).get<GetDiffResponses, GetDiffErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetDiffResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/changes/{changeId}/diff',
+    ...options
 });

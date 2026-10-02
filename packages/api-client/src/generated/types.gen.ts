@@ -234,6 +234,63 @@ export type ApproveBatchBody = {
     approver: string;
 };
 
+export type ChangeListItem = {
+    changeId: string;
+    intent: string;
+    owner: string | null;
+    state: 'open' | 'landing' | 'landed';
+    footprint: Array<string>;
+    checks: {
+        kept: number;
+        ran: number;
+        pending: number;
+        failed: number;
+    };
+    waitsFor: Array<WaitReason>;
+    landsAfter: Array<string>;
+    resolvedConflicts: number;
+    createdAt: string;
+};
+
+export type Tree = {
+    head: string;
+    path: string;
+    entries: Array<{
+        name: string;
+        path: string;
+        type: 'tree' | 'blob' | 'exec' | 'symlink' | 'gitlink';
+    }>;
+};
+
+export type Blob = {
+    head: string;
+    path: string;
+    size: number;
+    text: string | null;
+};
+
+export type CommitList = {
+    head: string;
+    commits: Array<{
+        hash: string;
+        message: string;
+        author: string;
+        authoredAt: string;
+    }>;
+};
+
+export type Diff = {
+    baseCommit: string;
+    headCommit: string;
+    files: Array<{
+        path: string;
+        before: string | null;
+        after: string | null;
+        isText: boolean;
+    }>;
+    isTruncated: boolean;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -278,6 +335,33 @@ export type CreateProjectResponses = {
 };
 
 export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type ListChangesData = {
+    body?: never;
+    path: {
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/changes';
+};
+
+export type ListChangesErrors = {
+    /**
+     * PROJECT_NOT_FOUND: the project does not exist.
+     */
+    404: Error;
+};
+
+export type ListChangesError = ListChangesErrors[keyof ListChangesErrors];
+
+export type ListChangesResponses = {
+    /**
+     * Every change of the project, newest first: in flight and landed.
+     */
+    200: Array<ChangeListItem>;
+};
+
+export type ListChangesResponse = ListChangesResponses[keyof ListChangesResponses];
 
 export type StartChangeData = {
     body: StartChangeBody;
@@ -407,3 +491,119 @@ export type ApproveBatchResponses = {
 };
 
 export type ApproveBatchResponse = ApproveBatchResponses[keyof ApproveBatchResponses];
+
+export type GetTreeData = {
+    body?: never;
+    path: {
+        projectId: string;
+        ref: 'trunk' | string;
+    };
+    query?: {
+        path?: string;
+    };
+    url: '/api/projects/{projectId}/refs/{ref}/tree';
+};
+
+export type GetTreeErrors = {
+    /**
+     * REF_NOT_FOUND or PATH_NOT_FOUND: the ref has no head, or the head has no folder there.
+     */
+    404: Error;
+};
+
+export type GetTreeError = GetTreeErrors[keyof GetTreeErrors];
+
+export type GetTreeResponses = {
+    /**
+     * The folder at the path, at the head of the ref.
+     */
+    200: Tree;
+};
+
+export type GetTreeResponse = GetTreeResponses[keyof GetTreeResponses];
+
+export type GetBlobData = {
+    body?: never;
+    path: {
+        projectId: string;
+        ref: 'trunk' | string;
+    };
+    query: {
+        path: string;
+    };
+    url: '/api/projects/{projectId}/refs/{ref}/blob';
+};
+
+export type GetBlobErrors = {
+    /**
+     * REF_NOT_FOUND or PATH_NOT_FOUND: the ref has no head, or the head has no file there.
+     */
+    404: Error;
+};
+
+export type GetBlobError = GetBlobErrors[keyof GetBlobErrors];
+
+export type GetBlobResponses = {
+    /**
+     * The file at the path, at the head of the ref.
+     */
+    200: Blob;
+};
+
+export type GetBlobResponse = GetBlobResponses[keyof GetBlobResponses];
+
+export type ListCommitsData = {
+    body?: never;
+    path: {
+        projectId: string;
+        ref: 'trunk' | string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/refs/{ref}/commits';
+};
+
+export type ListCommitsErrors = {
+    /**
+     * REF_NOT_FOUND: the ref has no head.
+     */
+    404: Error;
+};
+
+export type ListCommitsError = ListCommitsErrors[keyof ListCommitsErrors];
+
+export type ListCommitsResponses = {
+    /**
+     * The newest commits of trunk, or the commits of a change since its base, newest first.
+     */
+    200: CommitList;
+};
+
+export type ListCommitsResponse = ListCommitsResponses[keyof ListCommitsResponses];
+
+export type GetDiffData = {
+    body?: never;
+    path: {
+        projectId: string;
+        changeId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/changes/{changeId}/diff';
+};
+
+export type GetDiffErrors = {
+    /**
+     * REF_NOT_FOUND: the change has no head.
+     */
+    404: Error;
+};
+
+export type GetDiffError = GetDiffErrors[keyof GetDiffErrors];
+
+export type GetDiffResponses = {
+    /**
+     * The files of the change that differ from its base on trunk.
+     */
+    200: Diff;
+};
+
+export type GetDiffResponse = GetDiffResponses[keyof GetDiffResponses];

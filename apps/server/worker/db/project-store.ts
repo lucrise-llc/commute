@@ -209,6 +209,17 @@ export class ProjectStore {
     return this.db.select().from(change).where(eq(change.id, changeId)).get() ?? null;
   }
 
+  // Changes that finished starting, newest first.
+  listedChanges(limit: number): ChangeRecord[] {
+    return this.db
+      .select()
+      .from(change)
+      .where(ne(change.state, 'starting'))
+      .orderBy(desc(change.number))
+      .limit(limit)
+      .all();
+  }
+
   activeChanges(): ChangeRecord[] {
     return this.db.select().from(change).where(inArray(change.state, ACTIVE_STATES)).orderBy(asc(change.number)).all();
   }
@@ -331,6 +342,18 @@ export class ProjectStore {
       .orderBy(asc(event.seq))
       .limit(limit)
       .all();
+  }
+
+  // The newest events of the project after a sequence number, oldest first.
+  latestEventsAfter({ after, limit }: Omit<EventsAfterParams, 'changeId'>): EventRecord[] {
+    return this.db
+      .select()
+      .from(event)
+      .where(gt(event.seq, after))
+      .orderBy(desc(event.seq))
+      .limit(limit)
+      .all()
+      .toReversed();
   }
 
   findMergeCheck({ leftId, rightId }: PairParams): MergeCheckRecord | null {
