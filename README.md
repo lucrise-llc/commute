@@ -10,13 +10,13 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
-**Demo video:** Alice and Bob each run 10 agents on one repository. Overlaps
-show up at the start, changes land in parallel batches, and Commute resolves a
-conflict between the two people before either of them waits for it. The video
-shows only the console while the agents run in the background, with the
-narration in captions below it.
+**Demo video:** a walkthrough of one real run. Alice and Bob each start 10
+agents on one repository while a person uses the console. Overlaps show up at
+the start, a conflict is resolved at the first push, batches land in parallel,
+check results that still hold are kept, and Bob's agent only waits and pulls.
+Waits play at 8×.
 
-https://github.com/user-attachments/assets/a7bbad71-550e-470e-b429-781f5c2241fb
+https://github.com/user-attachments/assets/df698511-2ab4-4e92-87d8-15c6cfcabbe7
 
 ## Why Commute, not GitHub
 
