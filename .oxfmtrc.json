@@ -12,6 +12,7 @@
     "**/worker-configuration.d.ts",
     "apps/server/openapi.json",
     "apps/server/drizzle/**",
-    "*.md"
+    "*.md",
+    "apps/demo/seed/**"
   ]
 }

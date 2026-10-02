@@ -1,1 +1,4 @@
-export const routes = ['home', 'cart'];
+export const routes = [
+  'home',
+  'cart',
+];
