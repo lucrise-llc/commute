@@ -277,7 +277,7 @@ export class Coordinator extends DurableObject<Env> {
       ...this.landingOrder(changeId),
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
       checks: this.currentChecks(change).map((check) => this.checkView(check)),
-      checksError: change.checksError,
+      checksError: change.checksHead === change.headCommit ? change.checksError : null,
       resolvedConflicts: change.resolvedConflicts,
       batchId: change.batchId,
       landedCommit: change.landedCommit,
