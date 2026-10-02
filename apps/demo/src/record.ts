@@ -232,7 +232,10 @@ type TypeNameParams = {
 };
 
 async function typeName({ frame: consoleFrame, name }: TypeNameParams): Promise<void> {
+  // fill sets the whole value at once; typing key by key loses keys while live events re-render the page.
   const field = consoleFrame.getByLabel('Your name', { exact: true });
-  await field.fill('');
-  await field.pressSequentially(name, { delay: 80 });
+  await field.fill(name);
+  if ((await field.inputValue()) !== name) {
+    throw new Error(`The name field holds ${await field.inputValue()}, not ${name}.`);
+  }
 }
