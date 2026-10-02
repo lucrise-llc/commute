@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the Commute demo. Alice and Bob each run 10 scripted agents on the storefront project. Each agent starts a
 // change with the commute CLI, edits one file, commits and pushes with plain git, and waits for its events. The
-// script approves the batches, or a person approves them in the console when --approvals console is set.
+// script approves the batches, or a person approves them in the console when --console-approvals is set.
 import type { ChangeEvent } from '@commute/api-client';
 
 import { tmpdir } from 'node:os';
@@ -31,12 +31,12 @@ const { values } = parseArgs({
   options: {
     url: { type: 'string', default: process.env['COMMUTE_URL'] ?? 'http://localhost:8787' },
     project: { type: 'string', default: `demo-${Date.now().toString(ID_RADIX)}` },
-    approvals: { type: 'string', default: 'script' }
+    'console-approvals': { type: 'boolean', default: false }
   }
 });
 const url = values.url;
 const projectId = values.project;
-const isScriptApproving = values.approvals !== 'console';
+const isScriptApproving = !values['console-approvals'];
 const client = createClient({ baseUrl: url });
 const work = await mkdtemp(join(tmpdir(), 'commute-demo-'));
 const agentEnv = { ...process.env, COMMUTE_URL: url, COMMUTE_PROJECT: projectId, GIT_TERMINAL_PROMPT: '0' };
@@ -55,12 +55,13 @@ for (const agent of AGENTS) {
   if (starting.size >= START_CONCURRENCY) {
     await Promise.race(starting);
   }
-  const start = startAgent(agent).then((changeId) => {
+  // A start that fails stays in the set, so the next race or the final wait throws its error.
+  const start: Promise<void> = startAgent(agent).then((changeId) => {
     changeIds.set(agent.name, changeId);
     agentRuns.push(runAgent({ agent, changeId }));
+    starting.delete(start);
   });
   starting.add(start);
-  start.finally(() => starting.delete(start)).catch(() => undefined);
   await new Promise((resolve) => setTimeout(resolve, START_STAGGER_MS));
 }
 await Promise.all(starting);
@@ -237,16 +238,27 @@ type EventFollower = {
 async function followEvents(): Promise<EventFollower> {
   const all: ChangeEvent[] = [];
   const listeners = new Set<() => void>();
+  let isClosing = false;
+  let lostError: Error | null = null;
   const socket = new WebSocket(`${url.replace(/^http/, 'ws')}/api/projects/${projectId}/events`);
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener('open', () => resolve(), { once: true });
     socket.addEventListener('error', () => reject(new Error('The project event stream did not open.')), { once: true });
   });
   socket.send(JSON.stringify({ after: 0 }));
-  socket.addEventListener('message', (message) => {
-    all.push(zChangeEvent.parse(JSON.parse(String(message.data))));
+  const notify = (): void => {
     for (const listener of listeners) {
       listener();
+    }
+  };
+  socket.addEventListener('message', (message) => {
+    all.push(zChangeEvent.parse(JSON.parse(String(message.data))));
+    notify();
+  });
+  socket.addEventListener('close', () => {
+    if (!isClosing) {
+      lostError = new Error('The project event stream closed.');
+      notify();
     }
   });
   const until = async (description: string, isDone: () => Promise<boolean>): Promise<void> => {
@@ -258,6 +270,12 @@ async function followEvents(): Promise<EventFollower> {
         reject(new Error(`Timed out: ${description}.`));
       }, STEP_TIMEOUT_MS);
       function check(): void {
+        if (lostError !== null) {
+          clearTimeout(timer);
+          listeners.delete(check);
+          reject(lostError);
+          return;
+        }
         if (isChecking) {
           isStale = true;
           return;
@@ -281,7 +299,11 @@ async function followEvents(): Promise<EventFollower> {
       check();
     });
   };
-  return { all, until, close: () => socket.close() };
+  const close = (): void => {
+    isClosing = true;
+    socket.close();
+  };
+  return { all, until, close };
 }
 
 // The outcomes that the demo promises, in a stable form, so two runs compare line by line.
@@ -293,19 +315,19 @@ async function summarize(all: ChangeEvent[]): Promise<void> {
   );
   const nameOf = new Map([...changeIds].map(([name, changeId]) => [changeId, name]));
   const pairs = new Set(
-    all
-      .filter((event) => event.type === 'merge_checked')
-      .map((event) =>
-        event.type === 'merge_checked'
-          ? `${[nameOf.get(event.changeId), nameOf.get(event.otherChange.changeId)].toSorted((left, right) => (left ?? '').localeCompare(right ?? '')).join(' + ')} ${event.outcome}`
-          : ''
-      )
+    all.flatMap((event) =>
+      event.type === 'merge_checked'
+        ? [
+            `${[nameOf.get(event.changeId), nameOf.get(event.otherChange.changeId)].toSorted(byName).join(' + ')} ${event.outcome}`
+          ]
+        : []
+    )
   );
-  const resolved = all
-    .filter((event) => event.type === 'restacked' && event.resolvedPaths.length > 0)
-    .map(
-      (event) => `${nameOf.get(event.changeId)} ${event.type === 'restacked' ? event.resolvedPaths.join(', ') : ''}`
-    );
+  const resolved = all.flatMap((event) =>
+    event.type === 'restacked' && event.resolvedPaths.length > 0
+      ? [`${nameOf.get(event.changeId)} ${event.resolvedPaths.join(', ')}`]
+      : []
+  );
   const checks = changes.flatMap((change) => change.checks);
   const kept = checks.filter((check) => check.kept).length;
   const ran = checks.filter((check) => !check.kept).length;
@@ -318,4 +340,8 @@ async function summarize(all: ChangeEvent[]): Promise<void> {
     console.log(`resolved    ${line}`);
   }
   console.log(`checks      ${kept} kept, ${ran} ran on the final heads`);
+}
+
+function byName(left = '', right = ''): number {
+  return left.localeCompare(right);
 }

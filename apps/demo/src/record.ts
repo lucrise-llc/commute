@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import type { FrameLocator } from 'playwright';
 // Records the demo video. A stage page shows captions and the agents' terminal next to the console. The recorder
 // runs the harness with console approvals and approves each batch in the console, as a person would.
 import type { ServerResponse } from 'node:http';
@@ -30,19 +29,26 @@ const SUMMARY_SECONDS = 15;
 const CLICK_SECONDS = 2;
 const AFTER_LANDING_SECONDS = 4;
 const AGENT_LINE = /^(alice-\d+|bob-\d+)\s+change\s+(c-\d+)$/;
-const APPROVAL_LINE = /^== waiting for (alice|bob) to approve batch (\d+) in the console: (.+)$/;
+// The harness prints its steps quickly, but a batch can take minutes to become ready.
+const LINE_TIMEOUT_MS = 900_000;
 
 const projectId = `demo-${Date.now().toString(ID_RADIX)}`;
 const streams = new Set<ServerResponse>();
 const lines: string[] = [];
 const lineListeners = new Set<() => void>();
+let harnessExitCode: number | null | undefined;
 const changeIds = new Map<string, string>();
 
+let onStreamOpen: () => void = () => undefined;
+const streamOpen = new Promise<void>((resolve) => {
+  onStreamOpen = resolve;
+});
 const stage = createServer((request, response) => {
   if (request.url === '/stream') {
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     streams.add(response);
     request.on('close', () => streams.delete(response));
+    onStreamOpen();
     return;
   }
   readFile(STAGE_PATH, 'utf8')
@@ -62,6 +68,7 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: VIEWPORT, recordVideo: { dir: RECORDING_DIR, size: VIEWPORT } });
 const page = await context.newPage();
 await page.goto(`http://localhost:${STAGE_PORT}/`);
+await streamOpen;
 const frame = page.frameLocator('#console');
 
 send('card', {
@@ -81,7 +88,7 @@ await hold(CARD_SECONDS);
 send('card', { title: null, items: [] });
 
 caption('Start', 'Alice and Bob each start 10 agents with commute start. Overlaps show up before any code is written.');
-const harness = spawn('node', [HARNESS_PATH, '--project', projectId, '--approvals', 'console'], {
+const harness = spawn('node', [HARNESS_PATH, '--project', projectId, '--console-approvals'], {
   env: { ...process.env, COMMUTE_URL: CONSOLE_URL },
   stdio: ['ignore', 'pipe', 'inherit']
 });
@@ -96,7 +103,15 @@ createInterface({ input: harness.stdout }).on('line', (line) => {
     listener();
   }
 });
-const harnessExit = new Promise<number | null>((resolve) => harness.on('exit', resolve));
+const harnessExit = new Promise<number | null>((resolve) =>
+  harness.on('exit', (code) => {
+    harnessExitCode = code;
+    for (const listener of lineListeners) {
+      listener();
+    }
+    resolve(code);
+  })
+);
 
 await nextLine(/^== trunk seeded/);
 await show(`/p/${projectId}/changes`);
@@ -182,15 +197,31 @@ async function show(path: string): Promise<void> {
   await frame.locator('main').waitFor();
 }
 
-async function nextLine(pattern: RegExp): Promise<string> {
-  return new Promise((resolve) => {
-    const check = (): void => {
-      const found = lines.find((line) => pattern.test(line));
-      if (found !== undefined) {
-        lineListeners.delete(check);
-        resolve(found);
+// Resolves with the first harness line that matches. It fails when the harness exits first or the line is late.
+async function nextLine(pattern: RegExp): Promise<RegExpExecArray> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error(`No harness line matched ${pattern} in time.`)), LINE_TIMEOUT_MS);
+    function finish(result: RegExpExecArray | Error): void {
+      clearTimeout(timer);
+      lineListeners.delete(check);
+      if (result instanceof Error) {
+        reject(result);
+      } else {
+        resolve(result);
       }
-    };
+    }
+    function check(): void {
+      for (const line of lines) {
+        const match = pattern.exec(line);
+        if (match !== null) {
+          finish(match);
+          return;
+        }
+      }
+      if (harnessExitCode !== undefined) {
+        finish(new Error(`The harness exited with ${String(harnessExitCode)} before a line matched ${pattern}.`));
+      }
+    }
     lineListeners.add(check);
     check();
   });
@@ -211,12 +242,17 @@ type ApproveParams = {
 
 // Waits until the harness asks for the batch, then a person types their name, picks the batch, and approves it.
 async function approveInConsole({ batch, text }: ApproveParams): Promise<void> {
-  const line = await nextLine(new RegExp(`^== waiting for (alice|bob) to approve batch ${batch} in the console`));
-  const [, approver = '', , ids = ''] = APPROVAL_LINE.exec(line) ?? [];
+  const [, approver, ids] = await nextLine(
+    new RegExp(`^== waiting for (alice|bob) to approve batch ${batch} in the console: (.+)$`)
+  );
+  if (approver === undefined || ids === undefined) {
+    throw new Error(`The approval line of batch ${batch} names no approver or changes.`);
+  }
   const batchIds = new Set(ids.split(', '));
   caption('Land', text);
   await show(`/p/${projectId}/changes`);
-  await typeName({ frame, name: approver });
+  // fill sets the whole value at once; typing key by key loses keys while live events re-render the page.
+  await frame.getByLabel('Your name', { exact: true }).fill(approver);
   for (const box of await frame.locator('input[data-change-id]').all()) {
     await box.setChecked(batchIds.has((await box.getAttribute('data-change-id')) ?? ''));
   }
@@ -224,18 +260,4 @@ async function approveInConsole({ batch, text }: ApproveParams): Promise<void> {
   await frame.getByRole('button', { name: /^Approve/ }).click();
   await nextLine(new RegExp(`^== batch ${batch} landed`));
   await hold(AFTER_LANDING_SECONDS);
-}
-
-type TypeNameParams = {
-  frame: FrameLocator;
-  name: string;
-};
-
-async function typeName({ frame: consoleFrame, name }: TypeNameParams): Promise<void> {
-  // fill sets the whole value at once; typing key by key loses keys while live events re-render the page.
-  const field = consoleFrame.getByLabel('Your name', { exact: true });
-  await field.fill(name);
-  if ((await field.inputValue()) !== name) {
-    throw new Error(`The name field holds ${await field.inputValue()}, not ${name}.`);
-  }
 }

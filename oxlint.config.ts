@@ -36,8 +36,7 @@ export default defineConfig({
     '**/generated/**',
     'apps/server/drizzle/**',
     '**/worker-configuration.d.ts',
-    'apps/demo/seed/**',
-    'apps/demo/recording/**'
+    'apps/demo/seed/**'
   ],
   rules: {
     'id-length': ['error', { min: 2, exceptions: ['c'] }],
