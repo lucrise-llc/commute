@@ -10,13 +10,13 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
-**Demo video:** Alice and Bob each run 10 agents on one repository. Overlaps
-show up at the start, changes land in parallel batches, and Commute resolves a
-conflict between the two people before either of them waits for it. The video
-shows only the console while the agents run in the background, with the
-narration in captions below it.
+**Demo video:** a walkthrough of one real run. Alice and Bob each start 10
+agents on one repository while a person uses the console. Overlaps show up at
+the start, a conflict is resolved at the first push, batches land in parallel,
+check results that still hold are kept, and Bob's agent only waits and pulls.
+Waits play at 8×.
 
-https://github.com/user-attachments/assets/a7bbad71-550e-470e-b429-781f5c2241fb
+https://github.com/user-attachments/assets/df698511-2ab4-4e92-87d8-15c6cfcabbe7
 
 ## Why Commute, not GitHub
 
@@ -271,9 +271,15 @@ live Artifacts and Workers AI services.
    changes. Open the console at the project the script prints, such as
    `http://localhost:8787/p/demo-abc123/changes`.
 5. To record the demo video, run `npm run record -w @commute/demo` instead. It
-   runs the same agents and records the console. Then run
-   `npm run encode -w @commute/demo -- <the .webm path it prints>` to add the
-   captions and write `apps/demo/recording/commute-demo.mp4`.
+   runs the same agents while a scripted person uses the console. It saves the
+   screencast, a timeline of captions and chapters, and the terminal transcript
+   of each agent in `apps/demo/recording`. Then run
+   `npm run compose -w @commute/demo` to write
+   `apps/demo/recording/commute-demo.mp4`: title cards, a replay of one agent's
+   terminal, the console in chapters with captions, and closing cards. Compose
+   fails when the video is larger than 10 MB, the GitHub attachment limit. Then
+   run it again with a higher `--crf`, such as
+   `npm run compose -w @commute/demo -- --crf 31`.
 
 To drive one change by hand, create a project, push a first commit to its
 trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
