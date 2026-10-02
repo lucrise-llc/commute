@@ -6,7 +6,18 @@ import { and, asc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } from 'dr
 import type { JOB_KINDS } from './schema';
 import type { MeetingPair } from '../footprint';
 
-import { batch, change, event, footprint, job, mergeCheck, project, reportedOverlap } from './schema';
+import {
+  batch,
+  change,
+  changeCheck,
+  checkResult,
+  event,
+  footprint,
+  job,
+  mergeCheck,
+  project,
+  reportedOverlap
+} from './schema';
 
 // A change is active from the moment its fork exists until it lands.
 const ACTIVE_STATES = ['open', 'landing'] as const;
@@ -17,6 +28,8 @@ export type EventRecord = typeof event.$inferSelect;
 export type MergeCheckRecord = typeof mergeCheck.$inferSelect;
 export type BatchRecord = typeof batch.$inferSelect;
 export type JobRecord = typeof job.$inferSelect;
+export type CheckResultRecord = typeof checkResult.$inferSelect;
+export type ChangeCheckRecord = typeof changeCheck.$inferSelect;
 type JobKind = (typeof JOB_KINDS)[number];
 
 export type OtherChange = {
@@ -94,6 +107,23 @@ type NewBatchParams = {
 type FinishBatchParams = {
   batchId: string;
   state: 'landed' | 'failed';
+};
+
+type ReplaceChangeChecksParams = {
+  changeId: string;
+  head: string;
+  checks: ChangeCheckRecord[];
+  error: string | null;
+};
+
+type ChangeCheckParams = {
+  changeId: string;
+  name: string;
+};
+
+type ChangeCheckOutcomeParams = {
+  key: string;
+  outcome: 'pass' | 'fail';
 };
 
 type QueueJobParams = {
@@ -379,6 +409,53 @@ export class ProjectStore {
 
   finishBatch({ batchId, state }: FinishBatchParams): void {
     this.db.update(batch).set({ state }).where(eq(batch.id, batchId)).run();
+  }
+
+  findCheckResult(key: string): CheckResultRecord | null {
+    return this.db.select().from(checkResult).where(eq(checkResult.key, key)).get() ?? null;
+  }
+
+  saveCheckResult(record: CheckResultRecord): void {
+    this.db.insert(checkResult).values(record).onConflictDoNothing().run();
+  }
+
+  changeChecks(changeId: string): ChangeCheckRecord[] {
+    return this.db
+      .select()
+      .from(changeCheck)
+      .where(eq(changeCheck.changeId, changeId))
+      .orderBy(asc(changeCheck.name))
+      .all();
+  }
+
+  findChangeCheck({ changeId, name }: ChangeCheckParams): ChangeCheckRecord | null {
+    return (
+      this.db
+        .select()
+        .from(changeCheck)
+        .where(and(eq(changeCheck.changeId, changeId), eq(changeCheck.name, name)))
+        .get() ?? null
+    );
+  }
+
+  // Records the checks of a head, or the reason they could not be read.
+  replaceChangeChecks({ changeId, head, checks, error }: ReplaceChangeChecksParams): void {
+    this.db.update(change).set({ checksHead: head, checksError: error }).where(eq(change.id, changeId)).run();
+    this.db.delete(changeCheck).where(eq(changeCheck.changeId, changeId)).run();
+    for (const check of checks) {
+      this.db.insert(changeCheck).values(check).run();
+    }
+  }
+
+  // Gives a new result to every change that waits on its key, and returns those changes.
+  resolveChangeChecks({ key, outcome }: ChangeCheckOutcomeParams): string[] {
+    return this.db
+      .update(changeCheck)
+      .set({ outcome })
+      .where(and(eq(changeCheck.key, key), eq(changeCheck.outcome, 'pending')))
+      .returning({ changeId: changeCheck.changeId })
+      .all()
+      .map((row) => row.changeId);
   }
 
   // Queuing a job again resets its attempts, makes it due, and raises its version.

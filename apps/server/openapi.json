@@ -24,6 +24,9 @@
             "$ref": "#/components/schemas/RestackConflictEvent"
           },
           {
+            "$ref": "#/components/schemas/ChecksDoneEvent"
+          },
+          {
             "$ref": "#/components/schemas/LandingFailedEvent"
           }
         ],
@@ -35,6 +38,7 @@
             "landed": "#/components/schemas/LandedEvent",
             "restacked": "#/components/schemas/RestackedEvent",
             "restack_conflict": "#/components/schemas/RestackConflictEvent",
+            "checks_done": "#/components/schemas/ChecksDoneEvent",
             "landing_failed": "#/components/schemas/LandingFailedEvent"
           }
         }
@@ -296,6 +300,49 @@
           "at",
           "trunkCommit",
           "conflicts"
+        ]
+      },
+      "ChecksDoneEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "checks_done"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "kept": {
+            "type": "integer"
+          },
+          "ran": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "kept",
+          "ran",
+          "failed"
         ]
       },
       "LandingFailedEvent": {
@@ -568,6 +615,18 @@
               "$ref": "#/components/schemas/WaitReason"
             }
           },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeCheck"
+            }
+          },
+          "checksError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "batchId": {
             "type": [
               "string",
@@ -600,6 +659,8 @@
           "landsAfter",
           "landsBefore",
           "waitsFor",
+          "checks",
+          "checksError",
           "batchId",
           "landedCommit",
           "createdAt"
@@ -616,6 +677,9 @@
               "RESTACK_CONFLICT",
               "LANDS_AFTER",
               "CHECKING",
+              "CHECKS_PENDING",
+              "CHECKS_INVALID",
+              "CHECKS_FAILED",
               "LANDING"
             ]
           },
@@ -631,6 +695,61 @@
         "required": [
           "code",
           "changeIds"
+        ]
+      },
+      "ChangeCheck": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pass",
+              "fail"
+            ]
+          },
+          "kept": {
+            "type": "boolean"
+          },
+          "reads": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "previousReads": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "exitCode": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "outcome",
+          "kept",
+          "reads",
+          "previousReads",
+          "exitCode",
+          "output"
         ]
       },
       "Landing": {

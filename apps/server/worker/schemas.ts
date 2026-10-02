@@ -110,10 +110,34 @@ export const changeStartedSchema = z
 // Why a change is not in the next batch. The change IDs name the changes it waits for, where that applies.
 const waitReasonSchema = z
   .object({
-    code: z.enum(['NO_COMMITS', 'RESTACKING', 'RESTACK_CONFLICT', 'LANDS_AFTER', 'CHECKING', 'LANDING']),
+    code: z.enum([
+      'NO_COMMITS',
+      'RESTACKING',
+      'RESTACK_CONFLICT',
+      'LANDS_AFTER',
+      'CHECKING',
+      'CHECKS_PENDING',
+      'CHECKS_INVALID',
+      'CHECKS_FAILED',
+      'LANDING'
+    ]),
     changeIds: z.array(changeIdSchema)
   })
   .openapi('WaitReason');
+
+// A check of a change at its head. reads and previousReads map each read path to its subtree hash at this head and
+// at the head before. kept means the result was reused, not run.
+const changeCheckSchema = z
+  .object({
+    name: z.string(),
+    outcome: z.enum(['pending', 'pass', 'fail']),
+    kept: z.boolean(),
+    reads: z.record(z.string(), z.string()),
+    previousReads: z.record(z.string(), z.string()).nullable(),
+    exitCode: z.number().int().nullable(),
+    output: z.string().nullable()
+  })
+  .openapi('ChangeCheck');
 
 export const changeSchema = z
   .object({
@@ -129,6 +153,8 @@ export const changeSchema = z
     landsAfter: z.array(changeIdSchema),
     landsBefore: z.array(changeIdSchema),
     waitsFor: z.array(waitReasonSchema),
+    checks: z.array(changeCheckSchema),
+    checksError: z.string().nullable(),
     batchId: batchIdSchema.nullable(),
     landedCommit: commitSchema.nullable(),
     createdAt: z.string()
@@ -233,6 +259,18 @@ const restackConflictEventSchema = z
   })
   .openapi('RestackConflictEvent');
 
+const checksDoneEventSchema = z
+  .object({
+    seq: z.number().int(),
+    type: z.literal('checks_done'),
+    changeId: changeIdSchema,
+    at: z.string(),
+    kept: z.number().int(),
+    ran: z.number().int(),
+    failed: z.array(z.string())
+  })
+  .openapi('ChecksDoneEvent');
+
 const landingFailedEventSchema = z
   .object({
     seq: z.number().int(),
@@ -250,6 +288,7 @@ export const changeEventSchema = z
     landedEventSchema,
     restackedEventSchema,
     restackConflictEventSchema,
+    checksDoneEventSchema,
     landingFailedEventSchema
   ])
   .openapi('ChangeEvent');
