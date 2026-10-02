@@ -4,8 +4,9 @@ import { Link, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getChange, getOverlap } from '@commute/api-client';
 
+import { ownerName } from './describe';
 import { useProject } from './project-context';
-import { CheckIcon, ClockIcon, CrossIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
+import { CheckOutcomeIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
 
 // Two changes side by side: intents, footprints, the merge result, the conflicting hunk with its resolution, and the
 // checks of the later change after its restack.
@@ -26,8 +27,8 @@ export function OverlapPage(): React.JSX.Element {
         Overlap of {left.changeId} and {right.changeId}
       </h1>
       <div className="side-by-side spaced">
-        <ChangeCard side={left} note="lands first" />
-        <ChangeCard side={right} note={merge?.outcome === 'conflict' ? 'lands after it' : 'lands in any order'} />
+        <ChangeCard side={left} note={noteFor({ outcome: merge?.outcome, isFirst: true })} />
+        <ChangeCard side={right} note={noteFor({ outcome: merge?.outcome, isFirst: false })} />
       </div>
       <div className="notice">
         <OverlapIcon className="icon-landing" />
@@ -40,6 +41,21 @@ export function OverlapPage(): React.JSX.Element {
       <LaterChecks changeId={right.changeId} />
     </>
   );
+}
+
+type NoteForParams = {
+  outcome: 'clean' | 'conflict' | undefined;
+  isFirst: boolean;
+};
+
+function noteFor({ outcome, isFirst }: NoteForParams): string {
+  if (outcome === undefined) {
+    return 'merge check pending';
+  }
+  if (outcome === 'clean') {
+    return 'lands in any order';
+  }
+  return isFirst ? 'lands first' : 'lands after it';
 }
 
 type ChangeCardProps = {
@@ -61,7 +77,7 @@ function ChangeCard({ side, note }: ChangeCardProps): React.JSX.Element {
           {side.intent}
         </Link>
         <div className="meta">
-          by {side.owner ?? 'unknown'} · {side.state}
+          by {ownerName(side.owner)} · {side.state}
         </div>
         <div className="mono spaced">{side.footprint.join(', ')}</div>
       </div>
@@ -132,9 +148,7 @@ function LaterChecks({ changeId }: LaterChecksProps): React.JSX.Element {
       </div>
       {checks.map((check) => (
         <div className="box-row" key={check.name}>
-          {check.outcome === 'pass' ? <CheckIcon className="icon-open" /> : null}
-          {check.outcome === 'fail' ? <CrossIcon className="icon-fail" /> : null}
-          {check.outcome === 'pending' ? <ClockIcon className="icon-landing" /> : null}
+          <CheckOutcomeIcon outcome={check.outcome} />
           <strong>{check.name}</strong>
           <span className="meta">{check.kept ? 'kept' : 'ran for this content'}</span>
         </div>

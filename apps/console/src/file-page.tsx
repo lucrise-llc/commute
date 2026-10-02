@@ -1,8 +1,9 @@
+import { useParams } from 'react-router';
 import { getBlob } from '@commute/api-client';
-import { Link, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 
 import { FileIcon } from './icons';
+import { Breadcrumbs } from './code-page';
 import { useProject } from './project-context';
 
 export function FilePage(): React.JSX.Element {
@@ -17,17 +18,7 @@ export function FilePage(): React.JSX.Element {
     <>
       <div className="toolbar">
         <span>
-          <Link to={`/p/${projectId}/tree/${ref}`}>
-            <strong>{projectId}</strong>
-          </Link>
-          {segments.slice(0, -1).map((segment, index) => (
-            <span key={segments.slice(0, index + 1).join('/')}>
-              {' / '}
-              <Link to={`/p/${projectId}/tree/${ref}/${segments.slice(0, index + 1).join('/')}`}>{segment}</Link>
-            </span>
-          ))}
-          {' / '}
-          <strong>{segments.at(-1)}</strong>
+          <Breadcrumbs repoRef={ref} path={segments.slice(0, -1).join('/')} /> / <strong>{segments.at(-1)}</strong>
         </span>
         <span className="meta">on {ref}</span>
       </div>

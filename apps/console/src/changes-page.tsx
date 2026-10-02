@@ -7,7 +7,7 @@ import { listChanges } from '@commute/api-client';
 
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { describeEvent, describeWait } from './describe';
+import { describeEvent, describeWait, ownerName } from './describe';
 import { ChangeLandedIcon, ChangeOpenIcon, EventIcon, StateIcon } from './icons';
 
 const FEED_EVENTS_SHOWN = 12;
@@ -45,26 +45,20 @@ export function ChangesPage(): React.JSX.Element {
         </div>
         <div className="box">
           <div className="box-header">
-            <a
-              href="#in-flight"
-              className={isLandedShown ? 'meta' : 'row-title'}
-              onClick={(event) => {
-                event.preventDefault();
-                setLandedShown(false);
-              }}
+            <button
+              type="button"
+              className={`link-button ${isLandedShown ? 'meta' : 'row-title'}`}
+              onClick={() => setLandedShown(false)}
             >
               <ChangeOpenIcon className="icon-open" /> {inFlight.length} In flight
-            </a>
-            <a
-              href="#landed"
-              className={isLandedShown ? 'row-title' : 'meta'}
-              onClick={(event) => {
-                event.preventDefault();
-                setLandedShown(true);
-              }}
+            </button>
+            <button
+              type="button"
+              className={`link-button ${isLandedShown ? 'row-title' : 'meta'}`}
+              onClick={() => setLandedShown(true)}
             >
               <ChangeLandedIcon className="icon-landed" /> {landed.length} Landed
-            </a>
+            </button>
           </div>
           {rows.length === 0 ? <div className="box-body meta">No changes here.</div> : null}
           {rows.map((change) => (
@@ -129,7 +123,7 @@ function ChangeRow({ change }: ChangeRowProps): React.JSX.Element {
         </Link>{' '}
         {change.resolvedConflicts > 0 ? <span className="label">resolved by Commute</span> : null}
         <div className="meta">
-          {change.changeId} by {change.owner ?? 'unknown'} · {status} · checks {change.checks.kept} kept,{' '}
+          {change.changeId} by {ownerName(change.owner)} · {status} · checks {change.checks.kept} kept,{' '}
           {change.checks.ran} ran
           {change.checks.pending > 0 ? `, ${change.checks.pending} running` : ''}
           {change.checks.failed > 0 ? `, ${change.checks.failed} failed` : ''}

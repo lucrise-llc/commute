@@ -1,4 +1,4 @@
-import type { Change, ChangeEvent } from '@commute/api-client';
+import type { Change, ChangeEvent, Diff } from '@commute/api-client';
 
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
@@ -9,8 +9,8 @@ import { useEvents } from './use-events';
 import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { describeEvent, describeWait, shortCommit, timeAgo } from './describe';
-import { CheckIcon, ClockIcon, CrossIcon, EventIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
+import { countChecks, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
+import { CheckIcon, CheckOutcomeIcon, ClockIcon, EventIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
 
 const TABS = [
   { name: 'activity', label: 'Activity' },
@@ -53,7 +53,7 @@ export function ChangePage(): React.JSX.Element {
     checks: data.checks.length,
     files: diff.data?.files.length
   };
-  const owner = data.owner ?? 'Someone';
+  const owner = ownerName(data.owner);
   return (
     <>
       <h1 className="title">
@@ -88,7 +88,7 @@ export function ChangePage(): React.JSX.Element {
           {tab === 'activity' ? <Activity change={data} events={events} /> : null}
           {tab === 'commits' ? <CommitList repoRef={changeId} /> : null}
           {tab === 'checks' ? <Checks change={data} /> : null}
-          {tab === 'files' ? <Files changeId={changeId} /> : null}
+          {tab === 'files' ? <Files diff={diff.data} /> : null}
           {data.state === 'landed' ? null : <LandingBox change={data} />}
         </div>
         <Sidebar change={data} />
@@ -112,7 +112,7 @@ function Activity({ change, events }: ActivityProps): React.JSX.Element {
       <div className="box description">
         <div className="box-header">
           <span>
-            <strong>{change.owner ?? 'Someone'}</strong> <span className="meta">started this change</span>
+            <strong>{ownerName(change.owner)}</strong> <span className="meta">started this change</span>
           </span>
         </div>
         <div className="box-body">{change.intent}</div>
@@ -150,9 +150,7 @@ function Checks({ change }: ChangeProps): React.JSX.Element {
     <div className="box">
       {change.checks.map((check) => (
         <div className="box-row" key={check.name}>
-          {check.outcome === 'pass' ? <CheckIcon className="icon-open" /> : null}
-          {check.outcome === 'fail' ? <CrossIcon className="icon-fail" /> : null}
-          {check.outcome === 'pending' ? <ClockIcon className="icon-landing" /> : null}
+          <CheckOutcomeIcon outcome={check.outcome} />
           <details className="grow">
             <summary>
               <strong>{check.name}</strong>{' '}
@@ -186,26 +184,21 @@ function Checks({ change }: ChangeProps): React.JSX.Element {
   );
 }
 
-type ChangeIdProps = {
-  changeId: string;
+type FilesProps = {
+  diff: Diff | undefined;
 };
 
-function Files({ changeId }: ChangeIdProps): React.JSX.Element {
-  const { projectId } = useProject();
-  const diff = useQuery({
-    queryKey: [projectId, 'diff', changeId],
-    queryFn: async () => (await getDiff({ path: { projectId, changeId }, throwOnError: true })).data
-  });
-  if (diff.data === undefined) {
+function Files({ diff }: FilesProps): React.JSX.Element {
+  if (diff === undefined) {
     return <p className="meta">Loading the diff…</p>;
   }
   return (
     <>
       <p className="meta">
-        {diff.data.files.length} files changed against trunk {shortCommit(diff.data.baseCommit)}
-        {diff.data.isTruncated ? ' (the list is cut at 50 files)' : ''}
+        {diff.files.length} files changed against trunk {shortCommit(diff.baseCommit)}
+        {diff.isTruncated ? `; the list stops at ${diff.files.length} files` : ''}
       </p>
-      {diff.data.files.map((file) => (
+      {diff.files.map((file) => (
         <div className="box" key={file.path}>
           <div className="box-header mono">{file.path}</div>
           {file.isText ? (
@@ -221,12 +214,12 @@ function Files({ changeId }: ChangeIdProps): React.JSX.Element {
 
 function Sidebar({ change }: ChangeProps): React.JSX.Element {
   const { projectId } = useProject();
-  const kept = change.checks.filter((check) => check.kept).length;
+  const checks = countChecks(change.checks);
   return (
     <aside>
       <div className="sidebar-section">
         <h3>Owner</h3>
-        {change.owner ?? 'unknown'}
+        {ownerName(change.owner)}
       </div>
       <div className="sidebar-section">
         <h3>Footprint</h3>
@@ -254,7 +247,7 @@ function Sidebar({ change }: ChangeProps): React.JSX.Element {
       </div>
       <div className="sidebar-section">
         <h3>Checks</h3>
-        {kept} kept, {change.checks.length - kept} ran
+        {checks.kept} kept, {checks.ran} ran{checks.pending > 0 ? `, ${checks.pending} running` : ''}
       </div>
       <div className="sidebar-section">
         <h3>Base on trunk</h3>
@@ -268,12 +261,11 @@ function Sidebar({ change }: ChangeProps): React.JSX.Element {
 // its content, and the batch to approve. There is no action to update the base; the coordinator restacks.
 function LandingBox({ change }: ChangeProps): React.JSX.Element {
   const { projectId } = useProject();
-  const pending = change.checks.filter((check) => check.outcome === 'pending').length;
-  const kept = change.checks.filter((check) => check.kept).length;
+  const { kept, ran, pending } = countChecks(change.checks);
   const isReady = change.waitsFor.length === 0;
   return (
     <>
-      <div className="landing-box">
+      <div className="box landing-box">
         <div className="box-row">
           {change.overlaps.length === 0 ? (
             <CheckIcon className="icon-open" />
@@ -302,7 +294,7 @@ function LandingBox({ change }: ChangeProps): React.JSX.Element {
           {pending === 0 ? <CheckIcon className="icon-open" /> : <ClockIcon className="icon-landing" />}
           <span className="grow">
             {pending === 0
-              ? `Every check result matches the current content: ${kept} kept, ${change.checks.length - kept} ran.`
+              ? `Every check result matches the current content: ${kept} kept, ${ran} ran.`
               : `${pending} checks are running on the current content.`}
           </span>
         </div>

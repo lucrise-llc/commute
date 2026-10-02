@@ -1,4 +1,4 @@
-import type { ChangeEvent } from '@commute/api-client';
+import type { Change, ChangeEvent } from '@commute/api-client';
 
 // Commute's own small icon set, drawn on a 16 by 16 grid with the current text color.
 
@@ -89,7 +89,7 @@ export function CheckIcon({ className }: IconProps): React.JSX.Element {
   );
 }
 
-export function CrossIcon({ className }: IconProps): React.JSX.Element {
+function CrossIcon({ className }: IconProps): React.JSX.Element {
   return (
     <Svg className={className}>
       <path d="M4 4l8 8M12 4l-8 8" />
@@ -134,7 +134,7 @@ export function ResolveIcon({ className }: IconProps): React.JSX.Element {
 }
 
 type StateIconProps = {
-  state: 'open' | 'landing' | 'landed';
+  state: Change['state'];
 };
 
 export function StateIcon({ state }: StateIconProps): React.JSX.Element {
@@ -178,4 +178,18 @@ export function EventIcon({ event }: EventIconProps): React.JSX.Element {
       throw new Error(`Unknown event: ${JSON.stringify(unknown)}`);
     }
   }
+}
+
+type CheckOutcomeIconProps = {
+  outcome: Change['checks'][number]['outcome'];
+};
+
+export function CheckOutcomeIcon({ outcome }: CheckOutcomeIconProps): React.JSX.Element {
+  if (outcome === 'pass') {
+    return <CheckIcon className="icon-open" />;
+  }
+  if (outcome === 'fail') {
+    return <CrossIcon className="icon-fail" />;
+  }
+  return <ClockIcon className="icon-landing" />;
 }

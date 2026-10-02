@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { approveBatch, getLanding } from '@commute/api-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { ownerName } from './describe';
 import { useProject } from './project-context';
 
 // The ready batch and its approval. Every ready change is in the batch until a person unchecks it. Any team member
@@ -63,7 +64,7 @@ export function ApproveBatch(): React.JSX.Element {
           <span className="grow">
             {change.intent}
             <div className="meta">
-              {change.changeId} by {change.owner ?? 'unknown'}
+              {change.changeId} by {ownerName(change.owner)}
             </div>
           </span>
         </label>

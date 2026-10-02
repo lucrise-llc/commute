@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { listChanges } from '@commute/api-client';
-import { Link, Outlet, useLocation, useParams } from 'react-router';
+import { Link, Outlet, useMatch, useParams } from 'react-router';
 
 import { MarkIcon } from './icons';
 import { useEvents } from './use-events';
@@ -18,7 +18,9 @@ export function ProjectLayout(): React.JSX.Element {
   });
   const inFlight = (changes.data ?? []).filter((change) => change.state !== 'landed').length;
   // Change pages and overlap pages belong to the Changes tab; every other page is Code.
-  const isChangesTab = /\/(changes|overlaps)(\/|$)/.test(useLocation().pathname);
+  const changesMatch = useMatch('/p/:projectId/changes/*');
+  const overlapsMatch = useMatch('/p/:projectId/overlaps/*');
+  const isChangesTab = changesMatch !== null || overlapsMatch !== null;
   return (
     <ProjectContext value={{ projectId, personName, events }}>
       <header className="topbar">

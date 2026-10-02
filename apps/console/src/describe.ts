@@ -1,6 +1,30 @@
-import type { ChangeEvent, WaitReason } from '@commute/api-client';
+import type { Change, ChangeEvent, WaitReason } from '@commute/api-client';
 
 const SHORT_COMMIT_LENGTH = 7;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3_600;
+const SECONDS_PER_DAY = 86_400;
+const MILLISECONDS_PER_SECOND = 1_000;
+const relativeTime = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+type CheckCounts = {
+  kept: number;
+  ran: number;
+  pending: number;
+};
+
+// Counts the checks of a head as the Changes list does: a pending check has neither kept nor ran a result yet.
+export function countChecks(checks: Change['checks']): CheckCounts {
+  return {
+    kept: checks.filter((check) => check.kept).length,
+    ran: checks.filter((check) => !check.kept && check.outcome !== 'pending').length,
+    pending: checks.filter((check) => check.outcome === 'pending').length
+  };
+}
+
+export function ownerName(owner: string | null): string {
+  return owner ?? 'unknown';
+}
 
 export function shortCommit(commit: string): string {
   return commit.slice(0, SHORT_COMMIT_LENGTH);
@@ -85,12 +109,6 @@ export function describeWait(reason: WaitReason): string {
     }
   }
 }
-
-const SECONDS_PER_MINUTE = 60;
-const SECONDS_PER_HOUR = 3_600;
-const SECONDS_PER_DAY = 86_400;
-const MILLISECONDS_PER_SECOND = 1_000;
-const relativeTime = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 // "3 minutes ago", as a Git host shows the age of a commit or an event.
 export function timeAgo(iso: string): string {

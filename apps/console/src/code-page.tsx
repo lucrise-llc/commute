@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { getBlob, getTree, listChanges, listCommits } from '@commute/api-client';
 
 import { useProject } from './project-context';
-import { shortCommit, timeAgo } from './describe';
 import { FileIcon, FolderIcon, StateIcon } from './icons';
+import { ownerName, shortCommit, timeAgo } from './describe';
 
 const README_NAME = 'README.md';
 const TRUNK_REF = 'trunk';
@@ -71,7 +71,7 @@ export function CodePage(): React.JSX.Element {
                 <span className="grow">{latest.message.split('\n')[0]}</span>
                 <span className="meta">
                   <code>{shortCommit(latest.hash)}</code> · {timeAgo(latest.authoredAt)} ·{' '}
-                  <Link to={`/p/${projectId}/commits/${ref}`}>{commits.data?.commits.length} commits</Link>
+                  <Link to={`/p/${projectId}/commits/${ref}`}>History</Link>
                 </span>
               </>
             )}
@@ -105,7 +105,7 @@ export function CodePage(): React.JSX.Element {
               <span className="grow">
                 <Link to={`/p/${projectId}/changes/${change.changeId}`}>{change.intent}</Link>
                 <div className="meta">
-                  {change.changeId} by {change.owner ?? 'unknown'}
+                  {change.changeId} by {ownerName(change.owner)}
                 </div>
               </span>
             </div>
@@ -121,7 +121,7 @@ type RefPathProps = {
   path: string;
 };
 
-function Breadcrumbs({ repoRef: ref, path }: RefPathProps): React.JSX.Element {
+export function Breadcrumbs({ repoRef: ref, path }: RefPathProps): React.JSX.Element {
   const { projectId } = useProject();
   const segments = path === '' ? [] : path.split('/');
   return (
