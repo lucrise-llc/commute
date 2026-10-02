@@ -1,9 +1,9 @@
 import type { ChangeListItem } from '@commute/api-client';
 
 import { useState } from 'react';
-import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listChanges } from '@commute/api-client';
+import { Link, useSearchParams } from 'react-router';
 
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
@@ -15,7 +15,8 @@ const FEED_EVENTS_SHOWN = 12;
 export function ChangesPage(): React.JSX.Element {
   const { projectId, personName, events } = useProject();
   const [isMineOnly, setMineOnly] = useState(false);
-  const [isLandedShown, setLandedShown] = useState(false);
+  const [searchParams] = useSearchParams();
+  const isLandedShown = searchParams.get('state') === 'landed';
   const changes = useQuery({
     queryKey: [projectId, 'changes'],
     queryFn: async () => (await listChanges({ path: { projectId }, throwOnError: true })).data
@@ -45,20 +46,15 @@ export function ChangesPage(): React.JSX.Element {
         </div>
         <div className="box">
           <div className="box-header">
-            <button
-              type="button"
-              className={`link-button ${isLandedShown ? 'meta' : 'row-title'}`}
-              onClick={() => setLandedShown(false)}
-            >
+            <Link className={`link-button ${isLandedShown ? 'meta' : 'row-title'}`} to={`/p/${projectId}/changes`}>
               <ChangeOpenIcon className="icon-open" /> {inFlight.length} In flight
-            </button>
-            <button
-              type="button"
+            </Link>
+            <Link
               className={`link-button ${isLandedShown ? 'row-title' : 'meta'}`}
-              onClick={() => setLandedShown(true)}
+              to={`/p/${projectId}/changes?state=landed`}
             >
               <ChangeLandedIcon className="icon-landed" /> {landed.length} Landed
-            </button>
+            </Link>
           </div>
           {rows.length === 0 ? <div className="box-body meta">No changes here.</div> : null}
           {rows.map((change) => (
