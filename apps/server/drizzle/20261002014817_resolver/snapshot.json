@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "1d651470-cc90-49dd-a08b-a861f9f0ffdd",
+  "id": "fbdc161f-5bc6-49b6-b268-11a291c5c625",
   "prevIds": [
     "b0404ba9-e1ce-4391-a717-d39976cdd66c"
   ],
@@ -717,16 +717,6 @@
       "default": null,
       "generated": null,
       "name": "reason",
-      "entityType": "columns",
-      "table": "resolution"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "model",
       "entityType": "columns",
       "table": "resolution"
     },

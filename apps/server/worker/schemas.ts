@@ -144,7 +144,6 @@ const changeCheckSchema = z
 const resolvedConflictSchema = z
   .object({
     path: z.string(),
-    hunks: z.number().int(),
     dropped: z.array(
       z.object({
         text: z.string(),
@@ -273,13 +272,12 @@ const restackConflictEventSchema = z
     at: z.string(),
     trunkCommit: commitSchema,
     conflicts: z.array(z.string()),
-    reason: z.string().nullable()
+    reason: z.string()
   })
   .openapi('RestackConflictEvent');
 
 // The resolution of a conflict with a change that lands first, found when the merge check sees the conflict. A ready
-// resolution applies when the change restacks. reused counts the hunks resolved before, and chosen the hunks that the
-// resolver chose lines for.
+// resolution applies when the change restacks.
 const resolutionEventSchema = z
   .object({
     seq: z.number().int(),
@@ -292,9 +290,7 @@ const resolutionEventSchema = z
     }),
     outcome: z.enum(['ready', 'needs_owner']),
     conflicts: z.array(z.string()),
-    reason: z.string().nullable(),
-    reused: z.number().int(),
-    chosen: z.number().int()
+    reason: z.string().nullable()
   })
   .openapi('ResolutionEvent');
 

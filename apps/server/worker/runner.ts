@@ -45,7 +45,7 @@ const CONFLICT_REPORT = `report_conflicts() {
   printf '%s\\n' "$1" | tail -n +2 | sed 's/^/stage /'
   printf '%s\\n' "$1" | tail -n +2 | cut -f2 | sort -u | while IFS= read -r path; do
     [ "$(git cat-file -t "$tree:$path" 2>/dev/null)" = blob ] || continue
-    [ "$(git cat-file -s "$tree:$path")" -le "$CONFLICT_FILE_BYTES_MAX" ] || continue
+    [ "$(git cat-file -s "$tree:$path")" -le ${CONFLICT_FILE_BYTES_MAX} ] || continue
     printf 'file %s %s\\n' "$(git cat-file blob "$tree:$path" | base64 -w0)" "$path"
   done
 }
@@ -82,7 +82,9 @@ timeout 60 git push -q "$(url "$TRUNK_TOKEN" "$TRUNK_REMOTE")" "$current:refs/he
 echo "trunk $current"
 `;
 
-// Brings a change onto the new trunk with a merge commit, so the agent's next git pull is a fast-forward.
+// Brings a change onto the new trunk with a merge commit, so the agent's next git pull is a fast-forward. A merge that
+// conflicts takes the resolved text of each conflicted file when the coordinator sends it, and reports the conflicts
+// when it does not.
 const RESTACK_SCRIPT = `${PRELUDE}${CONFLICT_REPORT}
 fetch_head "$CHANGE_TOKEN" "$CHANGE_REMOTE" refs/change "$CHANGE_HEAD"
 fetch_head "$TRUNK_TOKEN" "$TRUNK_REMOTE" refs/trunk "$TRUNK_HEAD"
@@ -94,32 +96,24 @@ if git merge-base --is-ancestor refs/change refs/trunk; then
 fi
 out=$(timeout 60 git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages refs/change refs/trunk)
 status=$?
-if [ "$status" -eq 1 ]; then report_conflicts "$out"; exit 0; fi
-[ "$status" -eq 0 ] || exit 3
-commit=$(git commit-tree "\${out%%$'\\n'*}" -p refs/change -p refs/trunk -m "Restack onto trunk \${TRUNK_HEAD:0:12}") || exit 3
+tree=\${out%%$'\\n'*}
+if [ "$status" -eq 1 ]; then
+  if [ "$FILE_COUNT" -eq 0 ]; then report_conflicts "$out"; exit 0; fi
+  export GIT_INDEX_FILE="$work/index"
+  git read-tree "$tree" || exit 3
+  for i in $(seq 1 "$FILE_COUNT"); do
+    path="F\${i}_PATH"; text="F\${i}_TEXT"
+    blob=$(printf '%s' "\${!text}" | git hash-object -w --stdin) || exit 3
+    mode=$(git ls-files -s -- "\${!path}" | cut -d' ' -f1)
+    git update-index --cacheinfo "$mode,$blob,\${!path}" || exit 3
+  done
+  tree=$(git write-tree) || exit 3
+elif [ "$status" -ne 0 ]; then
+  exit 3
+fi
+commit=$(git commit-tree "$tree" -p refs/change -p refs/trunk -m "Restack onto trunk \${TRUNK_HEAD:0:12}") || exit 3
 timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/heads/main" || exit 6
 echo "restacked $commit"
-`;
-
-// Merges trunk into a change like a restack, writes the resolved text of each conflicted file into the merged tree,
-// and pushes the merge commit.
-const RESOLVE_SCRIPT = `${PRELUDE}
-fetch_head "$CHANGE_TOKEN" "$CHANGE_REMOTE" refs/change "$CHANGE_HEAD"
-fetch_head "$TRUNK_TOKEN" "$TRUNK_REMOTE" refs/trunk "$TRUNK_HEAD"
-out=$(timeout 60 git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages refs/change refs/trunk)
-[ "$?" -eq 1 ] || exit 3
-export GIT_INDEX_FILE="$work/index"
-git read-tree "\${out%%$'\\n'*}" || exit 3
-for i in $(seq 1 "$FILE_COUNT"); do
-  path="F\${i}_PATH"; text="F\${i}_TEXT"
-  blob=$(printf '%s' "\${!text}" | git hash-object -w --stdin) || exit 3
-  mode=$(git ls-files -s -- "\${!path}" | cut -d' ' -f1)
-  git update-index --cacheinfo "$mode,$blob,\${!path}" || exit 3
-done
-tree=$(git write-tree) || exit 3
-commit=$(git commit-tree "$tree" -p refs/change -p refs/trunk -m "Restack onto trunk \${TRUNK_HEAD:0:12} and resolve conflicts") || exit 3
-timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/heads/main" || exit 6
-echo "resolved $commit"
 `;
 
 // Checks out a change at its head and runs one check command there. The command does not see the fetch credentials.
@@ -145,17 +139,17 @@ export type RepoHead = {
   head: string;
 };
 
-// A conflicted file whose two sides are both regular text files, with its diff3 markers. The first side is the change
-// that lands later.
-export type ConflictText = {
+export type FileText = {
   path: string;
   text: string;
 };
 
+// texts holds each conflicted file whose two sides are regular text files, with its diff3 markers. The first side is
+// the change that lands later.
 export type MergeResult = {
   outcome: 'clean' | 'conflict';
   conflicts: string[];
-  texts: ConflictText[];
+  texts: FileText[];
 };
 
 export type LandingChange = RepoHead & {
@@ -180,9 +174,11 @@ export type LandResult = {
   }>;
 };
 
+// resolved holds the resolved text of every conflicted file, or nothing on the first attempt.
 export type RestackPlan = {
   change: RepoHead;
   trunk: RepoHead;
+  resolved: FileText[];
 };
 
 // One flat shape, because the RPC types of a Durable Object stub do not carry a union result. A conflict has no head
@@ -191,11 +187,7 @@ export type RestackResult = {
   outcome: 'restacked' | 'fast_forward' | 'up_to_date' | 'conflict';
   headCommit: string | null;
   conflicts: string[];
-  texts: ConflictText[];
-};
-
-export type ResolvePlan = RestackPlan & {
-  resolved: ConflictText[];
+  texts: FileText[];
 };
 
 export type CheckRun = {
@@ -284,12 +276,16 @@ export class Runner extends DurableObject<Env> {
     return { trunkHead, landed };
   }
 
-  async restack({ change, trunk }: RestackPlan): Promise<RestackResult> {
-    const output = await this.run({
-      script: RESTACK_SCRIPT,
-      env: { ...sideEnv({ prefix: 'CHANGE', side: change }), ...sideEnv({ prefix: 'TRUNK', side: trunk }) },
-      secrets: [change.token, trunk.token]
-    });
+  async restack({ change, trunk, resolved }: RestackPlan): Promise<RestackResult> {
+    const env: Record<string, string> = {
+      ...sideEnv({ prefix: 'CHANGE', side: change }),
+      ...sideEnv({ prefix: 'TRUNK', side: trunk }),
+      FILE_COUNT: String(resolved.length)
+    };
+    for (const [index, file] of resolved.entries()) {
+      Object.assign(env, { [`F${index + 1}_PATH`]: file.path, [`F${index + 1}_TEXT`]: file.text });
+    }
+    const output = await this.run({ script: RESTACK_SCRIPT, env, secrets: [change.token, trunk.token] });
     if (output.exitCode !== EXIT_CODE_DONE) {
       throw scriptError(output);
     }
@@ -305,27 +301,6 @@ export class Runner extends DurableObject<Env> {
       return { outcome, headCommit, conflicts: [], texts: [] };
     }
     throw new Error(`The restack script ended without a result: ${outputLines.at(-1) ?? 'no output'}`);
-  }
-
-  // Returns the merge commit that the change now holds.
-  async resolve({ change, trunk, resolved }: ResolvePlan): Promise<string> {
-    const env: Record<string, string> = {
-      ...sideEnv({ prefix: 'CHANGE', side: change }),
-      ...sideEnv({ prefix: 'TRUNK', side: trunk }),
-      FILE_COUNT: String(resolved.length)
-    };
-    for (const [index, file] of resolved.entries()) {
-      Object.assign(env, { [`F${index + 1}_PATH`]: file.path, [`F${index + 1}_TEXT`]: file.text });
-    }
-    const output = await this.run({ script: RESOLVE_SCRIPT, env, secrets: [change.token, trunk.token] });
-    if (output.exitCode !== EXIT_CODE_DONE) {
-      throw scriptError(output);
-    }
-    const [outcome, headCommit] = lines(output.stdout).at(-1)?.split(' ') ?? [];
-    if (outcome !== 'resolved' || headCommit === undefined) {
-      throw new Error(`The resolve script ended without a commit: ${outcome ?? 'no output'}`);
-    }
-    return headCommit;
   }
 
   async runCheck({ change, command }: RunCheckParams): Promise<CheckRun> {
@@ -362,7 +337,7 @@ export class Runner extends DurableObject<Env> {
     }
     await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
     const process = await container.exec(['bash', '-c', script], {
-      env: { ...env, CONFLICT_FILE_BYTES_MAX: String(CONFLICT_FILE_BYTES_MAX) },
+      env,
       signal: AbortSignal.timeout(EXEC_TIMEOUT_MS)
     });
     const output = await process.output();
@@ -423,7 +398,7 @@ function parseConflicts(outputLines: string[]): ConflictReport {
     }
   }
 
-  const texts: ConflictText[] = [];
+  const texts: FileText[] = [];
   for (const [path, modes] of stages) {
     const text = encoded.get(path);
     if (

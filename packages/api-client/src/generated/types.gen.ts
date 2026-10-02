@@ -80,7 +80,7 @@ export type RestackConflictEvent = {
     at: string;
     trunkCommit: string;
     conflicts: Array<string>;
-    reason: string | null;
+    reason: string;
 };
 
 export type ResolutionEvent = {
@@ -95,8 +95,6 @@ export type ResolutionEvent = {
     outcome: 'ready' | 'needs_owner';
     conflicts: Array<string>;
     reason: string | null;
-    reused: number;
-    chosen: number;
 };
 
 export type ChecksDoneEvent = {
@@ -201,7 +199,6 @@ export type ChangeCheck = {
 
 export type ResolvedConflict = {
     path: string;
-    hunks: number;
     dropped: Array<{
         text: string;
         reason: string;

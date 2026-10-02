@@ -3,7 +3,6 @@ CREATE TABLE `resolution` (
 	`lines` text,
 	`dropped` text NOT NULL,
 	`reason` text,
-	`model` text NOT NULL,
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint

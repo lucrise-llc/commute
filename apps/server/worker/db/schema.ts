@@ -109,7 +109,6 @@ export const changeCheck = sqliteTable(
   (table) => [primaryKey({ columns: [table.changeId, table.name] })]
 );
 
-// The changes of a batch name it in change.batch_id.
 // The resolution of one conflict hunk, keyed by the hash of its base, ours, and theirs lines. lines is null when the
 // hunk needs its owner, and reason says why.
 export const resolution = sqliteTable('resolution', {
@@ -117,10 +116,10 @@ export const resolution = sqliteTable('resolution', {
   lines: text('lines', { mode: 'json' }).$type<string[]>(),
   dropped: text('dropped', { mode: 'json' }).$type<ResolvedConflict['dropped']>().notNull(),
   reason: text('reason'),
-  model: text('model').notNull(),
   createdAt: text('created_at').notNull()
 });
 
+// The changes of a batch name it in change.batch_id.
 export const batch = sqliteTable('batch', {
   id: text('id').primaryKey(),
   approver: text('approver').notNull(),

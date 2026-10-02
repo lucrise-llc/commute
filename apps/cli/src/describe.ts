@@ -30,8 +30,7 @@ export function describeEvent(event: ChangeEvent): string {
       return `restack  onto trunk ${short(event.trunkCommit)}${resolved}: run git pull before your next push`;
     }
     case 'restack_conflict': {
-      const reason = event.reason === null ? '' : `: ${event.reason}`;
-      return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}${reason}`;
+      return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}: ${event.reason}`;
     }
     case 'resolution': {
       const other = `${event.otherChange.changeId} "${event.otherChange.intent}"`;

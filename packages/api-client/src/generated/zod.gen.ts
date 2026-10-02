@@ -60,7 +60,7 @@ export const zRestackConflictEvent = z.object({
     at: z.string(),
     trunkCommit: z.string().regex(/^[0-9a-f]{40}$/),
     conflicts: z.array(z.string()),
-    reason: z.string().nullable()
+    reason: z.string()
 });
 
 export const zResolutionEvent = z.object({
@@ -74,9 +74,7 @@ export const zResolutionEvent = z.object({
     }),
     outcome: z.enum(['ready', 'needs_owner']),
     conflicts: z.array(z.string()),
-    reason: z.string().nullable(),
-    reused: z.int(),
-    chosen: z.int()
+    reason: z.string().nullable()
 });
 
 export const zChecksDoneEvent = z.object({
@@ -181,7 +179,6 @@ export const zChangeCheck = z.object({
 
 export const zResolvedConflict = z.object({
     path: z.string(),
-    hunks: z.int(),
     dropped: z.array(z.object({
         text: z.string(),
         reason: z.string()

@@ -304,10 +304,7 @@
             }
           },
           "reason": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           }
         },
         "required": [
@@ -375,12 +372,6 @@
               "string",
               "null"
             ]
-          },
-          "reused": {
-            "type": "integer"
-          },
-          "chosen": {
-            "type": "integer"
           }
         },
         "required": [
@@ -391,9 +382,7 @@
           "otherChange",
           "outcome",
           "conflicts",
-          "reason",
-          "reused",
-          "chosen"
+          "reason"
         ]
       },
       "ChecksDoneEvent": {
@@ -862,9 +851,6 @@
           "path": {
             "type": "string"
           },
-          "hunks": {
-            "type": "integer"
-          },
           "dropped": {
             "type": "array",
             "items": {
@@ -886,7 +872,6 @@
         },
         "required": [
           "path",
-          "hunks",
           "dropped"
         ]
       },

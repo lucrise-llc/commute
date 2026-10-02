@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi';
 
-import type { ConflictText } from './runner';
+import type { FileText } from './runner';
 import type { ResolvedConflict } from './schemas';
 import type { ProjectStore, ResolutionRecord } from './db/project-store';
 
@@ -24,23 +24,35 @@ const SYSTEM_PROMPT = [
   'When a correct result needs a line that neither change wrote, set canResolve to false and give the reason.'
 ].join(' ');
 
-const answerSchema = z.object({
-  canResolve: z.boolean(),
-  lines: z.array(z.string()),
-  dropped: z.array(
-    z.object({
-      line: z.string(),
-      reason: z.string()
-    })
-  ),
-  reason: z.string()
-});
-
 const aiOutputSchema = z.object({
   response: z.unknown()
 });
 
-type Answer = z.infer<typeof answerSchema>;
+type Answer = {
+  canResolve: boolean;
+  lines: string[];
+  dropped: Array<{
+    line: string;
+    reason: string;
+  }>;
+  reason: string;
+};
+
+// The answer for one hunk names lines by ID: t1, t2, ... for the change that landed first, o1, o2, ... for the other.
+function answerSchemaFor(ids: string[]): z.ZodType<Answer> {
+  const lineId = z.enum(ids);
+  return z.object({
+    canResolve: z.boolean(),
+    lines: z.array(lineId),
+    dropped: z.array(
+      z.object({
+        line: lineId,
+        reason: z.string()
+      })
+    ),
+    reason: z.string()
+  });
+}
 
 // Ours is the change that lands later, and theirs the change that landed first.
 type Hunk = {
@@ -71,7 +83,7 @@ type Choice = Pick<ResolutionRecord, 'lines' | 'dropped' | 'reason'>;
 export type ConflictResolution =
   | {
       outcome: 'ready';
-      resolved: ConflictText[];
+      resolved: FileText[];
       files: ResolvedConflict[];
       reused: number;
       chosen: number;
@@ -87,7 +99,7 @@ type ResolveConflictsParams = {
   ai: Ai;
   store: ProjectStore;
   conflicts: string[];
-  texts: ConflictText[];
+  texts: FileText[];
   oursIntent: string;
   theirsIntents: string[];
 };
@@ -133,11 +145,11 @@ export async function resolveConflicts({
     return needsOwner(`A conflicting hunk has more than ${HUNK_SIDE_LINES_MAX} lines on one side.`);
   }
 
-  const resolved: ConflictText[] = [];
+  const resolved: FileText[] = [];
   const resolvedFiles: ResolvedConflict[] = [];
   for (const { path, segments } of files) {
     const lines: string[] = [];
-    const resolvedFile: ResolvedConflict = { path, hunks: 0, dropped: [] };
+    const resolvedFile: ResolvedConflict = { path, dropped: [] };
     for (const [index, segment] of segments.entries()) {
       if (segment.kind === 'same') {
         lines.push(...segment.lines);
@@ -155,7 +167,7 @@ export async function resolveConflicts({
           oursIntent,
           theirsIntents
         });
-        resolution = { key, ...choice, model: RESOLVER_MODEL, createdAt: new Date().toISOString() };
+        resolution = { key, ...choice, createdAt: new Date().toISOString() };
         store.saveResolution(resolution);
         counts.chosen += 1;
       } else {
@@ -165,7 +177,6 @@ export async function resolveConflicts({
         return needsOwner(`${path}: ${resolution.reason ?? 'The resolver gave no reason.'}`);
       }
       lines.push(...resolution.lines);
-      resolvedFile.hunks += 1;
       resolvedFile.dropped.push(...resolution.dropped);
     }
     resolved.push({ path, text: lines.join('\n') });
@@ -253,16 +264,17 @@ type ChooseLinesParams = {
 async function chooseLines({ ai, hunk, ...prompt }: ChooseLinesParams): Promise<Choice> {
   const ids = [...hunk.theirs.keys()].map((index) => `t${index + 1}`);
   ids.push(...[...hunk.ours.keys()].map((index) => `o${index + 1}`));
+  const schema = answerSchemaFor(ids);
   const output = await ai.run(RESOLVER_MODEL, {
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt({ hunk, ...prompt }) }
     ],
-    response_format: { type: 'json_schema', json_schema: answerJsonSchema(ids) },
+    response_format: { type: 'json_schema', json_schema: z.toJSONSchema(schema) },
     temperature: 0,
     max_tokens: ANSWER_TOKENS_MAX
   });
-  return choiceFromAnswer({ hunk, answer: parseAnswer(aiOutputSchema.parse(output).response) });
+  return choiceFromAnswer({ hunk, answer: parseAnswer({ response: aiOutputSchema.parse(output).response, schema }) });
 }
 
 type UserPromptParams = Omit<ChooseLinesParams, 'ai'>;
@@ -296,29 +308,13 @@ function numbered({ prefix, lines }: NumberedParams): string {
   return lines.map((line, index) => `${prefix}${index + 1}: ${line}`).join('\n');
 }
 
-function answerJsonSchema(ids: string[]): Record<string, unknown> {
-  const lineId = { type: 'string', enum: ids };
-  return {
-    type: 'object',
-    properties: {
-      canResolve: { type: 'boolean' },
-      lines: { type: 'array', items: lineId },
-      dropped: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: { line: lineId, reason: { type: 'string' } },
-          required: ['line', 'reason']
-        }
-      },
-      reason: { type: 'string' }
-    },
-    required: ['canResolve', 'lines', 'dropped', 'reason']
-  };
-}
+type ParseAnswerParams = {
+  response: unknown;
+  schema: z.ZodType<Answer>;
+};
 
 // JSON mode returns the answer as an object or as a JSON string, and a model can still miss the schema.
-function parseAnswer(response: unknown): Answer | null {
+function parseAnswer({ response, schema }: ParseAnswerParams): Answer | null {
   let value = response;
   if (typeof response === 'string') {
     try {
@@ -327,7 +323,7 @@ function parseAnswer(response: unknown): Answer | null {
       return null;
     }
   }
-  const parsed = answerSchema.safeParse(value);
+  const parsed = schema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
@@ -349,7 +345,7 @@ function choiceFromAnswer({ hunk, answer }: ChoiceFromAnswerParams): Choice {
     ...hunk.ours.map((text, index) => [`o${index + 1}`, text] as const)
   ]);
   const placed = [...answer.lines, ...answer.dropped.map((drop) => drop.line)];
-  if (placed.length !== texts.size || new Set(placed).size !== placed.length || placed.some((id) => !texts.has(id))) {
+  if (placed.length !== texts.size || new Set(placed).size !== placed.length) {
     return { lines: null, dropped: [], reason: 'The resolver did not place every line of both changes exactly once.' };
   }
   const textOf = (id: string): string => {
