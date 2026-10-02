@@ -123,11 +123,11 @@ await approveInConsole({
   text: "Alice's gift wrap change lands last. Commute resolved its conflict with her discount the same way."
 });
 await nextLine(/^checks /);
-await show(`/p/${projectId}/changes`);
+await show(`/p/${projectId}/changes?state=landed`);
 await page
-  .getByText(/Landed$/)
+  .getByText(/ · landed · /)
   .first()
-  .click();
+  .waitFor();
 say(
   'All 20 changes landed in four batches. Commute resolved both conflicts, and Alice and Bob never messaged each other.'
 );
