@@ -26,6 +26,8 @@ import { changeRepoName, issueAgentToken, issueJobToken } from './repos';
 const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
 const READY_POLL_INTERVAL_MS = 100;
+const FORK_ATTEMPTS_MAX = 3;
+const FORK_RETRY_DELAY_MS = 500;
 const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
@@ -453,11 +455,28 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  private async forkTrunk({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
+  // Artifacts answered INTERNAL_ERROR to 2 of about 50 forks during verification runs, so such a fork runs again.
+  private async forkTrunk(change: ChangeRef): Promise<ForkedChange> {
+    for (let attempt = 1; attempt < FORK_ATTEMPTS_MAX; attempt += 1) {
+      try {
+        return await this.forkTrunkOnce(change);
+      } catch (error) {
+        if (artifactsErrorCode(error) !== 'INTERNAL_ERROR') {
+          throw error;
+        }
+        logError({ event: 'fork_retry', ...change, attempt, error });
+        await scheduler.wait(FORK_RETRY_DELAY_MS * attempt);
+      }
+    }
+    return this.forkTrunkOnce(change);
+  }
+
+  // A fork that fails at any step leaves no repository behind, so the next attempt can use the same name.
+  private async forkTrunkOnce({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
     const repoName = changeRepoName({ projectId, changeId });
     using trunk = await this.env.ARTIFACTS.get(projectId);
-    const forked = await trunk.fork(repoName, { defaultBranchOnly: true });
     try {
+      const forked = await trunk.fork(repoName, { defaultBranchOnly: true });
       using repo = await this.waitUntilReady(repoName);
       const [head] = await repo.log({ ref: TRUNK_BRANCH, limit: 1 });
       if (head === undefined) {
