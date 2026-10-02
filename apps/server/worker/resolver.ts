@@ -1,7 +1,7 @@
 import { z } from '@hono/zod-openapi';
 
 import type { FileText } from './runner';
-import type { ResolvedConflict } from './schemas';
+import type { OverlapResolution, ResolvedConflict } from './schemas';
 import type { ProjectStore, ResolutionRecord } from './db/project-store';
 
 import { sha256Hex } from './hash';
@@ -80,17 +80,22 @@ type ParsedFile = {
 
 type Choice = Pick<ResolutionRecord, 'lines' | 'dropped' | 'reason'>;
 
+type HunkDetail = OverlapResolution['hunks'][number];
+
+// hunks describes every conflicting hunk for the overlap page, resolved or not.
 export type ConflictResolution =
   | {
       outcome: 'ready';
       resolved: FileText[];
       files: ResolvedConflict[];
+      hunks: HunkDetail[];
       reused: number;
       chosen: number;
     }
   | {
       outcome: 'needs_owner';
       reason: string;
+      hunks: HunkDetail[];
       reused: number;
       chosen: number;
     };
@@ -115,7 +120,13 @@ export async function resolveConflicts({
   theirsIntents
 }: ResolveConflictsParams): Promise<ConflictResolution> {
   const counts = { reused: 0, chosen: 0 };
-  const needsOwner = (reason: string): ConflictResolution => ({ outcome: 'needs_owner', reason, ...counts });
+  const details: HunkDetail[] = [];
+  const needsOwner = (reason: string): ConflictResolution => ({
+    outcome: 'needs_owner',
+    reason,
+    hunks: details,
+    ...counts
+  });
 
   if (conflicts.length > CONFLICT_FILES_MAX) {
     return needsOwner(`More than ${CONFLICT_FILES_MAX} files conflict.`);
@@ -134,6 +145,11 @@ export async function resolveConflicts({
       return needsOwner(`${file.path} has conflict markers that Commute cannot read.`);
     }
     files.push({ path: file.path, segments });
+    for (const segment of segments) {
+      if (segment.kind === 'conflict') {
+        details.push({ path: file.path, ...segment.hunk, lines: null, dropped: [] });
+      }
+    }
   }
   const hunks = files.flatMap((file) =>
     file.segments.flatMap((segment) => (segment.kind === 'conflict' ? [segment.hunk] : []))
@@ -153,6 +169,7 @@ export async function resolveConflicts({
 
   const resolved: FileText[] = [];
   const resolvedFiles: ResolvedConflict[] = [];
+  let detailIndex = 0;
   for (const { path, segments } of files) {
     const lines: string[] = [];
     const resolvedFile: ResolvedConflict = { path, dropped: [] };
@@ -184,11 +201,18 @@ export async function resolveConflicts({
       }
       lines.push(...resolution.lines);
       resolvedFile.dropped.push(...resolution.dropped);
+      const detail = details[detailIndex];
+      if (detail === undefined) {
+        throw new Error(`Hunk ${detailIndex} of the merge has no detail.`);
+      }
+      detail.lines = resolution.lines;
+      detail.dropped = resolution.dropped;
+      detailIndex += 1;
     }
     resolved.push({ path, text: lines.join('\n') });
     resolvedFiles.push(resolvedFile);
   }
-  return { outcome: 'ready', resolved, files: resolvedFiles, ...counts };
+  return { outcome: 'ready', resolved, files: resolvedFiles, hunks: details, ...counts };
 }
 
 function sameLines(segment: Segment | undefined): string[] {

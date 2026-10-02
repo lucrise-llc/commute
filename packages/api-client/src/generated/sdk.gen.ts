@@ -2,8 +2,8 @@
 
 import { client } from './client.gen.ts';
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client/index.ts';
-import type { ApproveBatchData, ApproveBatchErrors, ApproveBatchResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetBlobData, GetBlobErrors, GetBlobResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetDiffData, GetDiffErrors, GetDiffResponses, GetHealthData, GetHealthResponses, GetLandingData, GetLandingErrors, GetLandingResponses, GetTreeData, GetTreeErrors, GetTreeResponses, ListChangesData, ListChangesErrors, ListChangesResponses, ListCommitsData, ListCommitsErrors, ListCommitsResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
-import { zApproveBatchResponse, zCreateProjectResponse, zGetBlobResponse, zGetChangeResponse, zGetDiffResponse, zGetHealthResponse, zGetLandingResponse, zGetTreeResponse, zListChangesResponse, zListCommitsResponse, zStartChangeResponse } from './zod.gen.ts';
+import type { ApproveBatchData, ApproveBatchErrors, ApproveBatchResponses, CreateProjectData, CreateProjectErrors, CreateProjectResponses, GetBlobData, GetBlobErrors, GetBlobResponses, GetChangeData, GetChangeErrors, GetChangeResponses, GetDiffData, GetDiffErrors, GetDiffResponses, GetHealthData, GetHealthResponses, GetLandingData, GetLandingErrors, GetLandingResponses, GetOverlapData, GetOverlapErrors, GetOverlapResponses, GetTreeData, GetTreeErrors, GetTreeResponses, ListChangesData, ListChangesErrors, ListChangesResponses, ListCommitsData, ListCommitsErrors, ListCommitsResponses, StartChangeData, StartChangeErrors, StartChangeResponses } from './types.gen.ts';
+import { zApproveBatchResponse, zCreateProjectResponse, zGetBlobResponse, zGetChangeResponse, zGetDiffResponse, zGetHealthResponse, zGetLandingResponse, zGetOverlapResponse, zGetTreeResponse, zListChangesResponse, zListCommitsResponse, zStartChangeResponse } from './zod.gen.ts';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -94,5 +94,11 @@ export const listCommits = <ThrowOnError extends boolean = false>(options: Optio
 export const getDiff = <ThrowOnError extends boolean = false>(options: Options<GetDiffData, ThrowOnError>): RequestResult<GetDiffResponses, GetDiffErrors, ThrowOnError> => (options.client ?? client).get<GetDiffResponses, GetDiffErrors, ThrowOnError>({
     responseValidator: async (data) => await zGetDiffResponse.parseAsync(data),
     url: '/api/projects/{projectId}/changes/{changeId}/diff',
+    ...options
+});
+
+export const getOverlap = <ThrowOnError extends boolean = false>(options: Options<GetOverlapData, ThrowOnError>): RequestResult<GetOverlapResponses, GetOverlapErrors, ThrowOnError> => (options.client ?? client).get<GetOverlapResponses, GetOverlapErrors, ThrowOnError>({
+    responseValidator: async (data) => await zGetOverlapResponse.parseAsync(data),
+    url: '/api/projects/{projectId}/overlaps/{changeId}/{otherChangeId}',
     ...options
 });

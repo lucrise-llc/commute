@@ -5,7 +5,7 @@ import { and, asc, desc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } fr
 
 import type { JOB_KINDS } from './schema';
 import type { MeetingPair } from '../footprint';
-import type { ResolvedConflict } from '../schemas';
+import type { OverlapResolution, ResolvedConflict } from '../schemas';
 
 import {
   batch,
@@ -63,6 +63,10 @@ type RestackedParams = {
 type RestackConflictsParams = {
   changeId: string;
   conflicts: string[];
+};
+
+type MergeResolutionParams = PairParams & {
+  overlapResolution: OverlapResolution;
 };
 
 type ResolvedConflictsParams = {
@@ -376,9 +380,18 @@ export class ProjectStore {
           leftHead: record.leftHead,
           rightHead: record.rightHead,
           outcome: record.outcome,
-          conflicts: record.conflicts
+          conflicts: record.conflicts,
+          resolution: record.resolution
         }
       })
+      .run();
+  }
+
+  setMergeResolution({ leftId, rightId, overlapResolution }: MergeResolutionParams): void {
+    this.db
+      .update(mergeCheck)
+      .set({ resolution: overlapResolution })
+      .where(and(eq(mergeCheck.leftId, leftId), eq(mergeCheck.rightId, rightId)))
       .run();
   }
 

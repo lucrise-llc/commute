@@ -6,8 +6,8 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
 import type { ConflictResolution } from './resolver';
 import type { ChangeRef, IssuedToken } from './repos';
-import type { Change, ChangeEvent, ChangeListItem, Landing, Overlap, WaitReason } from './schemas';
 import type { CheckRun, LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
+import type { Change, ChangeEvent, ChangeListItem, Landing, Overlap, OverlapPage, WaitReason } from './schemas';
 import type { ChangeCheckRecord, ChangeRecord, EventRecord, JobRecord, ProjectRecord } from './db/project-store';
 
 import { log, logError } from './log';
@@ -315,6 +315,17 @@ export class Coordinator extends DurableObject<Env> {
     return items;
   }
 
+  getOverlap({ changeId, otherChangeId }: OrderedPairParams): OverlapPage {
+    const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
+    const check = this.store.findMergeCheck({ leftId, rightId });
+    return {
+      left: this.overlapSide(leftId),
+      right: this.overlapSide(rightId),
+      merge: check === null ? null : { outcome: check.outcome, conflicts: check.conflicts },
+      resolution: check?.resolution ?? null
+    };
+  }
+
   // The repository and head of a ref, for reads through the Artifacts binding. A change also names its base.
   getRef(ref: string): RefHead {
     const project = this.requireProject();
@@ -510,6 +521,21 @@ export class Coordinator extends DurableObject<Env> {
     if (job.kind === 'land') {
       this.failBatch(job.target);
     }
+  }
+
+  private overlapSide(changeId: string): OverlapPage['left'] {
+    const change = this.store.findChange(changeId);
+    if (change === null || change.state === 'starting') {
+      throw new Error('CHANGE_NOT_FOUND');
+    }
+    const pushed = this.store.footprint({ changeId, source: 'pushed' });
+    return {
+      changeId,
+      intent: change.intent,
+      owner: change.owner,
+      state: change.state,
+      footprint: pushed.length > 0 ? pushed : this.store.footprint({ changeId, source: 'declared' })
+    };
   }
 
   private requireProject(): ProjectRecord {
@@ -718,7 +744,8 @@ export class Coordinator extends DurableObject<Env> {
       leftHead: left.headCommit,
       rightHead: right.headCommit,
       outcome: result.outcome,
-      conflicts: result.conflicts
+      conflicts: result.conflicts,
+      resolution: null
     });
     if (previous?.outcome !== result.outcome) {
       this.announceMerge({ left, right, result });
@@ -772,6 +799,15 @@ export class Coordinator extends DurableObject<Env> {
       logError({ event: 'resolution_failed', leftId: left.id, rightId: right.id, error });
       return;
     }
+    this.store.setMergeResolution({
+      leftId: left.id,
+      rightId: right.id,
+      overlapResolution: {
+        outcome: resolution.outcome,
+        reason: resolution.outcome === 'needs_owner' ? resolution.reason : null,
+        hunks: resolution.hunks
+      }
+    });
     this.announceResolution({ left, right, conflicts: result.conflicts, resolution });
   }
 

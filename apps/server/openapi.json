@@ -1276,6 +1276,215 @@
           "files",
           "isTruncated"
         ]
+      },
+      "OverlapPage": {
+        "type": "object",
+        "properties": {
+          "left": {
+            "type": "object",
+            "properties": {
+              "changeId": {
+                "type": "string",
+                "pattern": "^c-[1-9][0-9]{0,8}$",
+                "example": "c-157"
+              },
+              "intent": {
+                "type": "string"
+              },
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "landing",
+                  "landed"
+                ]
+              },
+              "footprint": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "changeId",
+              "intent",
+              "owner",
+              "state",
+              "footprint"
+            ]
+          },
+          "right": {
+            "type": "object",
+            "properties": {
+              "changeId": {
+                "type": "string",
+                "pattern": "^c-[1-9][0-9]{0,8}$",
+                "example": "c-157"
+              },
+              "intent": {
+                "type": "string"
+              },
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "landing",
+                  "landed"
+                ]
+              },
+              "footprint": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "changeId",
+              "intent",
+              "owner",
+              "state",
+              "footprint"
+            ]
+          },
+          "merge": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "clean",
+                  "conflict"
+                ]
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "outcome",
+              "conflicts"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/OverlapResolution"
+          }
+        },
+        "required": [
+          "left",
+          "right",
+          "merge",
+          "resolution"
+        ]
+      },
+      "OverlapResolution": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "needs_owner"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "base": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "ours": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "theirs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lines": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dropped": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "reason"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "path",
+                "base",
+                "ours",
+                "theirs",
+                "lines",
+                "dropped"
+              ]
+            }
+          }
+        },
+        "required": [
+          "outcome",
+          "reason",
+          "hunks"
+        ]
       }
     },
     "parameters": {}
@@ -1861,6 +2070,65 @@
           },
           "404": {
             "description": "REF_NOT_FOUND: the change has no head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/overlaps/{changeId}/{otherChangeId}": {
+      "get": {
+        "operationId": "getOverlap",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$",
+              "example": "storefront"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            },
+            "required": true,
+            "name": "changeId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^c-[1-9][0-9]{0,8}$",
+              "example": "c-157"
+            },
+            "required": true,
+            "name": "otherChangeId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Two changes side by side: their intents and footprints, their merge result, and its resolution.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverlapPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CHANGE_NOT_FOUND: the project has no change with one of these IDs.",
             "content": {
               "application/json": {
                 "schema": {

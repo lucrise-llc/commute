@@ -291,6 +291,44 @@ export type Diff = {
     isTruncated: boolean;
 };
 
+export type OverlapPage = {
+    left: {
+        changeId: string;
+        intent: string;
+        owner: string | null;
+        state: 'open' | 'landing' | 'landed';
+        footprint: Array<string>;
+    };
+    right: {
+        changeId: string;
+        intent: string;
+        owner: string | null;
+        state: 'open' | 'landing' | 'landed';
+        footprint: Array<string>;
+    };
+    merge: {
+        outcome: 'clean' | 'conflict';
+        conflicts: Array<string>;
+    } | null;
+    resolution: OverlapResolution;
+};
+
+export type OverlapResolution = {
+    outcome: 'ready' | 'needs_owner';
+    reason: string | null;
+    hunks: Array<{
+        path: string;
+        base: Array<string>;
+        ours: Array<string>;
+        theirs: Array<string>;
+        lines: Array<string> | null;
+        dropped: Array<{
+            text: string;
+            reason: string;
+        }>;
+    }>;
+} | null;
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -607,3 +645,32 @@ export type GetDiffResponses = {
 };
 
 export type GetDiffResponse = GetDiffResponses[keyof GetDiffResponses];
+
+export type GetOverlapData = {
+    body?: never;
+    path: {
+        projectId: string;
+        changeId: string;
+        otherChangeId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/overlaps/{changeId}/{otherChangeId}';
+};
+
+export type GetOverlapErrors = {
+    /**
+     * CHANGE_NOT_FOUND: the project has no change with one of these IDs.
+     */
+    404: Error;
+};
+
+export type GetOverlapError = GetOverlapErrors[keyof GetOverlapErrors];
+
+export type GetOverlapResponses = {
+    /**
+     * Two changes side by side: their intents and footprints, their merge result, and its resolution.
+     */
+    200: OverlapPage;
+};
+
+export type GetOverlapResponse = GetOverlapResponses[keyof GetOverlapResponses];

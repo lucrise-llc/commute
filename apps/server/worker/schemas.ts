@@ -153,6 +153,55 @@ const resolvedConflictSchema = z
   })
   .openapi('ResolvedConflict');
 
+// A conflicting hunk of two changes in flight: the original lines, the lines of the change that lands first (theirs)
+// and of the change that lands later (ours), and the lines the resolution kept. lines is null when the hunk needs the
+// owner or was not reached.
+const hunkDetailSchema = z.object({
+  path: z.string(),
+  base: z.array(z.string()),
+  ours: z.array(z.string()),
+  theirs: z.array(z.string()),
+  lines: z.array(z.string()).nullable(),
+  dropped: z.array(
+    z.object({
+      text: z.string(),
+      reason: z.string()
+    })
+  )
+});
+
+const overlapResolutionSchema = z
+  .object({
+    outcome: z.enum(['ready', 'needs_owner']),
+    reason: z.string().nullable(),
+    hunks: z.array(hunkDetailSchema)
+  })
+  .openapi('OverlapResolution');
+
+const overlapSideSchema = z.object({
+  changeId: changeIdSchema,
+  intent: z.string(),
+  owner: z.string().nullable(),
+  state: z.enum(['open', 'landing', 'landed']),
+  footprint: z.array(z.string())
+});
+
+// Two changes whose footprints meet. left started first. merge is the result of the merge check of their current
+// heads, and resolution is how Commute resolved a conflict for the right change.
+export const overlapPageSchema = z
+  .object({
+    left: overlapSideSchema,
+    right: overlapSideSchema,
+    merge: z
+      .object({
+        outcome: z.enum(['clean', 'conflict']),
+        conflicts: z.array(z.string())
+      })
+      .nullable(),
+    resolution: overlapResolutionSchema.nullable()
+  })
+  .openapi('OverlapPage');
+
 export const changeSchema = z
   .object({
     changeId: changeIdSchema,
@@ -415,10 +464,12 @@ export const waitRequestSchema = z
   })
   .openapi('WaitRequest');
 
-export type Overlap = z.infer<typeof overlapSchema>;
 export type Change = z.infer<typeof changeSchema>;
 export type ChangeEvent = z.infer<typeof changeEventSchema>;
 export type WaitReason = z.infer<typeof waitReasonSchema>;
 export type Landing = z.infer<typeof landingSchema>;
 export type ChangeListItem = z.infer<typeof changeListItemSchema>;
+export type OverlapResolution = z.infer<typeof overlapResolutionSchema>;
+export type OverlapPage = z.infer<typeof overlapPageSchema>;
+export type Overlap = z.infer<typeof overlapSchema>;
 export type ResolvedConflict = z.infer<typeof resolvedConflictSchema>;

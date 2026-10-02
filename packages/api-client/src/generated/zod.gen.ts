@@ -306,6 +306,52 @@ export const zDiff = z.object({
     isTruncated: z.boolean()
 });
 
+export const zOverlapResolution = z.object({
+    outcome: z.enum(['ready', 'needs_owner']),
+    reason: z.string().nullable(),
+    hunks: z.array(z.object({
+        path: z.string(),
+        base: z.array(z.string()),
+        ours: z.array(z.string()),
+        theirs: z.array(z.string()),
+        lines: z.array(z.string()).nullable(),
+        dropped: z.array(z.object({
+            text: z.string(),
+            reason: z.string()
+        }))
+    }))
+}).nullable();
+
+export const zOverlapPage = z.object({
+    left: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable(),
+        state: z.enum([
+            'open',
+            'landing',
+            'landed'
+        ]),
+        footprint: z.array(z.string())
+    }),
+    right: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable(),
+        state: z.enum([
+            'open',
+            'landing',
+            'landed'
+        ]),
+        footprint: z.array(z.string())
+    }),
+    merge: z.object({
+        outcome: z.enum(['clean', 'conflict']),
+        conflicts: z.array(z.string())
+    }).nullable(),
+    resolution: zOverlapResolution
+});
+
 /**
  * The Worker serves requests.
  */
@@ -424,3 +470,14 @@ export const zGetDiffPath = z.object({
  * The files of the change that differ from its base on trunk.
  */
 export const zGetDiffResponse = zDiff;
+
+export const zGetOverlapPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    otherChangeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+});
+
+/**
+ * Two changes side by side: their intents and footprints, their merge result, and its resolution.
+ */
+export const zGetOverlapResponse = zOverlapPage;
