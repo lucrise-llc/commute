@@ -1,9 +1,12 @@
 import { StrictMode } from 'react';
 import { RouterProvider } from 'react-router';
 import { createRoot } from 'react-dom/client';
+import { LinkProvider, TooltipProvider } from '@cloudflare/kumo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { router } from './router';
+import { RouterLink } from './router-link';
+import { followSystemColorMode } from './color-mode';
 import './styles.css';
 
 // Data changes only when the coordinator sends an event, and each event invalidates the project's queries. No page
@@ -22,10 +25,19 @@ if (rootElement === null) {
   throw new Error('ROOT_ELEMENT_MISSING');
 }
 
+followSystemColorMode();
+
+// Kumo popups render into the body. The isolated root keeps them above the console's own stacking contexts.
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <LinkProvider component={RouterLink}>
+        <TooltipProvider>
+          <div className="isolate min-h-screen text-base">
+            <RouterProvider router={router} />
+          </div>
+        </TooltipProvider>
+      </LinkProvider>
     </QueryClientProvider>
   </StrictMode>
 );

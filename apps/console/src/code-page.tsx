@@ -1,10 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { getBlob, getTree, listChanges, listCommits } from '@commute/api-client';
+import { Breadcrumbs, cn, Code, Empty, Link, Select, Text } from '@cloudflare/kumo';
+import { BookOpenIcon, FileIcon, FolderIcon, GitBranchIcon } from '@phosphor-icons/react';
 
+import { Box, BoxRow } from './box';
+import { ownerName } from './describe';
+import { RouterLink } from './router-link';
 import { useProject } from './project-context';
-import { FileIcon, FolderIcon, StateIcon } from './icons';
-import { ownerName, shortCommit, timeAgo } from './describe';
+import { ICON_CLASS, StateIcon } from './icons';
+import { SidebarSection } from './sidebar-section';
+import { ShortCommit, TimeAgo } from './hover-details';
 
 const README_NAME = 'README.md';
 const TRUNK_REF = 'trunk';
@@ -43,74 +49,94 @@ export function CodePage(): React.JSX.Element {
   const switchRef = async (next: string): Promise<void> => {
     await navigate(`/p/${projectId}/tree/${next}`);
   };
+  const refItems = [
+    { value: TRUNK_REF, label: TRUNK_REF },
+    ...inFlight.map((change) => ({ value: change.changeId, label: `${change.changeId}: ${change.intent}` }))
+  ];
   return (
-    <div className="with-sidebar">
-      <div>
-        <div className="toolbar">
-          <select
+    <div className="grid grid-cols-[minmax(0,1fr)_300px] items-start gap-6">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <Select
             aria-label="Repository"
+            className="max-w-72"
             value={ref}
-            onChange={(event) => switchRef(event.target.value).catch(reportError)}
-          >
-            <option value={TRUNK_REF}>trunk</option>
-            {inFlight.map((change) => (
-              <option key={change.changeId} value={change.changeId}>
-                {change.changeId}: {change.intent}
-              </option>
-            ))}
-          </select>
-          <Breadcrumbs repoRef={ref} path={path} />
-        </div>
-        <div className="box">
-          <div className="box-header">
-            {latest === undefined ? (
-              <span className="meta">No commits yet</span>
-            ) : (
-              <>
-                <strong>{latest.author}</strong>
-                <span className="grow">{latest.message.split('\n')[0]}</span>
-                <span className="meta">
-                  <code>{shortCommit(latest.hash)}</code> · {timeAgo(latest.authoredAt)} ·{' '}
-                  <Link to={`/p/${projectId}/commits/${ref}`}>History</Link>
-                </span>
-              </>
+            items={refItems}
+            renderValue={(value) => (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <GitBranchIcon className={ICON_CLASS} />
+                <span className="truncate">{value}</span>
+              </span>
             )}
-          </div>
-          {tree.error === null ? null : <div className="box-body meta">Nothing here yet.</div>}
+            onValueChange={(next) => {
+              if (next !== null) {
+                switchRef(next).catch(reportError);
+              }
+            }}
+          />
+          <PathBreadcrumbs repoRef={ref} path={path} />
+        </div>
+        <Box
+          header={
+            latest === undefined ? (
+              <span className="font-normal text-kumo-subtle">No commits yet</span>
+            ) : (
+              <span className="flex min-w-0 grow items-center gap-3">
+                <strong>{latest.author}</strong>
+                <span className="min-w-0 grow truncate font-normal">{latest.message.split('\n')[0]}</span>
+                <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-kumo-subtle">
+                  <ShortCommit commit={latest.hash} /> · <TimeAgo iso={latest.authoredAt} /> ·{' '}
+                  <Link variant="plain" href={`/p/${projectId}/commits/${ref}`}>
+                    History
+                  </Link>
+                </span>
+              </span>
+            )
+          }
+        >
+          {tree.error === null ? null : (
+            <Empty size="sm" icon={<FolderIcon className="size-8 text-kumo-inactive" />} title="Nothing here yet." />
+          )}
           {(tree.data?.entries ?? []).map((entry) => (
-            <div className="box-row" key={entry.path}>
-              {entry.type === 'tree' ? <FolderIcon className="icon-muted" /> : <FileIcon className="icon-muted" />}
-              <Link
-                className="grow"
-                to={`/p/${projectId}/${entry.type === 'tree' ? 'tree' : 'blob'}/${ref}/${entry.path}`}
+            <BoxRow key={entry.path} className="items-center py-2">
+              {entry.type === 'tree' ? (
+                <FolderIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-info')} />
+              ) : (
+                <FileIcon className={cn(ICON_CLASS, 'text-kumo-subtle')} />
+              )}
+              <RouterLink
+                className="text-kumo-default hover:text-kumo-link hover:underline"
+                href={`/p/${projectId}/${entry.type === 'tree' ? 'tree' : 'blob'}/${ref}/${entry.path}`}
               >
                 {entry.name}
-              </Link>
-            </div>
+              </RouterLink>
+            </BoxRow>
           ))}
-        </div>
+        </Box>
         {readme === undefined ? null : <Readme repoRef={ref} path={readme.path} />}
       </div>
       <aside>
-        <div className="sidebar-section">
-          <h3>About</h3>
+        <SidebarSection title="About">
           {ref === TRUNK_REF ? 'Trunk at its last landing.' : `The repository of change ${ref}.`}
-        </div>
-        <div className="sidebar-section">
-          <h3>Changes in flight here</h3>
-          {touching.length === 0 ? <span className="meta">None</span> : null}
+        </SidebarSection>
+        <SidebarSection title="Changes in flight here">
+          {touching.length === 0 ? <span className="text-kumo-subtle">None</span> : null}
           {touching.map((change) => (
-            <div key={change.changeId} className="compact-row">
-              <StateIcon state={change.state} />
-              <span className="grow">
-                <Link to={`/p/${projectId}/changes/${change.changeId}`}>{change.intent}</Link>
-                <div className="meta">
+            <div key={change.changeId} className="flex items-start gap-2 py-1">
+              <span className="mt-0.5">
+                <StateIcon state={change.state} />
+              </span>
+              <span className="min-w-0 grow">
+                <Link variant="plain" href={`/p/${projectId}/changes/${change.changeId}`}>
+                  {change.intent}
+                </Link>
+                <Text variant="secondary" size="xs">
                   {change.changeId} by {ownerName(change.owner)}
-                </div>
+                </Text>
               </span>
             </div>
           ))}
-        </div>
+        </SidebarSection>
       </aside>
     </div>
   );
@@ -121,21 +147,38 @@ type RefPathProps = {
   path: string;
 };
 
-export function Breadcrumbs({ repoRef: ref, path }: RefPathProps): React.JSX.Element {
+// The project, then each folder of the path as a link, then the last segment as the current page.
+export function PathBreadcrumbs({ repoRef: ref, path }: RefPathProps): React.JSX.Element {
   const { projectId } = useProject();
   const segments = path === '' ? [] : path.split('/');
+  const current = segments.at(-1);
+  const crumbs: React.ReactNode[] = [];
+  if (current === undefined) {
+    crumbs.push(<Breadcrumbs.Current key="project">{projectId}</Breadcrumbs.Current>);
+  } else {
+    crumbs.push(
+      <Breadcrumbs.Link key="project" href={`/p/${projectId}/tree/${ref}`}>
+        {projectId}
+      </Breadcrumbs.Link>
+    );
+  }
+  segments.forEach((segment, index) => {
+    const segmentPath = segments.slice(0, index + 1).join('/');
+    crumbs.push(<Breadcrumbs.Separator key={`separator-${segmentPath}`} />);
+    if (index === segments.length - 1) {
+      crumbs.push(<Breadcrumbs.Current key={segmentPath}>{segment}</Breadcrumbs.Current>);
+    } else {
+      crumbs.push(
+        <Breadcrumbs.Link key={segmentPath} href={`/p/${projectId}/tree/${ref}/${segmentPath}`}>
+          {segment}
+        </Breadcrumbs.Link>
+      );
+    }
+  });
   return (
-    <span>
-      <Link to={`/p/${projectId}/tree/${ref}`}>
-        <strong>{projectId}</strong>
-      </Link>
-      {segments.map((segment, index) => (
-        <span key={segments.slice(0, index + 1).join('/')}>
-          {' / '}
-          <Link to={`/p/${projectId}/tree/${ref}/${segments.slice(0, index + 1).join('/')}`}>{segment}</Link>
-        </span>
-      ))}
-    </span>
+    <Breadcrumbs size="sm" className="h-auto grow-0">
+      {crumbs}
+    </Breadcrumbs>
   );
 }
 
@@ -146,11 +189,15 @@ function Readme({ repoRef: ref, path }: RefPathProps): React.JSX.Element {
     queryFn: async () => (await getBlob({ path: { projectId, ref }, query: { path }, throwOnError: true })).data
   });
   return (
-    <div className="box">
-      <div className="box-header">
-        <FileIcon className="icon-muted" /> <strong>{README_NAME}</strong>
-      </div>
-      <pre className="box-body">{blob.data?.text ?? ''}</pre>
-    </div>
+    <Box
+      header={
+        <span className="flex items-center gap-2">
+          <BookOpenIcon className={ICON_CLASS} />
+          {README_NAME}
+        </span>
+      }
+    >
+      <Code code={blob.data?.text ?? ''} className="px-4 py-3 whitespace-pre-wrap text-kumo-default" />
+    </Box>
   );
 }

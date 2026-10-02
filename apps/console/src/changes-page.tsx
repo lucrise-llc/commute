@@ -1,14 +1,18 @@
 import type { ChangeListItem } from '@commute/api-client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listChanges } from '@commute/api-client';
-import { Link, useSearchParams } from 'react-router';
+import { GitPullRequestIcon } from '@phosphor-icons/react';
+import { Badge, Checkbox, cn, Empty, Link, Text } from '@cloudflare/kumo';
 
+import { Box, BoxRow } from './box';
+import { RouterLink } from './router-link';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
+import { EventIcon, StateIcon } from './icons';
 import { describeEvent, describeWait, ownerName } from './describe';
-import { ChangeLandedIcon, ChangeOpenIcon, EventIcon, StateIcon } from './icons';
 
 const FEED_EVENTS_SHOWN = 12;
 
@@ -33,69 +37,103 @@ export function ChangesPage(): React.JSX.Element {
     change.landsAfter.map((earlierChangeId) => ({ changeId: change.changeId, earlierChangeId }))
   );
   return (
-    <div className="with-sidebar">
-      <div>
-        <div className="toolbar">
-          <label>
-            <input type="checkbox" checked={isMineOnly} onChange={(event) => setMineOnly(event.target.checked)} /> Mine
-            {me === '' ? '' : ` (${me})`}
-          </label>
-          <span className="meta">
+    <div className="grid grid-cols-[minmax(0,1fr)_300px] items-start gap-6">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <Checkbox
+            label={me === '' ? 'Mine' : `Mine (${me})`}
+            checked={isMineOnly}
+            onCheckedChange={(checked) => setMineOnly(checked)}
+          />
+          <Text variant="secondary" size="xs">
             Checks of the current heads: {kept} kept from earlier runs, {ran} ran
-          </span>
+          </Text>
         </div>
-        <div className="box">
-          <div className="box-header">
-            <Link className={`link-button ${isLandedShown ? 'meta' : 'row-title'}`} to={`/p/${projectId}/changes`}>
-              <ChangeOpenIcon className="icon-open" /> {inFlight.length} In flight
-            </Link>
-            <Link
-              className={`link-button ${isLandedShown ? 'row-title' : 'meta'}`}
-              to={`/p/${projectId}/changes?state=landed`}
-            >
-              <ChangeLandedIcon className="icon-landed" /> {landed.length} Landed
-            </Link>
-          </div>
-          {rows.length === 0 ? <div className="box-body meta">No changes here.</div> : null}
+        <Box
+          header={
+            <span className="flex items-center gap-4">
+              <FilterLink href={`/p/${projectId}/changes`} isActive={!isLandedShown}>
+                <StateIcon state="open" className={isLandedShown ? 'text-current' : undefined} />
+                {inFlight.length} In flight
+              </FilterLink>
+              <FilterLink href={`/p/${projectId}/changes?state=landed`} isActive={isLandedShown}>
+                <StateIcon state="landed" className={isLandedShown ? undefined : 'text-current'} />
+                {landed.length} Landed
+              </FilterLink>
+            </span>
+          }
+        >
+          {rows.length === 0 ? (
+            <Empty
+              size="sm"
+              icon={<GitPullRequestIcon className="size-8 text-kumo-inactive" />}
+              title="No changes here."
+            />
+          ) : null}
           {rows.map((change) => (
             <ChangeRow key={change.changeId} change={change} />
           ))}
-        </div>
+        </Box>
       </div>
-      <aside>
+      <aside className="flex flex-col gap-4">
         <ApproveBatch />
-        <div className="box">
-          <div className="box-header">
-            <strong>Sequenced</strong>
-          </div>
-          {sequences.length === 0 ? <div className="box-body meta">No change waits for another.</div> : null}
+        <Box header="Sequenced">
+          {sequences.length === 0 ? (
+            <BoxRow>
+              <Text variant="secondary" size="sm">
+                No change waits for another.
+              </Text>
+            </BoxRow>
+          ) : null}
           {sequences.map(({ changeId, earlierChangeId }) => (
-            <div className="box-row" key={`${changeId}-${earlierChangeId}`}>
-              <Link to={`/p/${projectId}/overlaps/${changeId}/${earlierChangeId}`}>
+            <BoxRow key={`${changeId}-${earlierChangeId}`}>
+              <Link variant="plain" href={`/p/${projectId}/overlaps/${changeId}/${earlierChangeId}`}>
                 {changeId} lands after {earlierChangeId}
               </Link>
-            </div>
+            </BoxRow>
           ))}
-        </div>
-        <div className="box">
-          <div className="box-header">
-            <strong>Activity</strong>
-          </div>
+        </Box>
+        <Box header="Activity">
           {events
             .slice(-FEED_EVENTS_SHOWN)
             .toReversed()
             .map((event) => (
-              <div className="box-row" key={event.seq}>
-                <EventIcon event={event} />
-                <span className="grow">
-                  <Link to={`/p/${projectId}/changes/${event.changeId}`}>{event.changeId}</Link>{' '}
-                  <span className="meta">{describeEvent(event)}</span>
+              <BoxRow key={event.seq} className="py-2.5">
+                <span className="mt-0.5">
+                  <EventIcon event={event} />
                 </span>
-              </div>
+                <p className="min-w-0 grow text-sm">
+                  <Link variant="plain" href={`/p/${projectId}/changes/${event.changeId}`}>
+                    {event.changeId}
+                  </Link>{' '}
+                  <span className="text-kumo-subtle">{describeEvent(event)}</span>
+                </p>
+              </BoxRow>
             ))}
-        </div>
+        </Box>
       </aside>
     </div>
+  );
+}
+
+type FilterLinkProps = {
+  href: string;
+  isActive: boolean;
+  children: React.ReactNode;
+};
+
+// A filter of a Git host list: bold while it applies, muted otherwise.
+function FilterLink({ href, isActive, children }: FilterLinkProps): React.JSX.Element {
+  return (
+    <RouterLink
+      href={href}
+      className={cn(
+        'inline-flex items-center gap-1.5 hover:text-kumo-default',
+        isActive ? 'font-semibold text-kumo-default' : 'text-kumo-subtle'
+      )}
+    >
+      {children}
+    </RouterLink>
   );
 }
 
@@ -111,20 +149,27 @@ function ChangeRow({ change }: ChangeRowProps): React.JSX.Element {
     status = waiting === '' ? 'ready to land' : waiting;
   }
   return (
-    <div className="box-row">
-      <StateIcon state={change.state} />
-      <div className="grow">
-        <Link className="row-title" to={`/p/${projectId}/changes/${change.changeId}`}>
-          {change.intent}
-        </Link>{' '}
-        {change.resolvedConflicts > 0 ? <span className="label">resolved by Commute</span> : null}
-        <div className="meta">
+    <BoxRow>
+      <span className="mt-0.5">
+        <StateIcon state={change.state} />
+      </span>
+      <div className="min-w-0 grow">
+        <div className="flex flex-wrap items-center gap-2">
+          <RouterLink
+            className="font-semibold text-kumo-default hover:text-kumo-link hover:underline"
+            href={`/p/${projectId}/changes/${change.changeId}`}
+          >
+            {change.intent}
+          </RouterLink>
+          {change.resolvedConflicts > 0 ? <Badge variant="outline">resolved by Commute</Badge> : null}
+        </div>
+        <Text variant="secondary" size="xs">
           {change.changeId} by {ownerName(change.owner)} · {status} · checks {change.checks.kept} kept,{' '}
           {change.checks.ran} ran
           {change.checks.pending > 0 ? `, ${change.checks.pending} running` : ''}
           {change.checks.failed > 0 ? `, ${change.checks.failed} failed` : ''}
-        </div>
+        </Text>
       </div>
-    </div>
+    </BoxRow>
   );
 }
