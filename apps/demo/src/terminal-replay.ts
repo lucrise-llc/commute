@@ -72,19 +72,23 @@ type TimedStep = Partial<ReplayStep> & {
 export type ReplayPlan = {
   steps: Map<number, ReplayStep>;
   frameCount: number;
+  // The index of the last command in the replay, so that a later replay can continue after it.
+  lastCommand: number;
 };
 
 type PlanReplayParams = {
   transcript: Transcript;
   intro: string;
   cues: TerminalCue[];
+  fromCommand?: number;
 };
 
-// The replay starts with the intro caption and ends after the command of the last cue. A cue shows for its reading
-// time before the next cue may replace it, so the typing waits for the reader.
-export function planReplay({ transcript, intro, cues }: PlanReplayParams): ReplayPlan {
-  const cueTexts = matchCues({ transcript, cues });
-  const commands = transcript.commands.slice(0, Math.max(...cueTexts.keys()) + 1);
+// The replay starts with the intro caption at the command fromCommand and ends after the command of the last cue. A
+// cue shows for its reading time before the next cue may replace it, so the typing waits for the reader.
+export function planReplay({ transcript, intro, cues, fromCommand = 0 }: PlanReplayParams): ReplayPlan {
+  const cueTexts = matchCues({ transcript, cues, fromCommand });
+  const lastCommand = Math.max(...cueTexts.keys());
+  const commands = transcript.commands.slice(fromCommand, lastCommand + 1);
   const steps = new Map<number, ReplayStep>();
   const add = ({ atMs, write = '', caption: text = null }: TimedStep): void => {
     const frame = Math.round(atMs / FRAME_MS);
@@ -96,7 +100,7 @@ export function planReplay({ transcript, intro, cues }: PlanReplayParams): Repla
   let caption = { text: intro, atMs: 0 };
   add({ atMs: 0, caption: captionMarkup(intro), write: prompt(commands[0]?.dir ?? '.') });
   for (const [index, command] of commands.entries()) {
-    const cueText = cueTexts.get(index);
+    const cueText = cueTexts.get(fromCommand + index);
     if (cueText !== undefined) {
       clockMs = Math.max(clockMs, caption.atMs + readingMs(caption.text));
       caption = { text: cueText, atMs: clockMs };
@@ -118,18 +122,19 @@ export function planReplay({ transcript, intro, cues }: PlanReplayParams): Repla
   if (durationMs > REPLAY_MS_MAX) {
     throw new Error(`REPLAY_TOO_LONG: the replay takes ${Math.round(durationMs)} ms, more than ${REPLAY_MS_MAX}.`);
   }
-  return { steps, frameCount: Math.ceil(durationMs / FRAME_MS) };
+  return { steps, frameCount: Math.ceil(durationMs / FRAME_MS), lastCommand };
 }
 
 type MatchCuesParams = {
   transcript: Transcript;
   cues: TerminalCue[];
+  fromCommand: number;
 };
 
 // Maps the index of each cued command to its caption. The cues match commands in order.
-function matchCues({ transcript, cues }: MatchCuesParams): Map<number, string> {
+function matchCues({ transcript, cues, fromCommand }: MatchCuesParams): Map<number, string> {
   const matched = new Map<number, string>();
-  let fromIndex = 0;
+  let fromIndex = fromCommand;
   for (const cue of cues) {
     const index = transcript.commands.findIndex(
       (command, position) =>

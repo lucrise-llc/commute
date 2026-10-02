@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Composes the walkthrough video from a recorded take: the title and why cards, a replay of one agent's terminal, the
-// console segments with a chapter card before each, and the outro cards. Run it after `npm run record`.
+// console segments with a chapter card before each, the rest of that agent's terminal, and the outro cards. Run it
+// after `npm run record`.
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from 'node:util';
@@ -16,7 +17,6 @@ import { FAST_SPEED, planSegments } from './segments.ts';
 import { TIMELINE_FILE, timelineSchema } from './capture.ts';
 import { planReplay, renderReplay } from './terminal-replay.ts';
 import { encodeFramesClip, encodeStillClip, joinClips } from './clips.ts';
-import { TERMINAL_AGENT, TERMINAL_CUES, TERMINAL_INTRO, WHY_CARDS } from './story.ts';
 import {
   BADGE_WIDTH,
   badgeHtml,
@@ -27,6 +27,15 @@ import {
   VIDEO_HEIGHT,
   VIDEO_WIDTH
 } from './graphics.ts';
+import {
+  AGENT_CHAPTER,
+  AGENT_OUTRO_CUES,
+  AGENT_OUTRO_INTRO,
+  TERMINAL_AGENT,
+  TERMINAL_CUES,
+  TERMINAL_INTRO,
+  WHY_CARDS
+} from './story.ts';
 
 const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const TRANSCRIPTS_DIR = 'transcripts';
@@ -38,6 +47,8 @@ const OUTPUT_BYTES_MAX = 10_000_000;
 const DEFAULT_CRF = '28';
 const CRF_MIN = 18;
 const CRF_MAX = 40;
+// The submission asks for a demo video of 5 to 10 minutes (PRD.md).
+const VIDEO_MS_MIN = 300_000;
 const VIDEO_MS_MAX = 600_000;
 const TITLE_MS = 5_000;
 const WHY_MS_MIN = 6_000;
@@ -73,9 +84,16 @@ const transcript = transcriptSchema.parse(
 );
 const segments = planSegments({ timeline, recordingDir });
 const replay = planReplay({ transcript, intro: TERMINAL_INTRO, cues: TERMINAL_CUES });
+const outroReplay = planReplay({
+  transcript,
+  intro: AGENT_OUTRO_INTRO,
+  cues: AGENT_OUTRO_CUES,
+  fromCommand: replay.lastCommand + 1
+});
 
 await rm(workDir, { recursive: true, force: true });
 await mkdir(join(workDir, 'terminal'), { recursive: true });
+await mkdir(join(workDir, 'terminal-outro'), { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const clips: string[] = [];
@@ -104,12 +122,24 @@ await renderGraphic({
 for (const [index, segment] of segments.entries()) {
   await addConsoleSegment({ segment, number: index });
 }
+await addCard({ card: { kind: 'chapter', number: segments.length, title: AGENT_CHAPTER }, durationMs: CHAPTER_MS });
+await addFrames({
+  frames: await renderReplay({
+    browser,
+    plan: outroReplay,
+    title: transcript.agent,
+    framesDir: join(workDir, 'terminal-outro')
+  }),
+  overlays: []
+});
 await addCard({ card: { kind: 'architecture' }, durationMs: ARCHITECTURE_MS });
 await addCard({ card: { kind: 'closing' }, durationMs: CLOSING_MS });
 await browser.close();
 
-if (videoMs > VIDEO_MS_MAX) {
-  throw new Error(`VIDEO_TOO_LONG: the video takes ${Math.round(videoMs)} ms, more than ${VIDEO_MS_MAX}.`);
+if (videoMs < VIDEO_MS_MIN || videoMs > VIDEO_MS_MAX) {
+  throw new Error(
+    `VIDEO_LENGTH_OUT_OF_RANGE: the video takes ${Math.round(videoMs)} ms; the submission asks for ${VIDEO_MS_MIN} to ${VIDEO_MS_MAX}.`
+  );
 }
 await joinClips({ clips, listPath: join(workDir, 'clips.ffconcat'), output, crf });
 const { size } = await stat(output);

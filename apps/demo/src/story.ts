@@ -56,3 +56,26 @@ export const TERMINAL_CUES: TerminalCue[] = [
     text: 'commute wait reports what happens. Here, Commute already resolved the conflict.'
   }
 ];
+
+export const AGENT_CHAPTER = "What Bob's agent saw";
+
+export const AGENT_OUTRO_INTRO = "The rest of Bob's terminal. The agent only waited and pulled.";
+
+// The cues of the rest of the transcript, after the command of the last cue above.
+export const AGENT_OUTRO_CUES: TerminalCue[] = [
+  {
+    command: /^commute wait/,
+    output: /^restack\s+onto trunk \S+: /,
+    text: "When Bob's first batch lands, Commute asks the agent to pull the new trunk."
+  },
+  {
+    command: /^commute wait/,
+    output: /^restack .+with Commute's resolution/,
+    text: "When Alice's change lands, the agent pulls Commute's resolution. It never edits the conflict itself."
+  },
+  {
+    command: /^commute wait/,
+    output: /^landed\s/,
+    text: "Bob's change lands in the batch Bob approved. The agent never stopped to fix a conflict."
+  }
+];
