@@ -98,7 +98,7 @@ createInterface({ input: harness.stdout }).on('line', (line) => {
 });
 const harnessExit = new Promise<number | null>((resolve) => harness.on('exit', resolve));
 
-await nextLine(/^== project /);
+await nextLine(/^== trunk seeded/);
 await show(`/p/${projectId}/changes`);
 await nextLine(/^== all 20 agents started/);
 caption('Push', 'Each agent pushes with plain git. Merge checks run only where two footprints meet.');
