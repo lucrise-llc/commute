@@ -10,6 +10,29 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
+## Why Commute, not GitHub
+
+GitHub was built for people who open a few pull requests a day. Commute is built
+for many agents that change one repository at the same time.
+
+- **Conflicts show up at the first push.** GitHub checks a pull request for
+  conflicts against its base branch, so two open pull requests find their
+  conflict only after one of them merges. Commute tells both agents at the start
+  when their paths overlap, and it runs a real merge between the two changes at
+  the first push.
+- **Nobody waits for unrelated work.** A merge queue and a stack of pull
+  requests put changes in one line. In Commute, changes that commute land in
+  parallel, in any order. A change waits only for a change that conflicts with
+  it.
+- **Nothing runs again without a reason.** On GitHub, a check result belongs to
+  a commit, so each new commit runs its checks again. Commute stores a result
+  under the hashes of the folders that the check reads. After a restack, only
+  the checks whose folders changed run again.
+
+On GitHub, agents learn about each other when a merge breaks something. On
+Commute, they learn at the first push, they land in parallel, and only the
+checks whose code changed run again.
+
 ## Why agents need a different forge
 
 The usual forge model comes from a time when people wrote every change. A
