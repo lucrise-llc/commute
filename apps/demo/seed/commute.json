@@ -1,0 +1,10 @@
+{
+  "checks": [
+    { "name": "cart", "command": "node scripts/check.mjs cart", "reads": ["src/cart", "scripts"], "version": 1 },
+    { "name": "search", "command": "node scripts/check.mjs search", "reads": ["src/search", "scripts"], "version": 1 },
+    { "name": "catalog", "command": "node scripts/check.mjs catalog", "reads": ["src/catalog", "scripts"], "version": 1 },
+    { "name": "i18n", "command": "node scripts/check.mjs i18n", "reads": ["src/i18n", "scripts"], "version": 1 },
+    { "name": "routes", "command": "node scripts/check.mjs routes", "reads": ["src/routes.mjs", "scripts"], "version": 1 },
+    { "name": "docs", "command": "node scripts/check.mjs docs", "reads": ["docs", "scripts"], "version": 1 }
+  ]
+}

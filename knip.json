@@ -1,5 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["poc/**", "**/generated/**"],
+  "ignore": ["poc/**", "**/generated/**", "apps/demo/seed/**"],
   "ignoreDependencies": ["cloudflare"]
 }
