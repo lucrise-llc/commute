@@ -63,7 +63,7 @@ Two more problems came up often:
 | User | Need |
 |---|---|
 | Implementer agent | A repository in seconds. Early news of overlaps. A clear signal when its change is ready or blocked. |
-| Resolver agent | The conflicting hunk and the intent of both changes. |
+| Resolver (a model) | The conflicting hunk, the intent of both changes, and the IDs of the lines it may choose. |
 | Operator (a person) | One view of the fleet. One decision per landing batch. Trust that every result names the content it checked. |
 | Team member (a person who runs agents) | A view of their own changes. News only when a decision needs them. No need to tell other people about overlaps. |
 
@@ -80,12 +80,12 @@ Two more problems came up often:
 | Sequence | An order that the coordinator sets between two changes that collide. |
 | Commute | Two changes commute when they merge cleanly in either order. |
 | Result | The outcome of a check. Its key is the hash of each subtree that the check reads, plus the version of the check. |
-| Resolution | How a conflict was resolved. Its key is the hash of the conflict hunk: its base, ours, and theirs lines. |
+| Resolution | The lines chosen from both sides of a conflict hunk, in order. Its key is the hash of the hunk: its base, ours, and theirs lines. |
 | Landing batch | A set of changes that commute with each other and with trunk. A person approves the batch. |
 | Coordinator | One per project. It holds the footprint index, the sequences, the result keys, and the landing queue. It sends every event. |
 | Commute remote | The Git address of a change. A Worker forwards Git traffic to the Artifacts repository of the change and tells the coordinator about each push. |
-| Runner | A container that runs merges, checks, and the resolver agent. Its image includes Git. |
-| Event | A message from the coordinator: overlap found, check done, restacked, resolved, or landed. |
+| Runner | A container that runs merges, checks, and the merge commits of resolutions. Its image includes Git. |
+| Event | A message from the coordinator: overlap found, check done, restacked, resolution, or landed. |
 
 ## Principles
 
@@ -159,7 +159,7 @@ directory at the same path get a sequence.
 #### D3. Events and `commute wait`
 
 - The coordinator sends events over a WebSocket: overlap found, check done,
-  restacked, resolved, landed.
+  restacked, resolution, landed.
 - Push events come from the Commute remote, so the coordinator knows about a
   push before `git push` returns.
 - `commute wait` blocks until the next event for the change arrives, then
@@ -198,23 +198,32 @@ only the checks that read that subtree.
 Acceptance: a batch of four or more changes lands after one approval, and no
 check runs again for a change whose subtrees did not move.
 
-#### D6. Resolver agent
+#### D6. Conflicts resolved by choosing lines
 
-- When a restack produces a conflict, the coordinator starts a resolver agent
-  in a runner.
-- The resolver receives the conflicting hunk and the intent and notes of both
-  changes.
-- The resolver commits a resolution. The checks for the affected subtrees run
-  on the result.
-- The coordinator stores the resolution. Its key is the hash of the conflict
-  hunk: its base, ours, and theirs lines, read from the `git merge-tree` output.
-  When the same conflict occurs again, the stored resolution applies and the
-  resolver does not run. Git rerere is not used, because `git merge-tree` does
-  not apply it.
+- When a merge check finds a conflict between two changes in flight, the
+  coordinator resolves it for the change that lands later. It does not wait for
+  the first change to land.
+- A Workers AI model receives each conflicting hunk and the intent of both
+  changes. It answers with the IDs of lines that the two changes wrote, in
+  order. It cannot write a line, so a resolution puts no new code on trunk. It
+  can drop a line, such as a duplicate, with a reason.
+- An answer must place every line of both sides once, kept or dropped. A hunk
+  whose right result needs a new line goes to the owner of the change. So do an
+  answer that breaks the rule and a conflict that is not between two text
+  files, such as a deleted, renamed, or binary file.
+- The coordinator stores each resolution. Its key is the hash of the hunk: its
+  base, ours, and theirs lines. When the first change lands, the restack of the
+  second change finds the stored resolution and applies it without a second
+  model call. Git rerere is not used, because `git merge-tree` does not apply
+  it.
+- The checks for the affected folders run on the resolved head. The change
+  lists the files that Commute resolved and every dropped line, and the note of
+  the landed commit says `resolved-by: commute`.
 
-Acceptance: a conflict between two changes is resolved without a person, the
-checks pass, and a second change that hits the same conflict reuses the stored
-resolution.
+Acceptance: two changes that conflict are resolved when the conflict is found.
+The resolution applies at landing without a second model call, the checks pass,
+and neither person acts. A delete against an edit goes to the owner with the
+reason.
 
 #### D7. Console: code, changes, the change page, and the overlap page
 
@@ -308,7 +317,7 @@ required items are done early.
 | 1 | Why | The problem in numbers: conflicts are cheap, waiting and lost results are expensive. |
 | 1.5 | Start | Alice and Bob each start 10 agents. Overlaps show up at the start. Most changes run in parallel. Two pairs are sequenced, and one pair crosses from Alice to Bob. |
 | 1.5 | Land | Bob approves a batch that has changes from both people. Its changes land in any order. A counter shows the checks kept. |
-| 2 | Conflict | Alice's change lands. Bob's change restacks onto the new trunk and conflicts. The resolver uses both intents and stores the resolution. Neither person acts. A later change hits the same conflict, and the stored resolution applies. |
+| 2 | Conflict | Alice's agent and Bob's agent add an entry at the same line. Commute finds the conflict at Bob's first push and resolves it by choosing lines from both changes. Alice's change lands, Bob's change restacks with the stored resolution, and one check runs again. Neither person acts. |
 | 1 | Agent view | The CLI: `commute start`, plain Git, `commute wait`. |
 
 ### Measures
@@ -326,7 +335,8 @@ required items are done early.
 | API, console, and the Commute remote | Workers |
 | Trunk and one repository per change | Artifacts |
 | Coordinator, one per project | Durable Objects |
-| Runners for merges, checks, and the resolver agent | Containers, from an image that includes Git |
+| Runners for merges, checks, and the merge commits of resolutions | Containers, from an image that includes Git |
+| Resolver | Workers AI, a model in JSON mode that answers with line IDs |
 | Push events | The Commute remote, after Artifacts accepts the push |
 
 Commute does not use Artifacts event subscriptions for pushes. A push
@@ -353,7 +363,7 @@ The flow for one change:
 5. The coordinator runs the checks whose keys changed.
 6. The change joins a landing batch. The operator approves the batch.
 7. Changes in the batch land on trunk. The coordinator restacks every affected
-   change and starts the resolver for each conflict.
+   change and applies the stored resolution of each conflict.
 
 ### Risks settled on October 1
 
@@ -435,6 +445,9 @@ These features complete the product. They are not part of the demo.
   waits for.
 - **Notifications for people.** Send a message to a person only when a decision
   needs a person.
+- **Resolver per project.** Each project names its own model and key, so the
+  project pays for its own inference. Merge rules per path, such as
+  regenerating a lockfile, resolve those files without a model.
 
 ### Console
 
