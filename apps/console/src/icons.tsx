@@ -84,11 +84,7 @@ export function EventIcon({ event }: EventIconProps): React.JSX.Element {
       return <XCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-danger')} />;
     }
     case 'checks_done': {
-      return event.failed.length === 0 ? (
-        <CheckCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-success')} />
-      ) : (
-        <XCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-danger')} />
-      );
+      return <CheckOutcomeIcon outcome={event.failed.length === 0 ? 'pass' : 'fail'} />;
     }
     case 'landed': {
       return <StateIcon state="landed" />;

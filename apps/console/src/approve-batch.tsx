@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { approveBatch, getLanding } from '@commute/api-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Checkbox, Loader, Text } from '@cloudflare/kumo';
+import { Banner, Button, Checkbox, Text } from '@cloudflare/kumo';
 
 import { Box, BoxRow } from './box';
+import { Loading } from './loading';
 import { ownerName } from './describe';
 import { useProject } from './project-context';
 
@@ -21,11 +22,8 @@ export function ApproveBatch(): React.JSX.Element {
   if (landing.data === undefined) {
     return (
       <Box header="Landing batch">
-        <BoxRow className="items-center text-kumo-subtle">
-          <Loader size="sm" />
-          <Text variant="secondary" size="sm">
-            Loading the batch…
-          </Text>
+        <BoxRow>
+          <Loading text="Loading the batch…" />
         </BoxRow>
       </Box>
     );

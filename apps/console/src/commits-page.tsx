@@ -7,7 +7,7 @@ import { cn, Empty, Link, Text } from '@cloudflare/kumo';
 import { Box, BoxRow } from './box';
 import { ICON_CLASS } from './icons';
 import { useProject } from './project-context';
-import { ShortCommit, TimeAgo } from './hover-details';
+import { ShortCommit, TimeAgo } from './short-forms';
 
 export function CommitsPage(): React.JSX.Element {
   const { projectId } = useProject();

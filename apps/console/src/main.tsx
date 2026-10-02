@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { RouterProvider } from 'react-router';
 import { createRoot } from 'react-dom/client';
-import { LinkProvider, TooltipProvider } from '@cloudflare/kumo';
+import { LinkProvider } from '@cloudflare/kumo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { router } from './router';
@@ -32,11 +32,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <LinkProvider component={RouterLink}>
-        <TooltipProvider>
-          <div className="isolate min-h-screen text-base">
-            <RouterProvider router={router} />
-          </div>
-        </TooltipProvider>
+        <div className="isolate min-h-screen text-base">
+          <RouterProvider router={router} />
+        </div>
       </LinkProvider>
     </QueryClientProvider>
   </StrictMode>

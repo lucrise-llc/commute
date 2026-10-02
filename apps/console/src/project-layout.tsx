@@ -1,8 +1,7 @@
-import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listChanges } from '@commute/api-client';
 import { Outlet, useMatch, useParams } from 'react-router';
-import { Badge, Input, Label, Link, Tabs } from '@cloudflare/kumo';
+import { Badge, Input, Link, Tabs } from '@cloudflare/kumo';
 import { CodeIcon, GitPullRequestIcon } from '@phosphor-icons/react';
 
 import { useEvents } from './use-events';
@@ -17,7 +16,6 @@ const PERSON_LABEL = 'Your name';
 // The header of a repository page on a familiar Git host: the project path, then the Code and Changes tabs.
 export function ProjectLayout(): React.JSX.Element {
   const { projectId = '' } = useParams();
-  const nameInputId = useId();
   const [personName, setPersonName] = usePersonName();
   const events = useEvents({ projectId });
   const changes = useQuery({
@@ -32,7 +30,7 @@ export function ProjectLayout(): React.JSX.Element {
   return (
     <ProjectContext value={{ projectId, personName, events }}>
       <header className="border-b border-kumo-hairline bg-kumo-elevated">
-        <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-6 pt-4">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 pt-4">
           <span className="grid size-7 place-items-center rounded-lg bg-kumo-brand text-white">
             <MarkIcon />
           </span>
@@ -43,12 +41,9 @@ export function ProjectLayout(): React.JSX.Element {
             <span className="px-1 text-kumo-subtle">/</span>
             <strong className="font-semibold">{projectId}</strong>
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Label htmlFor={nameInputId} className="font-normal text-kumo-subtle">
-              {PERSON_LABEL}
-            </Label>
+          <label className="ml-auto flex items-center gap-2 text-kumo-subtle">
+            {PERSON_LABEL}
             <Input
-              id={nameInputId}
               aria-label={PERSON_LABEL}
               size="sm"
               className="w-44"
@@ -56,12 +51,12 @@ export function ProjectLayout(): React.JSX.Element {
               onChange={(event) => setPersonName(event.target.value)}
               placeholder="alice"
             />
-          </div>
+          </label>
         </div>
         <Tabs
           variant="underline"
           value={isChangesTab ? 'changes' : 'code'}
-          className="mx-auto max-w-[1280px] px-4"
+          className="mx-auto max-w-7xl px-4"
           listClassName="h-auto border-b-0 pb-0"
           tabs={[
             {
@@ -90,7 +85,7 @@ export function ProjectLayout(): React.JSX.Element {
           ]}
         />
       </header>
-      <main className="mx-auto max-w-[1280px] p-6">
+      <main className="mx-auto max-w-7xl p-6">
         <Outlet />
       </main>
     </ProjectContext>

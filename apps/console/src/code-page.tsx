@@ -10,7 +10,7 @@ import { RouterLink } from './router-link';
 import { useProject } from './project-context';
 import { ICON_CLASS, StateIcon } from './icons';
 import { SidebarSection } from './sidebar-section';
-import { ShortCommit, TimeAgo } from './hover-details';
+import { ShortCommit, TimeAgo } from './short-forms';
 
 const README_NAME = 'README.md';
 const TRUNK_REF = 'trunk';

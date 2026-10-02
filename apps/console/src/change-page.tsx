@@ -4,8 +4,8 @@ import type { Change, ChangeEvent, Diff } from '@commute/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'react-router';
 import { getChange, getDiff, listCommits } from '@commute/api-client';
-import { ArrowsMergeIcon, CheckCircleIcon, ClockIcon, IntersectIcon } from '@phosphor-icons/react';
-import { Badge, Banner, cn, Code, Collapsible, Link, Loader, Table, Tabs, Text } from '@cloudflare/kumo';
+import { ArrowsMergeIcon, ClockIcon, IntersectIcon } from '@phosphor-icons/react';
+import { Badge, Banner, cn, Code, Collapsible, Link, Table, Tabs, Text } from '@cloudflare/kumo';
 
 import { Box, BoxRow } from './box';
 import { Loading } from './loading';
@@ -16,7 +16,7 @@ import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
 import { SidebarSection } from './sidebar-section';
-import { ShortCommit, TimeAgo } from './hover-details';
+import { ShortCommit, TimeAgo } from './short-forms';
 import { CheckOutcomeIcon, EventIcon, ICON_CLASS, StateIcon } from './icons';
 import { countChecks, describeCheck, describeEvent, describeWait, ownerName } from './describe';
 
@@ -316,7 +316,7 @@ function LandingBox({ change }: ChangeProps): React.JSX.Element {
   const { kept, ran } = countChecks(change.checks);
   const isChecking = change.waitsFor.some((reason) => reason.code === 'CHECKS_PENDING');
   const isReady = change.waitsFor.length === 0;
-  const passIcon = <CheckCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-success')} />;
+  const passIcon = <CheckOutcomeIcon outcome="pass" />;
   return (
     <>
       <Box className="mt-2">
@@ -343,7 +343,7 @@ function LandingBox({ change }: ChangeProps): React.JSX.Element {
             </>
           )}
         </MergeRow>
-        <MergeRow icon={isChecking ? <Loader size="sm" className="text-kumo-warning" /> : passIcon}>
+        <MergeRow icon={<CheckOutcomeIcon outcome={isChecking ? 'pending' : 'pass'} />}>
           {isChecking
             ? 'Checks are running on the current content.'
             : `Every check result matches the current content: ${kept} kept, ${ran} ran.`}
