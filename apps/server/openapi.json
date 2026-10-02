@@ -24,6 +24,9 @@
             "$ref": "#/components/schemas/RestackConflictEvent"
           },
           {
+            "$ref": "#/components/schemas/ResolutionEvent"
+          },
+          {
             "$ref": "#/components/schemas/ChecksDoneEvent"
           },
           {
@@ -38,6 +41,7 @@
             "landed": "#/components/schemas/LandedEvent",
             "restacked": "#/components/schemas/RestackedEvent",
             "restack_conflict": "#/components/schemas/RestackConflictEvent",
+            "resolution": "#/components/schemas/ResolutionEvent",
             "checks_done": "#/components/schemas/ChecksDoneEvent",
             "landing_failed": "#/components/schemas/LandingFailedEvent"
           }
@@ -251,6 +255,12 @@
           "headCommit": {
             "type": "string",
             "pattern": "^[0-9a-f]{40}$"
+          },
+          "resolvedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -259,7 +269,8 @@
           "changeId",
           "at",
           "trunkCommit",
-          "headCommit"
+          "headCommit",
+          "resolvedPaths"
         ]
       },
       "RestackConflictEvent": {
@@ -291,6 +302,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -299,7 +316,84 @@
           "changeId",
           "at",
           "trunkCommit",
-          "conflicts"
+          "conflicts",
+          "reason"
+        ]
+      },
+      "ResolutionEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "resolution"
+            ]
+          },
+          "changeId": {
+            "type": "string",
+            "pattern": "^c-[1-9][0-9]{0,8}$",
+            "example": "c-157"
+          },
+          "at": {
+            "type": "string"
+          },
+          "otherChange": {
+            "type": "object",
+            "properties": {
+              "changeId": {
+                "type": "string",
+                "pattern": "^c-[1-9][0-9]{0,8}$",
+                "example": "c-157"
+              },
+              "intent": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "changeId",
+              "intent"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "needs_owner"
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reused": {
+            "type": "integer"
+          },
+          "chosen": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "changeId",
+          "at",
+          "otherChange",
+          "outcome",
+          "conflicts",
+          "reason",
+          "reused",
+          "chosen"
         ]
       },
       "ChecksDoneEvent": {
@@ -627,6 +721,15 @@
               "null"
             ]
           },
+          "resolvedConflicts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ResolvedConflict"
+            }
+          },
           "batchId": {
             "type": [
               "string",
@@ -661,6 +764,7 @@
           "waitsFor",
           "checks",
           "checksError",
+          "resolvedConflicts",
           "batchId",
           "landedCommit",
           "createdAt"
@@ -750,6 +854,40 @@
           "previousReads",
           "exitCode",
           "output"
+        ]
+      },
+      "ResolvedConflict": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "hunks": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "path",
+          "hunks",
+          "dropped"
         ]
       },
       "Landing": {

@@ -49,7 +49,8 @@ export const zRestackedEvent = z.object({
     changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
     at: z.string(),
     trunkCommit: z.string().regex(/^[0-9a-f]{40}$/),
-    headCommit: z.string().regex(/^[0-9a-f]{40}$/)
+    headCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    resolvedPaths: z.array(z.string())
 });
 
 export const zRestackConflictEvent = z.object({
@@ -58,7 +59,24 @@ export const zRestackConflictEvent = z.object({
     changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
     at: z.string(),
     trunkCommit: z.string().regex(/^[0-9a-f]{40}$/),
-    conflicts: z.array(z.string())
+    conflicts: z.array(z.string()),
+    reason: z.string().nullable()
+});
+
+export const zResolutionEvent = z.object({
+    seq: z.int(),
+    type: z.enum(['resolution']),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    at: z.string(),
+    otherChange: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string()
+    }),
+    outcome: z.enum(['ready', 'needs_owner']),
+    conflicts: z.array(z.string()),
+    reason: z.string().nullable(),
+    reused: z.int(),
+    chosen: z.int()
 });
 
 export const zChecksDoneEvent = z.object({
@@ -85,6 +103,7 @@ export const zChangeEvent = z.discriminatedUnion('type', [
     zLandedEvent.extend({ type: z.literal('landed') }),
     zRestackedEvent.extend({ type: z.literal('restacked') }),
     zRestackConflictEvent.extend({ type: z.literal('restack_conflict') }),
+    zResolutionEvent.extend({ type: z.literal('resolution') }),
     zChecksDoneEvent.extend({ type: z.literal('checks_done') }),
     zLandingFailedEvent.extend({ type: z.literal('landing_failed') })
 ]);
@@ -160,6 +179,15 @@ export const zChangeCheck = z.object({
     output: z.string().nullable()
 });
 
+export const zResolvedConflict = z.object({
+    path: z.string(),
+    hunks: z.int(),
+    dropped: z.array(z.object({
+        text: z.string(),
+        reason: z.string()
+    }))
+});
+
 export const zChange = z.object({
     changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
     intent: z.string(),
@@ -179,6 +207,7 @@ export const zChange = z.object({
     waitsFor: z.array(zWaitReason),
     checks: z.array(zChangeCheck),
     checksError: z.string().nullable(),
+    resolvedConflicts: z.array(zResolvedConflict).nullable(),
     batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/).nullable(),
     landedCommit: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
     createdAt: z.string()

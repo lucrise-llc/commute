@@ -4,6 +4,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
+import type { ConflictResolution } from './resolver';
 import type { ChangeRef, IssuedToken } from './repos';
 import type { Change, ChangeEvent, Landing, Overlap, WaitReason } from './schemas';
 import type { CheckRun, LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
@@ -11,6 +12,7 @@ import type { ChangeCheckRecord, ChangeRecord, EventRecord, JobRecord, ProjectRe
 
 import { log, logError } from './log';
 import { onRunnerPool } from './runner-pool';
+import { resolveConflicts } from './resolver';
 import migrations from '../drizzle/migrations';
 import { ProjectStore } from './db/project-store';
 import { HEAD_MOVED, LAND_CONFLICT } from './runner';
@@ -72,47 +74,9 @@ type PushedPair = {
   right: PushedChange;
 };
 
-type EventPayload =
-  | {
-      type: 'overlap_found';
-      overlap: Overlap;
-    }
-  | {
-      type: 'merge_checked';
-      otherChange: {
-        changeId: string;
-        intent: string;
-      };
-      outcome: 'parallel' | 'sequenced';
-      landsFirst: string | null;
-      conflicts: string[];
-    }
-  | {
-      type: 'landed';
-      batchId: string;
-      landedCommit: string;
-      approver: string;
-    }
-  | {
-      type: 'restacked';
-      trunkCommit: string;
-      headCommit: string;
-    }
-  | {
-      type: 'restack_conflict';
-      trunkCommit: string;
-      conflicts: string[];
-    }
-  | {
-      type: 'checks_done';
-      kept: number;
-      ran: number;
-      failed: string[];
-    }
-  | {
-      type: 'landing_failed';
-      batchId: string;
-    };
+// An event as the coordinator emits it. The event store adds the sequence number, the change, and the time.
+type Unsequenced<Event> = Event extends unknown ? Omit<Event, 'seq' | 'changeId' | 'at'> : never;
+type EventPayload = Unsequenced<ChangeEvent>;
 
 type EmitParams = {
   changeId: string;
@@ -136,6 +100,12 @@ type ApplyRestackParams = {
   change: ChangeRecord;
   trunkHead: string;
   result: RestackResult;
+  resolution: ConflictResolution | null;
+};
+
+type AnnounceResolutionParams = PushedPair & {
+  conflicts: string[];
+  resolution: ConflictResolution;
 };
 
 type ApplyLandingParams = {
@@ -287,6 +257,7 @@ export class Coordinator extends DurableObject<Env> {
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
       checks: this.store.changeChecks(changeId).map((check) => this.checkView(check)),
       checksError: change.checksError,
+      resolvedConflicts: change.resolvedConflicts,
       batchId: change.batchId,
       landedCommit: change.landedCommit,
       createdAt: change.createdAt
@@ -649,6 +620,9 @@ export class Coordinator extends DurableObject<Env> {
     if (previous?.outcome !== result.outcome) {
       this.announceMerge({ left, right, result });
     }
+    if (result.outcome === 'conflict') {
+      await this.resolveAhead({ left, right, result });
+    }
     log({ event: 'merge_checked', leftId, rightId, outcome: result.outcome, conflicts: result.conflicts.length });
     const isCurrent =
       this.store.findChange(leftId)?.headCommit === left.headCommit &&
@@ -676,6 +650,42 @@ export class Coordinator extends DurableObject<Env> {
         }
       });
     }
+  }
+
+  // Resolves the conflict while both changes are in flight. The resolution is stored, and it applies when the right
+  // change restacks onto the left one. When the resolver fails here, the restack asks it again.
+  private async resolveAhead({ left, right, result }: AnnounceMergeParams): Promise<void> {
+    let resolution: ConflictResolution;
+    try {
+      resolution = await resolveConflicts({
+        ai: this.env.AI,
+        store: this.store,
+        conflicts: result.conflicts,
+        texts: result.texts,
+        oursIntent: right.intent,
+        theirsIntents: [left.intent]
+      });
+    } catch (error) {
+      logError({ event: 'resolution_failed', leftId: left.id, rightId: right.id, error });
+      return;
+    }
+    this.announceResolution({ left, right, conflicts: result.conflicts, resolution });
+  }
+
+  private announceResolution({ left, right, conflicts, resolution }: AnnounceResolutionParams): void {
+    this.emit({
+      changeId: right.id,
+      payload: {
+        type: 'resolution',
+        otherChange: { changeId: left.id, intent: left.intent },
+        outcome: resolution.outcome,
+        conflicts,
+        reason: resolution.outcome === 'needs_owner' ? resolution.reason : null,
+        reused: resolution.reused,
+        chosen: resolution.chosen
+      }
+    });
+    log({ event: 'conflict_resolution', leftId: left.id, rightId: right.id, outcome: resolution.outcome });
   }
 
   private async runLandJob({ projectId, jobKey, batchId }: LandJobParams): Promise<JobOutcome> {
@@ -753,6 +763,7 @@ export class Coordinator extends DurableObject<Env> {
       scope: 'read'
     });
     const owner = change.owner ?? 'unknown';
+    const resolvedPaths = (change.resolvedConflicts ?? []).map((conflict) => conflict.path);
     return {
       ...side,
       changeId: change.id,
@@ -763,7 +774,8 @@ export class Coordinator extends DurableObject<Env> {
         `intent: ${change.intent}`,
         `owner: ${owner}`,
         `approved-by: ${approver}`,
-        `batch: ${batchId}`
+        `batch: ${batchId}`,
+        ...(resolvedPaths.length > 0 ? [`resolved-by: commute (${resolvedPaths.join(', ')})`] : [])
       ].join('\n'),
       authorName: owner,
       authorEmail: `${change.id}@agents.commute.invalid`
@@ -785,6 +797,7 @@ export class Coordinator extends DurableObject<Env> {
     }
 
     let result: RestackResult;
+    let resolution: ConflictResolution | null = null;
     try {
       const [changeSide, trunkSide] = await Promise.all([
         this.repoSide({ repoName: changeRepoName({ projectId, changeId }), head: change.headCommit, scope: 'write' }),
@@ -796,6 +809,26 @@ export class Coordinator extends DurableObject<Env> {
         jobKey,
         task: (runner) => runner.restack({ change: changeSide, trunk: trunkSide })
       });
+      if (result.outcome === 'conflict') {
+        resolution = await resolveConflicts({
+          ai: this.env.AI,
+          store: this.store,
+          conflicts: result.conflicts,
+          texts: result.texts,
+          oursIntent: change.intent,
+          theirsIntents: this.store.landedIntents(result.conflicts)
+        });
+      }
+      if (resolution?.outcome === 'ready') {
+        const plan = { change: changeSide, trunk: trunkSide, resolved: resolution.resolved };
+        const headCommit = await onRunnerPool({
+          env: this.env,
+          projectId,
+          jobKey,
+          task: (runner) => runner.resolve(plan)
+        });
+        result = { outcome: 'restacked', headCommit, conflicts: [], texts: [] };
+      }
     } catch (error) {
       if (isError(error, HEAD_MOVED)) {
         await this.recordPush({ projectId, changeId });
@@ -803,30 +836,47 @@ export class Coordinator extends DurableObject<Env> {
       }
       throw error;
     }
-    await this.applyRestack({ projectId, change, trunkHead, result });
+    await this.applyRestack({ projectId, change, trunkHead, result, resolution });
     return 'done';
   }
 
-  private async applyRestack({ projectId, change, trunkHead, result }: ApplyRestackParams): Promise<void> {
+  private async applyRestack({ projectId, change, trunkHead, result, resolution }: ApplyRestackParams): Promise<void> {
     const changeId = change.id;
     if (result.headCommit === null) {
       this.store.setRestackConflicts({ changeId, conflicts: result.conflicts });
+      const reason = resolution?.outcome === 'needs_owner' ? resolution.reason : null;
       this.emit({
         changeId,
-        payload: { type: 'restack_conflict', trunkCommit: trunkHead, conflicts: result.conflicts }
+        payload: { type: 'restack_conflict', trunkCommit: trunkHead, conflicts: result.conflicts, reason }
       });
       log({ event: 'restack_conflict', projectId, changeId, conflicts: result.conflicts.length });
       return;
     }
     this.store.setRestacked({ changeId, baseCommit: trunkHead, headCommit: result.headCommit });
+    const resolvedPaths: string[] = [];
+    if (resolution?.outcome === 'ready') {
+      this.store.addResolvedConflicts({ changeId, conflicts: resolution.files });
+      resolvedPaths.push(...resolution.files.map((file) => file.path));
+    }
     using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
     const footprint = await diffCommits({ repo, fromCommit: trunkHead, toCommit: result.headCommit });
     this.store.replacePushedFootprint({ changeId, paths: footprint });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
-    this.emit({ changeId, payload: { type: 'restacked', trunkCommit: trunkHead, headCommit: result.headCommit } });
+    this.emit({
+      changeId,
+      payload: { type: 'restacked', trunkCommit: trunkHead, headCommit: result.headCommit, resolvedPaths }
+    });
     await this.queueChecks(changeId);
-    log({ event: 'change_restacked', projectId, changeId, outcome: result.outcome, trunkHead });
+    log({
+      event: 'change_restacked',
+      projectId,
+      changeId,
+      outcome: result.outcome,
+      trunkHead,
+      resolvedReused: resolution?.reused ?? 0,
+      resolvedChosen: resolution?.chosen ?? 0
+    });
   }
 
   private async queueChecks(changeId: string): Promise<void> {

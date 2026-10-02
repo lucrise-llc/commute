@@ -3,6 +3,10 @@ import { DurableObject } from 'cloudflare:workers';
 const INACTIVITY_TIMEOUT_MS = 300_000;
 const EXEC_TIMEOUT_MS = 120_000;
 const CONFLICTS_MAX = 200;
+// A conflicted file travels back to a runner in an environment variable, which Linux limits to 128 KiB.
+const CONFLICT_FILE_BYTES_MAX = 64_000;
+const REGULAR_FILE_MODES = new Set(['100644', '100755']);
+const STAGE_LINE = /^stage (\d{6}) [0-9a-f]{40} ([123])\t(.+)$/;
 const ERROR_OUTPUT_CHARS_MAX = 500;
 
 // The scripts exit 0 when the job did its work, 1 when a merge check found a conflict, 3 when a git step failed,
@@ -35,11 +39,27 @@ fetch_head() {
 }
 `;
 
-// Merges the heads of two changes without a worktree.
-const MERGE_SCRIPT = `${PRELUDE}
+// Prints the stage lines of a merge-tree result with conflicts, then each conflicted file with its diff3 markers.
+const CONFLICT_REPORT = `report_conflicts() {
+  tree=\${1%%$'\\n'*}
+  printf '%s\\n' "$1" | tail -n +2 | sed 's/^/stage /'
+  printf '%s\\n' "$1" | tail -n +2 | cut -f2 | sort -u | while IFS= read -r path; do
+    [ "$(git cat-file -t "$tree:$path" 2>/dev/null)" = blob ] || continue
+    [ "$(git cat-file -s "$tree:$path")" -le "$CONFLICT_FILE_BYTES_MAX" ] || continue
+    printf 'file %s %s\\n' "$(git cat-file blob "$tree:$path" | base64 -w0)" "$path"
+  done
+}
+`;
+
+// Merges the heads of two changes without a worktree. The right change lands after the left one, so it is the first
+// side of the merge, as a change is when it restacks onto trunk.
+const MERGE_SCRIPT = `${PRELUDE}${CONFLICT_REPORT}
 fetch_head "$LEFT_TOKEN" "$LEFT_REMOTE" refs/left "$LEFT_HEAD"
 fetch_head "$RIGHT_TOKEN" "$RIGHT_REMOTE" refs/right "$RIGHT_HEAD"
-timeout 60 git merge-tree --write-tree --name-only --no-messages refs/left refs/right
+out=$(timeout 60 git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages refs/right refs/left)
+status=$?
+if [ "$status" -eq 1 ]; then report_conflicts "$out"; exit 1; fi
+exit "$status"
 `;
 
 // Puts each change on trunk as one commit with a note, then pushes trunk and its notes once. The push succeeds only
@@ -63,7 +83,7 @@ echo "trunk $current"
 `;
 
 // Brings a change onto the new trunk with a merge commit, so the agent's next git pull is a fast-forward.
-const RESTACK_SCRIPT = `${PRELUDE}
+const RESTACK_SCRIPT = `${PRELUDE}${CONFLICT_REPORT}
 fetch_head "$CHANGE_TOKEN" "$CHANGE_REMOTE" refs/change "$CHANGE_HEAD"
 fetch_head "$TRUNK_TOKEN" "$TRUNK_REMOTE" refs/trunk "$TRUNK_HEAD"
 if git merge-base --is-ancestor refs/trunk refs/change; then echo "up_to_date $CHANGE_HEAD"; exit 0; fi
@@ -72,13 +92,34 @@ if git merge-base --is-ancestor refs/change refs/trunk; then
   echo "fast_forward $TRUNK_HEAD"
   exit 0
 fi
-out=$(timeout 60 git merge-tree --write-tree --name-only --no-messages refs/change refs/trunk)
+out=$(timeout 60 git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages refs/change refs/trunk)
 status=$?
-if [ "$status" -eq 1 ]; then printf '%s\\n' "$out" | tail -n +2 | sed 's/^/conflict /'; exit 0; fi
+if [ "$status" -eq 1 ]; then report_conflicts "$out"; exit 0; fi
 [ "$status" -eq 0 ] || exit 3
 commit=$(git commit-tree "\${out%%$'\\n'*}" -p refs/change -p refs/trunk -m "Restack onto trunk \${TRUNK_HEAD:0:12}") || exit 3
 timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/heads/main" || exit 6
 echo "restacked $commit"
+`;
+
+// Merges trunk into a change like a restack, writes the resolved text of each conflicted file into the merged tree,
+// and pushes the merge commit.
+const RESOLVE_SCRIPT = `${PRELUDE}
+fetch_head "$CHANGE_TOKEN" "$CHANGE_REMOTE" refs/change "$CHANGE_HEAD"
+fetch_head "$TRUNK_TOKEN" "$TRUNK_REMOTE" refs/trunk "$TRUNK_HEAD"
+out=$(timeout 60 git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages refs/change refs/trunk)
+[ "$?" -eq 1 ] || exit 3
+export GIT_INDEX_FILE="$work/index"
+git read-tree "\${out%%$'\\n'*}" || exit 3
+for i in $(seq 1 "$FILE_COUNT"); do
+  path="F\${i}_PATH"; text="F\${i}_TEXT"
+  blob=$(printf '%s' "\${!text}" | git hash-object -w --stdin) || exit 3
+  mode=$(git ls-files -s -- "\${!path}" | cut -d' ' -f1)
+  git update-index --cacheinfo "$mode,$blob,\${!path}" || exit 3
+done
+tree=$(git write-tree) || exit 3
+commit=$(git commit-tree "$tree" -p refs/change -p refs/trunk -m "Restack onto trunk \${TRUNK_HEAD:0:12} and resolve conflicts") || exit 3
+timeout 60 git push -q "$(url "$CHANGE_TOKEN" "$CHANGE_REMOTE")" "$commit:refs/heads/main" || exit 6
+echo "resolved $commit"
 `;
 
 // Checks out a change at its head and runs one check command there. The command does not see the fetch credentials.
@@ -104,9 +145,17 @@ export type RepoHead = {
   head: string;
 };
 
+// A conflicted file whose two sides are both regular text files, with its diff3 markers. The first side is the change
+// that lands later.
+export type ConflictText = {
+  path: string;
+  text: string;
+};
+
 export type MergeResult = {
   outcome: 'clean' | 'conflict';
   conflicts: string[];
+  texts: ConflictText[];
 };
 
 export type LandingChange = RepoHead & {
@@ -142,6 +191,11 @@ export type RestackResult = {
   outcome: 'restacked' | 'fast_forward' | 'up_to_date' | 'conflict';
   headCommit: string | null;
   conflicts: string[];
+  texts: ConflictText[];
+};
+
+export type ResolvePlan = RestackPlan & {
+  resolved: ConflictText[];
 };
 
 export type CheckRun = {
@@ -183,11 +237,10 @@ export class Runner extends DurableObject<Env> {
     if (output.exitCode !== EXIT_CODE_DONE && output.exitCode !== EXIT_CODE_CONFLICT) {
       throw scriptError(output);
     }
-    const [, ...conflicts] = lines(output.stdout);
-    return {
-      outcome: output.exitCode === EXIT_CODE_DONE ? 'clean' : 'conflict',
-      conflicts: cleanConflicts(conflicts)
-    };
+    if (output.exitCode === EXIT_CODE_DONE) {
+      return { outcome: 'clean', conflicts: [], texts: [] };
+    }
+    return { outcome: 'conflict', ...parseConflicts(lines(output.stdout)) };
   }
 
   async land({ trunk, changes }: LandPlan): Promise<LandResult> {
@@ -241,20 +294,38 @@ export class Runner extends DurableObject<Env> {
       throw scriptError(output);
     }
     const outputLines = lines(output.stdout);
-    const conflicts = outputLines
-      .filter((line) => line.startsWith('conflict '))
-      .map((line) => line.slice('conflict '.length));
-    if (conflicts.length > 0) {
-      return { outcome: 'conflict', headCommit: null, conflicts: cleanConflicts(conflicts) };
+    if (outputLines.some((line) => line.startsWith('stage '))) {
+      return { outcome: 'conflict', headCommit: null, ...parseConflicts(outputLines) };
     }
     const [outcome, headCommit] = outputLines.at(-1)?.split(' ') ?? [];
     if (
       (outcome === 'restacked' || outcome === 'fast_forward' || outcome === 'up_to_date') &&
       headCommit !== undefined
     ) {
-      return { outcome, headCommit, conflicts: [] };
+      return { outcome, headCommit, conflicts: [], texts: [] };
     }
     throw new Error(`The restack script ended without a result: ${outputLines.at(-1) ?? 'no output'}`);
+  }
+
+  // Returns the merge commit that the change now holds.
+  async resolve({ change, trunk, resolved }: ResolvePlan): Promise<string> {
+    const env: Record<string, string> = {
+      ...sideEnv({ prefix: 'CHANGE', side: change }),
+      ...sideEnv({ prefix: 'TRUNK', side: trunk }),
+      FILE_COUNT: String(resolved.length)
+    };
+    for (const [index, file] of resolved.entries()) {
+      Object.assign(env, { [`F${index + 1}_PATH`]: file.path, [`F${index + 1}_TEXT`]: file.text });
+    }
+    const output = await this.run({ script: RESOLVE_SCRIPT, env, secrets: [change.token, trunk.token] });
+    if (output.exitCode !== EXIT_CODE_DONE) {
+      throw scriptError(output);
+    }
+    const [outcome, headCommit] = lines(output.stdout).at(-1)?.split(' ') ?? [];
+    if (outcome !== 'resolved' || headCommit === undefined) {
+      throw new Error(`The resolve script ended without a commit: ${outcome ?? 'no output'}`);
+    }
+    return headCommit;
   }
 
   async runCheck({ change, command }: RunCheckParams): Promise<CheckRun> {
@@ -291,7 +362,7 @@ export class Runner extends DurableObject<Env> {
     }
     await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
     const process = await container.exec(['bash', '-c', script], {
-      env,
+      env: { ...env, CONFLICT_FILE_BYTES_MAX: String(CONFLICT_FILE_BYTES_MAX) },
       signal: AbortSignal.timeout(EXEC_TIMEOUT_MS)
     });
     const output = await process.output();
@@ -334,8 +405,49 @@ function lines(text: string): string[] {
   return text.split('\n').filter((line) => line !== '');
 }
 
-function cleanConflicts(paths: string[]): string[] {
-  return [...new Set(paths.map((path) => path.replace(RENAMED_SIDE_SUFFIX, '')))].slice(0, CONFLICTS_MAX);
+type ConflictReport = Pick<MergeResult, 'conflicts' | 'texts'>;
+
+// Reads the report of report_conflicts. A file has text only when both sides hold a regular file, the file fits the
+// bound, and its bytes are UTF-8.
+function parseConflicts(outputLines: string[]): ConflictReport {
+  const stages = new Map<string, Map<string, string>>();
+  const encoded = new Map<string, string>();
+  for (const line of outputLines) {
+    const stage = STAGE_LINE.exec(line);
+    if (stage !== null) {
+      const [, mode = '', number = '', path = ''] = stage;
+      stages.set(path, (stages.get(path) ?? new Map<string, string>()).set(number, mode));
+    } else if (line.startsWith('file ')) {
+      const [, text = '', ...path] = line.split(' ');
+      encoded.set(path.join(' '), text);
+    }
+  }
+
+  const texts: ConflictText[] = [];
+  for (const [path, modes] of stages) {
+    const text = encoded.get(path);
+    if (
+      text !== undefined &&
+      REGULAR_FILE_MODES.has(modes.get('2') ?? '') &&
+      REGULAR_FILE_MODES.has(modes.get('3') ?? '')
+    ) {
+      const decoded = decodeUtf8(text);
+      if (decoded !== null) {
+        texts.push({ path, text: decoded });
+      }
+    }
+  }
+  const conflicts = [...new Set([...stages.keys()].map((path) => path.replace(RENAMED_SIDE_SUFFIX, '')))];
+  return { conflicts: conflicts.slice(0, CONFLICTS_MAX), texts };
+}
+
+function decodeUtf8(base64: string): string | null {
+  try {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return null;
+  }
 }
 
 type ScrubParams = {

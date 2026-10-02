@@ -139,6 +139,21 @@ const changeCheckSchema = z
   })
   .openapi('ChangeCheck');
 
+// A file whose conflict Commute resolved on this change by choosing lines from both sides. dropped lists the lines
+// that the resolution left out, each with the resolver's reason.
+const resolvedConflictSchema = z
+  .object({
+    path: z.string(),
+    hunks: z.number().int(),
+    dropped: z.array(
+      z.object({
+        text: z.string(),
+        reason: z.string()
+      })
+    )
+  })
+  .openapi('ResolvedConflict');
+
 export const changeSchema = z
   .object({
     changeId: changeIdSchema,
@@ -155,6 +170,7 @@ export const changeSchema = z
     waitsFor: z.array(waitReasonSchema),
     checks: z.array(changeCheckSchema),
     checksError: z.string().nullable(),
+    resolvedConflicts: z.array(resolvedConflictSchema).nullable(),
     batchId: batchIdSchema.nullable(),
     landedCommit: commitSchema.nullable(),
     createdAt: z.string()
@@ -244,7 +260,8 @@ const restackedEventSchema = z
     changeId: changeIdSchema,
     at: z.string(),
     trunkCommit: commitSchema,
-    headCommit: commitSchema
+    headCommit: commitSchema,
+    resolvedPaths: z.array(z.string())
   })
   .openapi('RestackedEvent');
 
@@ -255,9 +272,31 @@ const restackConflictEventSchema = z
     changeId: changeIdSchema,
     at: z.string(),
     trunkCommit: commitSchema,
-    conflicts: z.array(z.string())
+    conflicts: z.array(z.string()),
+    reason: z.string().nullable()
   })
   .openapi('RestackConflictEvent');
+
+// The resolution of a conflict with a change that lands first, found when the merge check sees the conflict. A ready
+// resolution applies when the change restacks. reused counts the hunks resolved before, and chosen the hunks that the
+// resolver chose lines for.
+const resolutionEventSchema = z
+  .object({
+    seq: z.number().int(),
+    type: z.literal('resolution'),
+    changeId: changeIdSchema,
+    at: z.string(),
+    otherChange: z.object({
+      changeId: changeIdSchema,
+      intent: z.string()
+    }),
+    outcome: z.enum(['ready', 'needs_owner']),
+    conflicts: z.array(z.string()),
+    reason: z.string().nullable(),
+    reused: z.number().int(),
+    chosen: z.number().int()
+  })
+  .openapi('ResolutionEvent');
 
 const checksDoneEventSchema = z
   .object({
@@ -288,6 +327,7 @@ export const changeEventSchema = z
     landedEventSchema,
     restackedEventSchema,
     restackConflictEventSchema,
+    resolutionEventSchema,
     checksDoneEventSchema,
     landingFailedEventSchema
   ])
@@ -304,3 +344,4 @@ export type Change = z.infer<typeof changeSchema>;
 export type ChangeEvent = z.infer<typeof changeEventSchema>;
 export type WaitReason = z.infer<typeof waitReasonSchema>;
 export type Landing = z.infer<typeof landingSchema>;
+export type ResolvedConflict = z.infer<typeof resolvedConflictSchema>;
