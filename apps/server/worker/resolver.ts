@@ -120,11 +120,23 @@ export async function resolveConflicts({
   theirsIntents
 }: ResolveConflictsParams): Promise<ConflictResolution> {
   const counts = { reused: 0, chosen: 0 };
-  const details: HunkDetail[] = [];
+  const files: ParsedFile[] = [];
+  const chosen = new Map<Hunk, Choice>();
+  // Every conflicting hunk with the lines chosen for it so far.
+  const hunkDetails = (): HunkDetail[] =>
+    files.flatMap(({ path, segments }) =>
+      segments.flatMap((segment) => {
+        if (segment.kind === 'same') {
+          return [];
+        }
+        const choice = chosen.get(segment.hunk);
+        return [{ path, ...segment.hunk, lines: choice?.lines ?? null, dropped: choice?.dropped ?? [] }];
+      })
+    );
   const needsOwner = (reason: string): ConflictResolution => ({
     outcome: 'needs_owner',
     reason,
-    hunks: details,
+    hunks: hunkDetails(),
     ...counts
   });
 
@@ -138,18 +150,12 @@ export async function resolveConflicts({
       `${otherConflict} is not a conflict between two text files, for example a deleted or large file.`
     );
   }
-  const files: ParsedFile[] = [];
   for (const file of texts) {
     const segments = parseSegments(file.text);
     if (segments === null || !segments.some((segment) => segment.kind === 'conflict')) {
       return needsOwner(`${file.path} has conflict markers that Commute cannot read.`);
     }
     files.push({ path: file.path, segments });
-    for (const segment of segments) {
-      if (segment.kind === 'conflict') {
-        details.push({ path: file.path, ...segment.hunk, lines: null, dropped: [] });
-      }
-    }
   }
   const hunks = files.flatMap((file) =>
     file.segments.flatMap((segment) => (segment.kind === 'conflict' ? [segment.hunk] : []))
@@ -169,7 +175,6 @@ export async function resolveConflicts({
 
   const resolved: FileText[] = [];
   const resolvedFiles: ResolvedConflict[] = [];
-  let detailIndex = 0;
   for (const { path, segments } of files) {
     const lines: string[] = [];
     const resolvedFile: ResolvedConflict = { path, dropped: [] };
@@ -196,23 +201,17 @@ export async function resolveConflicts({
       } else {
         counts.reused += 1;
       }
+      chosen.set(segment.hunk, resolution);
       if (resolution.lines === null) {
         return needsOwner(`${path}: ${resolution.reason ?? 'The resolver gave no reason.'}`);
       }
       lines.push(...resolution.lines);
       resolvedFile.dropped.push(...resolution.dropped);
-      const detail = details[detailIndex];
-      if (detail === undefined) {
-        throw new Error(`Hunk ${detailIndex} of the merge has no detail.`);
-      }
-      detail.lines = resolution.lines;
-      detail.dropped = resolution.dropped;
-      detailIndex += 1;
     }
     resolved.push({ path, text: lines.join('\n') });
     resolvedFiles.push(resolvedFile);
   }
-  return { outcome: 'ready', resolved, files: resolvedFiles, hunks: details, ...counts };
+  return { outcome: 'ready', resolved, files: resolvedFiles, hunks: hunkDetails(), ...counts };
 }
 
 function sameLines(segment: Segment | undefined): string[] {

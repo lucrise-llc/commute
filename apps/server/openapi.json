@@ -1092,9 +1092,6 @@
           },
           "resolvedConflicts": {
             "type": "integer"
-          },
-          "createdAt": {
-            "type": "string"
           }
         },
         "required": [
@@ -1106,20 +1103,12 @@
           "checks",
           "waitsFor",
           "landsAfter",
-          "resolvedConflicts",
-          "createdAt"
+          "resolvedConflicts"
         ]
       },
       "Tree": {
         "type": "object",
         "properties": {
-          "head": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{40}$"
-          },
-          "path": {
-            "type": "string"
-          },
           "entries": {
             "type": "array",
             "items": {
@@ -1151,21 +1140,12 @@
           }
         },
         "required": [
-          "head",
-          "path",
           "entries"
         ]
       },
       "Blob": {
         "type": "object",
         "properties": {
-          "head": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{40}$"
-          },
-          "path": {
-            "type": "string"
-          },
           "size": {
             "type": "integer"
           },
@@ -1177,8 +1157,6 @@
           }
         },
         "required": [
-          "head",
-          "path",
           "size",
           "text"
         ]
@@ -1186,10 +1164,6 @@
       "CommitList": {
         "type": "object",
         "properties": {
-          "head": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{40}$"
-          },
           "commits": {
             "type": "array",
             "items": {
@@ -1219,7 +1193,6 @@
           }
         },
         "required": [
-          "head",
           "commits"
         ]
       },
@@ -1227,10 +1200,6 @@
         "type": "object",
         "properties": {
           "baseCommit": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{40}$"
-          },
-          "headCommit": {
             "type": "string",
             "pattern": "^[0-9a-f]{40}$"
           },
@@ -1272,7 +1241,6 @@
         },
         "required": [
           "baseCommit",
-          "headCommit",
           "files",
           "isTruncated"
         ]

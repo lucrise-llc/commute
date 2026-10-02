@@ -25,7 +25,11 @@ export function CodePage(): React.JSX.Element {
   const inFlight = (changes.data ?? []).filter((change) => change.state !== 'landed');
   const touching = inFlight.filter((change) =>
     change.footprint.some(
-      (footprintPath) => path === '' || footprintPath === path || footprintPath.startsWith(`${path}/`)
+      (footprintPath) =>
+        path === '' ||
+        footprintPath === path ||
+        footprintPath.startsWith(`${path}/`) ||
+        path.startsWith(`${footprintPath}/`)
     )
   );
   const readme = tree.data?.entries.find((entry) => entry.name === README_NAME && entry.type === 'blob');

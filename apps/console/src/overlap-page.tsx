@@ -56,7 +56,7 @@ export function OverlapPage(): React.JSX.Element {
         {merge?.outcome === 'conflict' &&
           `The two changes conflict on ${merge.conflicts.join(', ')}, so ${right.changeId} lands after ${left.changeId}.`}
       </p>
-      {resolution === null ? null : <Resolution overlap={overlap.data} />}
+      {resolution === null ? null : <Resolution left={left} right={right} resolution={resolution} />}
       <LaterChecks changeId={right.changeId} />
       <p>
         <Link to={`/p/${projectId}/changes/${left.changeId}`}>{left.changeId}</Link> ·{' '}
@@ -66,15 +66,11 @@ export function OverlapPage(): React.JSX.Element {
   );
 }
 
-type ResolutionProps = {
-  overlap: Overlap;
+type ResolutionProps = Pick<Overlap, 'left' | 'right'> & {
+  resolution: NonNullable<Overlap['resolution']>;
 };
 
-function Resolution({ overlap }: ResolutionProps): React.JSX.Element {
-  const { left, right, resolution } = overlap;
-  if (resolution === null) {
-    return <></>;
-  }
+function Resolution({ left, right, resolution }: ResolutionProps): React.JSX.Element {
   return (
     <section>
       <h3>Resolution</h3>

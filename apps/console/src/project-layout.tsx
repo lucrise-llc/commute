@@ -7,7 +7,7 @@ import { ProjectContext } from './project-context';
 export function ProjectLayout(): React.JSX.Element {
   const { projectId = '' } = useParams();
   const [personName, setPersonName] = usePersonName();
-  const events = useEvents(`/api/projects/${projectId}/events`, projectId);
+  const events = useEvents({ projectId });
   return (
     <ProjectContext value={{ projectId, personName, events }}>
       <header>

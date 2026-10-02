@@ -4,9 +4,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 
 import type { AppEnv } from '../app-env';
 
-import { changedFiles, readText } from '../repo-browser';
+import { readText } from '../repo-browser';
+import { diffCommits } from '../footprint';
 import { errorResponse, jsonResponse } from './responses';
 import { changeIdSchema, diffSchema, projectIdSchema } from '../schemas';
+
+const DIFF_FILES_MAX = 50;
 
 export const getDiffRoute = createRoute({
   operationId: 'getDiff',
@@ -34,9 +37,9 @@ export const getDiffHandler: RouteHandler<typeof getDiffRoute, AppEnv> = async (
     throw new Error('REF_NOT_FOUND');
   }
   using repo = await c.env.ARTIFACTS.get(repoName);
-  const { paths, isTruncated } = await changedFiles({ repo, fromCommit: base, toCommit: head });
+  const changed = await diffCommits({ repo, fromCommit: base, toCommit: head, shouldListFolderFiles: true });
   const files = await Promise.all(
-    paths.map(async (path) => {
+    changed.slice(0, DIFF_FILES_MAX).map(async (path) => {
       const [before, after] = await Promise.all([
         readText({ repo, commit: base, path }),
         readText({ repo, commit: head, path })
@@ -45,5 +48,5 @@ export const getDiffHandler: RouteHandler<typeof getDiffRoute, AppEnv> = async (
       return { path, before: before?.text ?? null, after: after?.text ?? null, isText };
     })
   );
-  return c.json({ baseCommit: base, headCommit: head, files, isTruncated }, 200);
+  return c.json({ baseCommit: base, files, isTruncated: changed.length > DIFF_FILES_MAX }, 200);
 };

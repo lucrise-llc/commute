@@ -36,5 +36,5 @@ export const getBlobHandler: RouteHandler<typeof getBlobRoute, AppEnv> = async (
   if (file === null) {
     throw new Error('PATH_NOT_FOUND');
   }
-  return c.json({ head, path, size: file.size, text: file.text }, 200);
+  return c.json({ size: file.size, text: file.text }, 200);
 };

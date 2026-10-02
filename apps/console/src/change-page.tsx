@@ -1,11 +1,12 @@
 import type { Change } from '@commute/api-client';
 
 import { useQuery } from '@tanstack/react-query';
+import { getChange, getDiff } from '@commute/api-client';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { getChange, getDiff, listCommits } from '@commute/api-client';
 
 import { DiffView } from './diff-view';
 import { useEvents } from './use-events';
+import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
 import { describeEvent, describeWait, shortCommit } from './describe';
@@ -44,7 +45,7 @@ export function ChangePage(): React.JSX.Element {
       </nav>
       <hr />
       {tab === 'activity' ? <Activity change={data} /> : null}
-      {tab === 'commits' ? <Commits changeId={changeId} /> : null}
+      {tab === 'commits' ? <CommitList repoRef={changeId} /> : null}
       {tab === 'checks' ? <Checks change={data} /> : null}
       {tab === 'files' ? <Files changeId={changeId} /> : null}
       <hr />
@@ -59,7 +60,7 @@ type ChangeProps = {
 
 function Activity({ change }: ChangeProps): React.JSX.Element {
   const { projectId } = useProject();
-  const events = useEvents(`/api/projects/${projectId}/changes/${change.changeId}/events`, projectId);
+  const events = useEvents({ projectId, changeId: change.changeId });
   return (
     <>
       <p>{change.intent}</p>
@@ -83,24 +84,6 @@ function Activity({ change }: ChangeProps): React.JSX.Element {
 type ChangeIdProps = {
   changeId: string;
 };
-
-function Commits({ changeId }: ChangeIdProps): React.JSX.Element {
-  const { projectId } = useProject();
-  const commits = useQuery({
-    queryKey: [projectId, 'commits', changeId],
-    queryFn: async () => (await listCommits({ path: { projectId, ref: changeId }, throwOnError: true })).data
-  });
-  return (
-    <ul>
-      {(commits.data?.commits ?? []).map((commit) => (
-        <li key={commit.hash}>
-          <code>{shortCommit(commit.hash)}</code> {commit.message.split('\n')[0]} · {commit.author} ·{' '}
-          {new Date(commit.authoredAt).toLocaleString()}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function Checks({ change }: ChangeProps): React.JSX.Element {
   if (change.checksError !== null) {

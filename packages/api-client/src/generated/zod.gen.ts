@@ -257,13 +257,10 @@ export const zChangeListItem = z.object({
     }),
     waitsFor: z.array(zWaitReason),
     landsAfter: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
-    resolvedConflicts: z.int(),
-    createdAt: z.string()
+    resolvedConflicts: z.int()
 });
 
 export const zTree = z.object({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
-    path: z.string(),
     entries: z.array(z.object({
         name: z.string(),
         path: z.string(),
@@ -278,14 +275,11 @@ export const zTree = z.object({
 });
 
 export const zBlob = z.object({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
-    path: z.string(),
     size: z.int(),
     text: z.string().nullable()
 });
 
 export const zCommitList = z.object({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
     commits: z.array(z.object({
         hash: z.string().regex(/^[0-9a-f]{40}$/),
         message: z.string(),
@@ -296,7 +290,6 @@ export const zCommitList = z.object({
 
 export const zDiff = z.object({
     baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
-    headCommit: z.string().regex(/^[0-9a-f]{40}$/),
     files: z.array(z.object({
         path: z.string(),
         before: z.string().nullable(),

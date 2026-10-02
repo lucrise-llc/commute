@@ -213,15 +213,9 @@ export class ProjectStore {
     return this.db.select().from(change).where(eq(change.id, changeId)).get() ?? null;
   }
 
-  // Changes that finished starting, newest first.
-  listedChanges(limit: number): ChangeRecord[] {
-    return this.db
-      .select()
-      .from(change)
-      .where(ne(change.state, 'starting'))
-      .orderBy(desc(change.number))
-      .limit(limit)
-      .all();
+  // The newest changes first.
+  recentChanges(limit: number): ChangeRecord[] {
+    return this.db.select().from(change).orderBy(desc(change.number)).limit(limit).all();
   }
 
   activeChanges(): ChangeRecord[] {

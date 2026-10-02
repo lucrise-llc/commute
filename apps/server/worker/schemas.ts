@@ -21,6 +21,8 @@ const commitSchema = z.string().regex(COMMIT_PATTERN);
 
 const batchIdSchema = z.string().regex(BATCH_ID_PATTERN).openapi({ example: 'b-12' });
 
+const changeStateSchema = z.enum(['open', 'landing', 'landed']);
+
 const personNameSchema = z
   .string()
   .min(1)
@@ -141,15 +143,16 @@ const changeCheckSchema = z
 
 // A file whose conflict Commute resolved on this change by choosing lines from both sides. dropped lists the lines
 // that the resolution left out, each with the resolver's reason.
+// A line that a resolution left out, with the resolver's reason.
+const droppedLineSchema = z.object({
+  text: z.string(),
+  reason: z.string()
+});
+
 const resolvedConflictSchema = z
   .object({
     path: z.string(),
-    dropped: z.array(
-      z.object({
-        text: z.string(),
-        reason: z.string()
-      })
-    )
+    dropped: z.array(droppedLineSchema)
   })
   .openapi('ResolvedConflict');
 
@@ -162,12 +165,7 @@ const hunkDetailSchema = z.object({
   ours: z.array(z.string()),
   theirs: z.array(z.string()),
   lines: z.array(z.string()).nullable(),
-  dropped: z.array(
-    z.object({
-      text: z.string(),
-      reason: z.string()
-    })
-  )
+  dropped: z.array(droppedLineSchema)
 });
 
 const overlapResolutionSchema = z
@@ -178,12 +176,32 @@ const overlapResolutionSchema = z
   })
   .openapi('OverlapResolution');
 
-const overlapSideSchema = z.object({
+// A row of the Changes list. checks counts the checks of the current head by how each one stands.
+const changeListItemObject = z.object({
   changeId: changeIdSchema,
   intent: z.string(),
   owner: z.string().nullable(),
-  state: z.enum(['open', 'landing', 'landed']),
-  footprint: z.array(z.string())
+  state: changeStateSchema,
+  footprint: z.array(z.string()),
+  checks: z.object({
+    kept: z.number().int(),
+    ran: z.number().int(),
+    pending: z.number().int(),
+    failed: z.number().int()
+  }),
+  waitsFor: z.array(waitReasonSchema),
+  landsAfter: z.array(changeIdSchema),
+  resolvedConflicts: z.number().int()
+});
+
+export const changeListItemSchema = changeListItemObject.openapi('ChangeListItem');
+
+const overlapSideSchema = changeListItemObject.pick({
+  changeId: true,
+  intent: true,
+  owner: true,
+  state: true,
+  footprint: true
 });
 
 // Two changes whose footprints meet. left started first. merge is the result of the merge check of their current
@@ -207,7 +225,7 @@ export const changeSchema = z
     changeId: changeIdSchema,
     intent: z.string(),
     owner: z.string().nullable(),
-    state: z.enum(['open', 'landing', 'landed']),
+    state: changeStateSchema,
     baseCommit: commitSchema,
     headCommit: commitSchema,
     declaredPaths: z.array(z.string()),
@@ -225,34 +243,11 @@ export const changeSchema = z
   })
   .openapi('Change');
 
-// A row of the Changes list. checks counts the checks of the current head by how each one stands.
-export const changeListItemSchema = z
-  .object({
-    changeId: changeIdSchema,
-    intent: z.string(),
-    owner: z.string().nullable(),
-    state: z.enum(['open', 'landing', 'landed']),
-    footprint: z.array(z.string()),
-    checks: z.object({
-      kept: z.number().int(),
-      ran: z.number().int(),
-      pending: z.number().int(),
-      failed: z.number().int()
-    }),
-    waitsFor: z.array(waitReasonSchema),
-    landsAfter: z.array(changeIdSchema),
-    resolvedConflicts: z.number().int(),
-    createdAt: z.string()
-  })
-  .openapi('ChangeListItem');
-
 // A ref is trunk or the repository of a change.
 export const refSchema = z.union([z.literal('trunk'), changeIdSchema]).openapi({ example: 'trunk' });
 
 export const treeSchema = z
   .object({
-    head: commitSchema,
-    path: z.string(),
     entries: z.array(
       z.object({
         name: z.string(),
@@ -266,8 +261,6 @@ export const treeSchema = z
 // text is null when the file is not UTF-8 or is larger than the bound.
 export const blobSchema = z
   .object({
-    head: commitSchema,
-    path: z.string(),
     size: z.number().int(),
     text: z.string().nullable()
   })
@@ -275,7 +268,6 @@ export const blobSchema = z
 
 export const commitListSchema = z
   .object({
-    head: commitSchema,
     commits: z.array(
       z.object({
         hash: commitSchema,
@@ -292,7 +284,6 @@ export const commitListSchema = z
 export const diffSchema = z
   .object({
     baseCommit: commitSchema,
-    headCommit: commitSchema,
     files: z.array(
       z.object({
         path: z.string(),

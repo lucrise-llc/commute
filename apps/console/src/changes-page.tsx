@@ -18,7 +18,10 @@ export function ChangesPage(): React.JSX.Element {
   });
   const me = personName.trim();
   const rows = (changes.data ?? []).filter((change) => !isMineOnly || change.owner === me);
-  const overlaps = events.filter((event) => event.type === 'merge_checked' && event.outcome === 'sequenced');
+  // The sequenced pairs in flight, as the coordinator reports them in each change's landsAfter.
+  const sequences = (changes.data ?? []).flatMap((change) =>
+    change.landsAfter.map((earlierChangeId) => ({ changeId: change.changeId, earlierChangeId }))
+  );
   const kept = rows.reduce((sum, change) => sum + change.checks.kept, 0);
   const ran = rows.reduce((sum, change) => sum + change.checks.ran, 0);
   return (
@@ -70,17 +73,15 @@ export function ChangesPage(): React.JSX.Element {
         <ApproveBatch />
         <section>
           <h3>Overlaps</h3>
+          {sequences.length === 0 ? <p>No change waits for another.</p> : null}
           <ul>
-            {overlaps.map((event) =>
-              event.type === 'merge_checked' ? (
-                <li key={event.seq}>
-                  <Link to={`/p/${projectId}/overlaps/${event.changeId}/${event.otherChange.changeId}`}>
-                    {event.changeId} and {event.otherChange.changeId}
-                  </Link>{' '}
-                  on {event.conflicts.join(', ')}
-                </li>
-              ) : null
-            )}
+            {sequences.map(({ changeId, earlierChangeId }) => (
+              <li key={`${changeId}-${earlierChangeId}`}>
+                <Link to={`/p/${projectId}/overlaps/${changeId}/${earlierChangeId}`}>
+                  {changeId} lands after {earlierChangeId}
+                </Link>
+              </li>
+            ))}
           </ul>
         </section>
         <section>

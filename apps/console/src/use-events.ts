@@ -8,9 +8,19 @@ const EVENTS_KEPT_MAX = 200;
 const RECONNECT_ATTEMPTS_MAX = 20;
 const RECONNECT_DELAY_MS = 1_000;
 
-// Listens to an event stream of the coordinator: the project's or one change's. The stream replays recent events,
-// then sends each new one. Every event invalidates the project's queries, so the pages refetch only what changed.
-export function useEvents(path: string, projectId: string): ChangeEvent[] {
+type UseEventsParams = {
+  projectId: string;
+  changeId?: string;
+};
+
+// Listens to an event stream of the coordinator: the project's, or one change's when changeId is set. The stream
+// replays recent events, then sends each new one. Each event of the project stream marks every project query stale,
+// so the open pages refetch. A change stream only collects its events, because the project stream sends them too.
+export function useEvents({ projectId, changeId }: UseEventsParams): ChangeEvent[] {
+  const path =
+    changeId === undefined
+      ? `/api/projects/${projectId}/events`
+      : `/api/projects/${projectId}/changes/${changeId}/events`;
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<ChangeEvent[]>([]);
   useEffect(() => {
@@ -33,7 +43,9 @@ export function useEvents(path: string, projectId: string): ChangeEvent[] {
         }
         lastSeq = Math.max(lastSeq, parsed.data.seq);
         setEvents((current) => [...current, parsed.data].slice(-EVENTS_KEPT_MAX));
-        queryClient.invalidateQueries({ queryKey: [projectId] }).catch(reportError);
+        if (changeId === undefined) {
+          queryClient.invalidateQueries({ queryKey: [projectId] }).catch(reportError);
+        }
       });
       socket.addEventListener('close', () => {
         if (!isClosed && attempts < RECONNECT_ATTEMPTS_MAX) {
@@ -48,6 +60,6 @@ export function useEvents(path: string, projectId: string): ChangeEvent[] {
       clearTimeout(retry);
       socket?.close();
     };
-  }, [path, projectId, queryClient]);
+  }, [path, projectId, changeId, queryClient]);
   return events;
 }

@@ -36,7 +36,6 @@ export const listCommitsHandler: RouteHandler<typeof listCommitsRoute, AppEnv> =
   const commits = await readCommits({ repo, head, base });
   return c.json(
     {
-      head,
       commits: commits.map((commit) => ({
         hash: commit.hash,
         message: commit.message,

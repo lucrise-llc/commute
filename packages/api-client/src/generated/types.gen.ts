@@ -249,12 +249,9 @@ export type ChangeListItem = {
     waitsFor: Array<WaitReason>;
     landsAfter: Array<string>;
     resolvedConflicts: number;
-    createdAt: string;
 };
 
 export type Tree = {
-    head: string;
-    path: string;
     entries: Array<{
         name: string;
         path: string;
@@ -263,14 +260,11 @@ export type Tree = {
 };
 
 export type Blob = {
-    head: string;
-    path: string;
     size: number;
     text: string | null;
 };
 
 export type CommitList = {
-    head: string;
     commits: Array<{
         hash: string;
         message: string;
@@ -281,7 +275,6 @@ export type CommitList = {
 
 export type Diff = {
     baseCommit: string;
-    headCommit: string;
     files: Array<{
         path: string;
         before: string | null;

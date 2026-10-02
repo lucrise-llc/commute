@@ -42,8 +42,6 @@ export const getTreeHandler: RouteHandler<typeof getTreeRoute, AppEnv> = async (
   );
   return c.json(
     {
-      head,
-      path,
       entries: sorted.map((entry) => ({ name: entry.name, path: `${prefix}${entry.name}`, type: entry.type }))
     },
     200

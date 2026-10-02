@@ -70,13 +70,13 @@ type ForkedChange = {
   agentToken: IssuedToken;
 };
 
-// A change with commits of its own: the only kind a merge check compares.
 type RefHead = {
   repoName: string;
   head: string;
   base: string | null;
 };
 
+// A change with commits of its own: the only kind a merge check compares.
 type PushedChange = ChangeRecord & {
   baseCommit: string;
   headCommit: string;
@@ -288,18 +288,17 @@ export class Coordinator extends DurableObject<Env> {
   listChanges(): ChangeListItem[] {
     this.requireProject();
     const items: ChangeListItem[] = [];
-    for (const change of this.store.listedChanges(CHANGES_LIST_MAX)) {
+    for (const change of this.store.recentChanges(CHANGES_LIST_MAX)) {
       if (change.state === 'starting') {
         continue;
       }
       const checks = this.store.changeChecks(change.id);
-      const pushed = this.store.footprint({ changeId: change.id, source: 'pushed' });
       items.push({
         changeId: change.id,
         intent: change.intent,
         owner: change.owner,
         state: change.state,
-        footprint: pushed.length > 0 ? pushed : this.store.footprint({ changeId: change.id, source: 'declared' }),
+        footprint: this.store.allPaths(change.id),
         checks: {
           kept: checks.filter((check) => check.kept).length,
           ran: checks.filter((check) => !check.kept && check.outcome !== 'pending').length,
@@ -308,8 +307,7 @@ export class Coordinator extends DurableObject<Env> {
         },
         waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
         landsAfter: this.landingOrder(change.id).landsAfter,
-        resolvedConflicts: change.resolvedConflicts?.length ?? 0,
-        createdAt: change.createdAt
+        resolvedConflicts: change.resolvedConflicts?.length ?? 0
       });
     }
     return items;
@@ -528,13 +526,12 @@ export class Coordinator extends DurableObject<Env> {
     if (change === null || change.state === 'starting') {
       throw new Error('CHANGE_NOT_FOUND');
     }
-    const pushed = this.store.footprint({ changeId, source: 'pushed' });
     return {
       changeId,
       intent: change.intent,
       owner: change.owner,
       state: change.state,
-      footprint: pushed.length > 0 ? pushed : this.store.footprint({ changeId, source: 'declared' })
+      footprint: this.store.allPaths(changeId)
     };
   }
 
@@ -618,7 +615,12 @@ export class Coordinator extends DurableObject<Env> {
     if (head === undefined || head.hash === change.headCommit) {
       return;
     }
-    const footprint = await diffCommits({ repo, fromCommit: change.baseCommit, toCommit: head.hash });
+    const footprint = await diffCommits({
+      repo,
+      fromCommit: change.baseCommit,
+      toCommit: head.hash,
+      shouldListFolderFiles: false
+    });
     this.store.replacePushedFootprint({ changeId, paths: footprint });
     this.store.setHead({ changeId, commit: head.hash });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
@@ -1001,7 +1003,12 @@ export class Coordinator extends DurableObject<Env> {
       resolvedPaths.push(...resolution.files.map((file) => file.path));
     }
     using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
-    const footprint = await diffCommits({ repo, fromCommit: trunkHead, toCommit: result.headCommit });
+    const footprint = await diffCommits({
+      repo,
+      fromCommit: trunkHead,
+      toCommit: result.headCommit,
+      shouldListFolderFiles: false
+    });
     this.store.replacePushedFootprint({ changeId, paths: footprint });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });

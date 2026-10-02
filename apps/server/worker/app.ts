@@ -4,10 +4,9 @@ import type { AppEnv } from './app-env';
 
 import { logError } from './log';
 import { handleGit } from './git-remote';
+import { eventsHandler } from './routes/events';
 import { ERROR_STATUS, errorCodeOf } from './errors';
 import { healthHandler, healthRoute } from './routes/health';
-import { changeEventsHandler } from './routes/change-events';
-import { projectEventsHandler } from './routes/project-events';
 import { changeEventSchema, waitRequestSchema } from './schemas';
 import { getBlobHandler, getBlobRoute } from './routes/get-blob';
 import { getDiffHandler, getDiffRoute } from './routes/get-diff';
@@ -46,8 +45,8 @@ app.openapi(getBlobRoute, getBlobHandler);
 app.openapi(listCommitsRoute, listCommitsHandler);
 app.openapi(getDiffRoute, getDiffHandler);
 app.openapi(getOverlapRoute, getOverlapHandler);
-app.get('/api/projects/:projectId/events', projectEventsHandler);
-app.get('/api/projects/:projectId/changes/:changeId/events', changeEventsHandler);
+app.get('/api/projects/:projectId/events', eventsHandler);
+app.get('/api/projects/:projectId/changes/:changeId/events', eventsHandler);
 app.all('/git/*', (c) => handleGit({ request: c.req.raw, env: c.env }));
 
 app.openAPIRegistry.register('ChangeEvent', changeEventSchema);
