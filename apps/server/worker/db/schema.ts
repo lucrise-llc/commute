@@ -1,6 +1,6 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import type { ResolvedConflict } from '../schemas';
+import type { OverlapResolution, ResolvedConflict } from '../schemas';
 
 export const CHANGE_STATES = ['starting', 'open', 'landing', 'landed'] as const;
 export const FOOTPRINT_SOURCES = ['declared', 'pushed'] as const;
@@ -76,7 +76,9 @@ export const mergeCheck = sqliteTable(
     leftHead: text('left_head').notNull(),
     rightHead: text('right_head').notNull(),
     outcome: text('outcome', { enum: MERGE_OUTCOMES }).notNull(),
-    conflicts: text('conflicts', { mode: 'json' }).$type<string[]>().notNull()
+    conflicts: text('conflicts', { mode: 'json' }).$type<string[]>().notNull(),
+    // How Commute resolved the conflict for the right change, which lands later.
+    resolution: text('resolution', { mode: 'json' }).$type<OverlapResolution>()
   },
   (table) => [primaryKey({ columns: [table.leftId, table.rightId] })]
 );
@@ -92,7 +94,8 @@ export const checkResult = sqliteTable('check_result', {
 });
 
 // The checks of a change at its current head. previousReads holds the subtree hashes at the head before, so a
-// reader sees what a restack changed. kept means the result existed before this head asked for it.
+// reader sees what a restack changed. kept means this head did not run the command: another change's run, before or
+// at the same time, gave the result.
 export const changeCheck = sqliteTable(
   'change_check',
   {

@@ -21,6 +21,8 @@ const commitSchema = z.string().regex(COMMIT_PATTERN);
 
 const batchIdSchema = z.string().regex(BATCH_ID_PATTERN).openapi({ example: 'b-12' });
 
+const changeStateSchema = z.enum(['open', 'landing', 'landed']);
+
 const personNameSchema = z
   .string()
   .min(1)
@@ -28,7 +30,7 @@ const personNameSchema = z
   .regex(NO_CONTROL_CHARACTERS, 'A name has no line breaks or control characters.')
   .openapi({ example: 'alice' });
 
-const repoPathSchema = z
+export const repoPathSchema = z
   .string()
   .min(1)
   .max(REPO_PATH_LENGTH_MAX)
@@ -126,7 +128,7 @@ const waitReasonSchema = z
   .openapi('WaitReason');
 
 // A check of a change at its head. reads and previousReads map each read path to its subtree hash at this head and
-// at the head before. kept means the result was reused, not run.
+// at the head before. kept means this head did not run the command, because another change's run gave the result.
 const changeCheckSchema = z
   .object({
     name: z.string(),
@@ -141,24 +143,89 @@ const changeCheckSchema = z
 
 // A file whose conflict Commute resolved on this change by choosing lines from both sides. dropped lists the lines
 // that the resolution left out, each with the resolver's reason.
+// A line that a resolution left out, with the resolver's reason.
+const droppedLineSchema = z.object({
+  text: z.string(),
+  reason: z.string()
+});
+
 const resolvedConflictSchema = z
   .object({
     path: z.string(),
-    dropped: z.array(
-      z.object({
-        text: z.string(),
-        reason: z.string()
-      })
-    )
+    dropped: z.array(droppedLineSchema)
   })
   .openapi('ResolvedConflict');
+
+// A conflicting hunk of two changes in flight: the original lines, the lines of the change that lands first (theirs)
+// and of the change that lands later (ours), and the lines the resolution kept. lines is null when the hunk needs the
+// owner or was not reached.
+const hunkDetailSchema = z.object({
+  path: z.string(),
+  base: z.array(z.string()),
+  ours: z.array(z.string()),
+  theirs: z.array(z.string()),
+  lines: z.array(z.string()).nullable(),
+  dropped: z.array(droppedLineSchema)
+});
+
+const overlapResolutionSchema = z
+  .object({
+    outcome: z.enum(['ready', 'needs_owner']),
+    reason: z.string().nullable(),
+    hunks: z.array(hunkDetailSchema)
+  })
+  .openapi('OverlapResolution');
+
+// A row of the Changes list. checks counts the checks of the current head by how each one stands.
+const changeListItemObject = z.object({
+  changeId: changeIdSchema,
+  intent: z.string(),
+  owner: z.string().nullable(),
+  state: changeStateSchema,
+  footprint: z.array(z.string()),
+  checks: z.object({
+    kept: z.number().int(),
+    ran: z.number().int(),
+    pending: z.number().int(),
+    failed: z.number().int()
+  }),
+  waitsFor: z.array(waitReasonSchema),
+  landsAfter: z.array(changeIdSchema),
+  resolvedConflicts: z.number().int()
+});
+
+export const changeListItemSchema = changeListItemObject.openapi('ChangeListItem');
+
+const overlapSideSchema = changeListItemObject.pick({
+  changeId: true,
+  intent: true,
+  owner: true,
+  state: true,
+  footprint: true
+});
+
+// Two changes whose footprints meet. left started first. merge is the result of the merge check of their current
+// heads, and resolution is how Commute resolved a conflict for the right change.
+export const overlapPageSchema = z
+  .object({
+    left: overlapSideSchema,
+    right: overlapSideSchema,
+    merge: z
+      .object({
+        outcome: z.enum(['clean', 'conflict']),
+        conflicts: z.array(z.string())
+      })
+      .nullable(),
+    resolution: overlapResolutionSchema.nullable()
+  })
+  .openapi('OverlapPage');
 
 export const changeSchema = z
   .object({
     changeId: changeIdSchema,
     intent: z.string(),
     owner: z.string().nullable(),
-    state: z.enum(['open', 'landing', 'landed']),
+    state: changeStateSchema,
     baseCommit: commitSchema,
     headCommit: commitSchema,
     declaredPaths: z.array(z.string()),
@@ -175,6 +242,59 @@ export const changeSchema = z
     createdAt: z.string()
   })
   .openapi('Change');
+
+// A ref is trunk or the repository of a change.
+export const refSchema = z.union([z.literal('trunk'), changeIdSchema]).openapi({ example: 'trunk' });
+
+export const treeSchema = z
+  .object({
+    entries: z.array(
+      z.object({
+        name: z.string(),
+        path: z.string(),
+        type: z.enum(['tree', 'blob', 'exec', 'symlink', 'gitlink'])
+      })
+    )
+  })
+  .openapi('Tree');
+
+// text is null when the file is not UTF-8 or is larger than the bound.
+export const blobSchema = z
+  .object({
+    size: z.number().int(),
+    text: z.string().nullable()
+  })
+  .openapi('Blob');
+
+export const commitListSchema = z
+  .object({
+    commits: z.array(
+      z.object({
+        hash: commitSchema,
+        message: z.string(),
+        author: z.string(),
+        authoredAt: z.string()
+      })
+    )
+  })
+  .openapi('CommitList');
+
+// Each changed file of a change against its base, with the text of both sides. A side is null when the file does
+// not exist there or is not text.
+export const diffSchema = z
+  .object({
+    baseCommit: commitSchema,
+    files: z.array(
+      z.object({
+        path: z.string(),
+        before: z.string().nullable(),
+        after: z.string().nullable(),
+        isText: z.boolean()
+      })
+    ),
+    isTruncated: z.boolean()
+  })
+  .openapi('Diff');
 
 const changeSummarySchema = z.object({
   changeId: changeIdSchema,
@@ -335,9 +455,12 @@ export const waitRequestSchema = z
   })
   .openapi('WaitRequest');
 
-export type Overlap = z.infer<typeof overlapSchema>;
 export type Change = z.infer<typeof changeSchema>;
 export type ChangeEvent = z.infer<typeof changeEventSchema>;
 export type WaitReason = z.infer<typeof waitReasonSchema>;
 export type Landing = z.infer<typeof landingSchema>;
+export type ChangeListItem = z.infer<typeof changeListItemSchema>;
+export type OverlapResolution = z.infer<typeof overlapResolutionSchema>;
+export type OverlapPage = z.infer<typeof overlapPageSchema>;
+export type Overlap = z.infer<typeof overlapSchema>;
 export type ResolvedConflict = z.infer<typeof resolvedConflictSchema>;

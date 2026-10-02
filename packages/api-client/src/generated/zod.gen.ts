@@ -239,6 +239,112 @@ export const zApproveBatchBody = z.object({
     approver: z.string().min(1).max(64).regex(/^[^\p{Cc}]+$\/u/u)
 });
 
+export const zChangeListItem = z.object({
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    intent: z.string(),
+    owner: z.string().nullable(),
+    state: z.enum([
+        'open',
+        'landing',
+        'landed'
+    ]),
+    footprint: z.array(z.string()),
+    checks: z.object({
+        kept: z.int(),
+        ran: z.int(),
+        pending: z.int(),
+        failed: z.int()
+    }),
+    waitsFor: z.array(zWaitReason),
+    landsAfter: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
+    resolvedConflicts: z.int()
+});
+
+export const zTree = z.object({
+    entries: z.array(z.object({
+        name: z.string(),
+        path: z.string(),
+        type: z.enum([
+            'tree',
+            'blob',
+            'exec',
+            'symlink',
+            'gitlink'
+        ])
+    }))
+});
+
+export const zBlob = z.object({
+    size: z.int(),
+    text: z.string().nullable()
+});
+
+export const zCommitList = z.object({
+    commits: z.array(z.object({
+        hash: z.string().regex(/^[0-9a-f]{40}$/),
+        message: z.string(),
+        author: z.string(),
+        authoredAt: z.string()
+    }))
+});
+
+export const zDiff = z.object({
+    baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    files: z.array(z.object({
+        path: z.string(),
+        before: z.string().nullable(),
+        after: z.string().nullable(),
+        isText: z.boolean()
+    })),
+    isTruncated: z.boolean()
+});
+
+export const zOverlapResolution = z.object({
+    outcome: z.enum(['ready', 'needs_owner']),
+    reason: z.string().nullable(),
+    hunks: z.array(z.object({
+        path: z.string(),
+        base: z.array(z.string()),
+        ours: z.array(z.string()),
+        theirs: z.array(z.string()),
+        lines: z.array(z.string()).nullable(),
+        dropped: z.array(z.object({
+            text: z.string(),
+            reason: z.string()
+        }))
+    }))
+}).nullable();
+
+export const zOverlapPage = z.object({
+    left: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable(),
+        state: z.enum([
+            'open',
+            'landing',
+            'landed'
+        ]),
+        footprint: z.array(z.string())
+    }),
+    right: z.object({
+        changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+        intent: z.string(),
+        owner: z.string().nullable(),
+        state: z.enum([
+            'open',
+            'landing',
+            'landed'
+        ]),
+        footprint: z.array(z.string())
+    }),
+    merge: z.object({
+        outcome: z.enum(['clean', 'conflict']),
+        conflicts: z.array(z.string())
+    }).nullable(),
+    resolution: zOverlapResolution
+});
+
 /**
  * The Worker serves requests.
  */
@@ -250,6 +356,15 @@ export const zCreateProjectBody2 = zCreateProjectBody;
  * The project exists with an empty trunk. The token lets the owner push the first commit to trunk.
  */
 export const zCreateProjectResponse = zProjectCreated;
+
+export const zListChangesPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/)
+});
+
+/**
+ * Every change of the project, newest first: in flight and landed.
+ */
+export const zListChangesResponse = z.array(zChangeListItem);
 
 export const zStartChangeBody2 = zStartChangeBody;
 
@@ -291,3 +406,71 @@ export const zApproveBatchPath = z.object({
  * The batch lands in the background. Each change gets a landed event, then the others restack.
  */
 export const zApproveBatchResponse = zBatchApproved;
+
+export const zGetTreePath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    ref: z.union([
+        z.enum(['trunk']),
+        z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+    ])
+});
+
+export const zGetTreeQuery = z.object({
+    path: z.string().min(1).max(512).optional()
+});
+
+/**
+ * The folder at the path, at the head of the ref.
+ */
+export const zGetTreeResponse = zTree;
+
+export const zGetBlobPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    ref: z.union([
+        z.enum(['trunk']),
+        z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+    ])
+});
+
+export const zGetBlobQuery = z.object({
+    path: z.string().min(1).max(512)
+});
+
+/**
+ * The file at the path, at the head of the ref.
+ */
+export const zGetBlobResponse = zBlob;
+
+export const zListCommitsPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    ref: z.union([
+        z.enum(['trunk']),
+        z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+    ])
+});
+
+/**
+ * The newest commits of trunk, or the commits of a change since its base, newest first.
+ */
+export const zListCommitsResponse = zCommitList;
+
+export const zGetDiffPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+});
+
+/**
+ * The files of the change that differ from its base on trunk.
+ */
+export const zGetDiffResponse = zDiff;
+
+export const zGetOverlapPath = z.object({
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,38}[a-z0-9]$/),
+    changeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/),
+    otherChangeId: z.string().regex(/^c-[1-9][0-9]{0,8}$/)
+});
+
+/**
+ * Two changes side by side: their intents and footprints, their merge result, and its resolution.
+ */
+export const zGetOverlapResponse = zOverlapPage;

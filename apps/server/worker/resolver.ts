@@ -1,7 +1,7 @@
 import { z } from '@hono/zod-openapi';
 
 import type { FileText } from './runner';
-import type { ResolvedConflict } from './schemas';
+import type { OverlapResolution, ResolvedConflict } from './schemas';
 import type { ProjectStore, ResolutionRecord } from './db/project-store';
 
 import { sha256Hex } from './hash';
@@ -14,6 +14,8 @@ const HUNKS_MAX = 20;
 const HUNK_SIDE_LINES_MAX = 100;
 const CONTEXT_LINES = 5;
 const ANSWER_TOKENS_MAX = 512;
+// A model call that takes longer fails the job, which retries it, instead of holding the job queue.
+const ANSWER_TIMEOUT_MS = 60_000;
 const MARKER_LENGTH = 7;
 
 const SYSTEM_PROMPT = [
@@ -80,17 +82,22 @@ type ParsedFile = {
 
 type Choice = Pick<ResolutionRecord, 'lines' | 'dropped' | 'reason'>;
 
+type HunkDetail = OverlapResolution['hunks'][number];
+
+// hunks describes every conflicting hunk for the overlap page, resolved or not.
 export type ConflictResolution =
   | {
       outcome: 'ready';
       resolved: FileText[];
       files: ResolvedConflict[];
+      hunks: HunkDetail[];
       reused: number;
       chosen: number;
     }
   | {
       outcome: 'needs_owner';
       reason: string;
+      hunks: HunkDetail[];
       reused: number;
       chosen: number;
     };
@@ -115,7 +122,25 @@ export async function resolveConflicts({
   theirsIntents
 }: ResolveConflictsParams): Promise<ConflictResolution> {
   const counts = { reused: 0, chosen: 0 };
-  const needsOwner = (reason: string): ConflictResolution => ({ outcome: 'needs_owner', reason, ...counts });
+  const files: ParsedFile[] = [];
+  const chosen = new Map<Hunk, Choice>();
+  // Every conflicting hunk with the lines chosen for it so far.
+  const hunkDetails = (): HunkDetail[] =>
+    files.flatMap(({ path, segments }) =>
+      segments.flatMap((segment) => {
+        if (segment.kind === 'same') {
+          return [];
+        }
+        const choice = chosen.get(segment.hunk);
+        return [{ path, ...segment.hunk, lines: choice?.lines ?? null, dropped: choice?.dropped ?? [] }];
+      })
+    );
+  const needsOwner = (reason: string): ConflictResolution => ({
+    outcome: 'needs_owner',
+    reason,
+    hunks: hunkDetails(),
+    ...counts
+  });
 
   if (conflicts.length > CONFLICT_FILES_MAX) {
     return needsOwner(`More than ${CONFLICT_FILES_MAX} files conflict.`);
@@ -127,7 +152,6 @@ export async function resolveConflicts({
       `${otherConflict} is not a conflict between two text files, for example a deleted or large file.`
     );
   }
-  const files: ParsedFile[] = [];
   for (const file of texts) {
     const segments = parseSegments(file.text);
     if (segments === null || !segments.some((segment) => segment.kind === 'conflict')) {
@@ -179,6 +203,7 @@ export async function resolveConflicts({
       } else {
         counts.reused += 1;
       }
+      chosen.set(segment.hunk, resolution);
       if (resolution.lines === null) {
         return needsOwner(`${path}: ${resolution.reason ?? 'The resolver gave no reason.'}`);
       }
@@ -188,7 +213,7 @@ export async function resolveConflicts({
     resolved.push({ path, text: lines.join('\n') });
     resolvedFiles.push(resolvedFile);
   }
-  return { outcome: 'ready', resolved, files: resolvedFiles, ...counts };
+  return { outcome: 'ready', resolved, files: resolvedFiles, hunks: hunkDetails(), ...counts };
 }
 
 function sameLines(segment: Segment | undefined): string[] {
@@ -271,15 +296,19 @@ async function chooseLines({ ai, hunk, ...prompt }: ChooseLinesParams): Promise<
   const ids = [...hunk.theirs.keys()].map((index) => `t${index + 1}`);
   ids.push(...[...hunk.ours.keys()].map((index) => `o${index + 1}`));
   const schema = answerSchemaFor(ids);
-  const output = await ai.run(RESOLVER_MODEL, {
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt({ hunk, ...prompt }) }
-    ],
-    response_format: { type: 'json_schema', json_schema: z.toJSONSchema(schema) },
-    temperature: 0,
-    max_tokens: ANSWER_TOKENS_MAX
-  });
+  const output = await ai.run(
+    RESOLVER_MODEL,
+    {
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt({ hunk, ...prompt }) }
+      ],
+      response_format: { type: 'json_schema', json_schema: z.toJSONSchema(schema) },
+      temperature: 0,
+      max_tokens: ANSWER_TOKENS_MAX
+    },
+    { signal: AbortSignal.timeout(ANSWER_TIMEOUT_MS) }
+  );
   return choiceFromAnswer({ hunk, answer: parseAnswer({ response: aiOutputSchema.parse(output).response, schema }) });
 }
 

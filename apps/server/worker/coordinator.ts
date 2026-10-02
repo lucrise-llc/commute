@@ -6,8 +6,8 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
 import type { ConflictResolution } from './resolver';
 import type { ChangeRef, IssuedToken } from './repos';
-import type { Change, ChangeEvent, Landing, Overlap, WaitReason } from './schemas';
 import type { CheckRun, LandingChange, LandResult, MergeResult, RepoHead, RestackResult } from './runner';
+import type { Change, ChangeEvent, ChangeListItem, Landing, Overlap, OverlapPage, WaitReason } from './schemas';
 import type { ChangeCheckRecord, ChangeRecord, EventRecord, JobRecord, ProjectRecord } from './db/project-store';
 
 import { log, logError } from './log';
@@ -33,6 +33,11 @@ const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
 const WEBSOCKET_POLICY_VIOLATION = 1_008;
 const EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/changes\/(c-[1-9][0-9]{0,8})\/events$/;
+const PROJECT_EVENTS_PATH_PATTERN = /^\/api\/projects\/[^/]+\/events$/;
+// The tag of a socket that receives the events of every change in the project, such as the console's.
+const PROJECT_SOCKET_TAG = 'project';
+const TRUNK_REF = 'trunk';
+const CHANGES_LIST_MAX = 500;
 // A failed job retries after 10, 20, 40, 80, then 160 seconds, which outlasts a container that stops answering for a
 // few minutes.
 const JOB_ATTEMPTS_MAX = 6;
@@ -63,6 +68,12 @@ type ApproveBatchParams = {
 type ForkedChange = {
   baseCommit: string;
   agentToken: IssuedToken;
+};
+
+type RefHead = {
+  repoName: string;
+  head: string;
+  base: string | null;
 };
 
 // A change with commits of its own: the only kind a merge check compares.
@@ -274,6 +285,65 @@ export class Coordinator extends DurableObject<Env> {
     };
   }
 
+  listChanges(): ChangeListItem[] {
+    this.requireProject();
+    const items: ChangeListItem[] = [];
+    for (const change of this.store.recentChanges(CHANGES_LIST_MAX)) {
+      if (change.state === 'starting') {
+        continue;
+      }
+      const checks = this.store.changeChecks(change.id);
+      items.push({
+        changeId: change.id,
+        intent: change.intent,
+        owner: change.owner,
+        state: change.state,
+        footprint: this.store.allPaths(change.id),
+        checks: {
+          kept: checks.filter((check) => check.kept).length,
+          ran: checks.filter((check) => !check.kept && check.outcome !== 'pending').length,
+          pending: checks.filter((check) => check.outcome === 'pending').length,
+          failed: checks.filter((check) => check.outcome === 'fail').length
+        },
+        waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
+        landsAfter: this.landingOrder(change.id).landsAfter,
+        resolvedConflicts: change.resolvedConflicts?.length ?? 0
+      });
+    }
+    return items;
+  }
+
+  getOverlap({ changeId, otherChangeId }: OrderedPairParams): OverlapPage {
+    const [leftId, rightId] = orderedPair({ changeId, otherChangeId });
+    const check = this.store.findMergeCheck({ leftId, rightId });
+    return {
+      left: this.overlapSide(leftId),
+      right: this.overlapSide(rightId),
+      merge: check === null ? null : { outcome: check.outcome, conflicts: check.conflicts },
+      resolution: check?.resolution ?? null
+    };
+  }
+
+  // The repository and head of a ref, for reads through the Artifacts binding. A change also names its base.
+  getRef(ref: string): RefHead {
+    const project = this.requireProject();
+    if (ref === TRUNK_REF) {
+      if (project.trunkHead === null) {
+        throw new Error('REF_NOT_FOUND');
+      }
+      return { repoName: project.id, head: project.trunkHead, base: null };
+    }
+    const change = this.store.findChange(ref);
+    if (change === null || change.baseCommit === null || change.headCommit === null) {
+      throw new Error('REF_NOT_FOUND');
+    }
+    return {
+      repoName: changeRepoName({ projectId: project.id, changeId: ref }),
+      head: change.headCommit,
+      base: change.baseCommit
+    };
+  }
+
   // The next batch is every ready change. Two ready changes that overlap have a clean merge result, because a
   // conflict makes the later change wait for the earlier one, so the batch commutes inside and with trunk.
   getLanding(): Landing {
@@ -335,30 +405,45 @@ export class Coordinator extends DurableObject<Env> {
   }
 
   override fetch(request: Request): Response {
-    const changeId = EVENTS_PATH_PATTERN.exec(new URL(request.url).pathname)?.[1];
-    const change = changeId === undefined ? null : this.store.findChange(changeId);
-    if (changeId === undefined || change === null || change.state === 'starting') {
-      return Response.json({ error: 'CHANGE_NOT_FOUND' }, { status: 404 });
+    const path = new URL(request.url).pathname;
+    const changeId = EVENTS_PATH_PATTERN.exec(path)?.[1];
+    let tag: string;
+    if (PROJECT_EVENTS_PATH_PATTERN.test(path)) {
+      if (this.store.project() === null) {
+        return Response.json({ error: 'PROJECT_NOT_FOUND' }, { status: 404 });
+      }
+      tag = PROJECT_SOCKET_TAG;
+    } else {
+      const change = changeId === undefined ? null : this.store.findChange(changeId);
+      if (changeId === undefined || change === null || change.state === 'starting') {
+        return Response.json({ error: 'CHANGE_NOT_FOUND' }, { status: 404 });
+      }
+      tag = changeId;
     }
     if (request.headers.get('upgrade') !== 'websocket') {
       return Response.json({ error: 'WEBSOCKET_REQUIRED' }, { status: 426 });
     }
     const pair = new WebSocketPair();
-    this.ctx.acceptWebSocket(pair[1], [changeId]);
+    this.ctx.acceptWebSocket(pair[1], [tag]);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
   // A waiting client sends {"after": <seq>} once it is connected. The coordinator replays the events it missed, and
   // later events arrive as they happen. A socket gets live events only after its replay, so an older event cannot
   // arrive after a newer one.
+  // A project socket replays the newest events instead, because the console shows recent activity.
   override webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): void {
-    const [changeId] = this.ctx.getTags(socket);
+    const [tag] = this.ctx.getTags(socket);
     const request = waitRequestSchema.safeParse(typeof message === 'string' ? parseJson(message) : null);
-    if (changeId === undefined || !request.success) {
+    if (tag === undefined || !request.success) {
       socket.close(WEBSOCKET_POLICY_VIOLATION, 'Send {"after": <seq>} after connecting.');
       return;
     }
-    for (const record of this.store.eventsAfter({ changeId, after: request.data.after, limit: EVENTS_REPLAY_MAX })) {
+    const replay =
+      tag === PROJECT_SOCKET_TAG
+        ? this.store.latestEventsAfter({ after: request.data.after, limit: EVENTS_REPLAY_MAX })
+        : this.store.eventsAfter({ changeId: tag, after: request.data.after, limit: EVENTS_REPLAY_MAX });
+    for (const record of replay) {
       socket.send(JSON.stringify(eventFrom(record)));
     }
     socket.serializeAttachment(SOCKET_REPLAYED);
@@ -434,6 +519,20 @@ export class Coordinator extends DurableObject<Env> {
     if (job.kind === 'land') {
       this.failBatch(job.target);
     }
+  }
+
+  private overlapSide(changeId: string): OverlapPage['left'] {
+    const change = this.store.findChange(changeId);
+    if (change === null || change.state === 'starting') {
+      throw new Error('CHANGE_NOT_FOUND');
+    }
+    return {
+      changeId,
+      intent: change.intent,
+      owner: change.owner,
+      state: change.state,
+      footprint: this.store.allPaths(changeId)
+    };
   }
 
   private requireProject(): ProjectRecord {
@@ -516,7 +615,12 @@ export class Coordinator extends DurableObject<Env> {
     if (head === undefined || head.hash === change.headCommit) {
       return;
     }
-    const footprint = await diffCommits({ repo, fromCommit: change.baseCommit, toCommit: head.hash });
+    const footprint = await diffCommits({
+      repo,
+      fromCommit: change.baseCommit,
+      toCommit: head.hash,
+      shouldListFolderFiles: false
+    });
     this.store.replacePushedFootprint({ changeId, paths: footprint });
     this.store.setHead({ changeId, commit: head.hash });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
@@ -642,7 +746,8 @@ export class Coordinator extends DurableObject<Env> {
       leftHead: left.headCommit,
       rightHead: right.headCommit,
       outcome: result.outcome,
-      conflicts: result.conflicts
+      conflicts: result.conflicts,
+      resolution: null
     });
     if (previous?.outcome !== result.outcome) {
       this.announceMerge({ left, right, result });
@@ -696,6 +801,15 @@ export class Coordinator extends DurableObject<Env> {
       logError({ event: 'resolution_failed', leftId: left.id, rightId: right.id, error });
       return;
     }
+    this.store.setMergeResolution({
+      leftId: left.id,
+      rightId: right.id,
+      overlapResolution: {
+        outcome: resolution.outcome,
+        reason: resolution.outcome === 'needs_owner' ? resolution.reason : null,
+        hunks: resolution.hunks
+      }
+    });
     this.announceResolution({ left, right, conflicts: result.conflicts, resolution });
   }
 
@@ -889,7 +1003,12 @@ export class Coordinator extends DurableObject<Env> {
       resolvedPaths.push(...resolution.files.map((file) => file.path));
     }
     using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
-    const footprint = await diffCommits({ repo, fromCommit: trunkHead, toCommit: result.headCommit });
+    const footprint = await diffCommits({
+      repo,
+      fromCommit: trunkHead,
+      toCommit: result.headCommit,
+      shouldListFolderFiles: false
+    });
     this.store.replacePushedFootprint({ changeId, paths: footprint });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
@@ -986,6 +1105,7 @@ export class Coordinator extends DurableObject<Env> {
       return 'done';
     }
     let result = this.store.findCheckResult(check.key);
+    let ranFor: string | null = null;
     if (result === null) {
       let run: CheckRun;
       try {
@@ -1015,9 +1135,10 @@ export class Coordinator extends DurableObject<Env> {
         ranAt: new Date().toISOString()
       };
       this.store.saveCheckResult(result);
+      ranFor = changeId;
       log({ event: 'check_ran', projectId, changeId, name, exitCode: run.exitCode });
     }
-    for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome })) {
+    for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome, ranFor })) {
       if (this.store.changeChecks(waitingChangeId).every((waiting) => waiting.outcome !== 'pending')) {
         this.announceChecks(waitingChangeId);
       }
@@ -1115,7 +1236,7 @@ export class Coordinator extends DurableObject<Env> {
     const { type, ...fields } = payload;
     const record = this.store.insertEvent({ changeId, type, payload: fields });
     const message = JSON.stringify(eventFrom(record));
-    for (const socket of this.ctx.getWebSockets(changeId)) {
+    for (const socket of [...this.ctx.getWebSockets(changeId), ...this.ctx.getWebSockets(PROJECT_SOCKET_TAG)]) {
       if (socket.deserializeAttachment() === SOCKET_REPLAYED) {
         socket.send(message);
       }

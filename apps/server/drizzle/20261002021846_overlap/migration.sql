@@ -1,0 +1,1 @@
+ALTER TABLE `merge_check` ADD `resolution` text;

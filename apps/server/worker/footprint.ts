@@ -47,17 +47,24 @@ type DiffParams = {
   repo: ArtifactsRepo;
   fromCommit: string;
   toCommit: string;
+  shouldListFolderFiles: boolean;
 };
 
+// A side is null when the folder does not exist there.
 type PendingTrees = {
   prefix: string;
-  fromTree: string;
-  toTree: string;
+  fromTree: string | null;
+  toTree: string | null;
 };
 
-// The paths that differ between two commits. The walk follows only subtrees whose hashes differ, and a directory
-// that exists on one side only is reported as that directory.
-export async function diffCommits({ repo, fromCommit, toCommit }: DiffParams): Promise<string[]> {
+// The paths that differ between two commits. The walk follows only subtrees whose hashes differ. A directory that
+// exists on one side only is reported as that directory, or as each of its files when shouldListFolderFiles is set.
+export async function diffCommits({
+  repo,
+  fromCommit,
+  toCommit,
+  shouldListFolderFiles
+}: DiffParams): Promise<string[]> {
   const [from, to] = await Promise.all([repo.readCommit(fromCommit), repo.readCommit(toCommit)]);
   if (from === null || to === null) {
     throw new Error('COMMIT_NOT_FOUND');
@@ -71,10 +78,10 @@ export async function diffCommits({ repo, fromCommit, toCommit }: DiffParams): P
     if (treeReads > TREE_READS_MAX) {
       throw new Error('FOOTPRINT_TOO_LARGE');
     }
-    const [fromEntries, toEntries] = await Promise.all([repo.readTree(next.fromTree), repo.readTree(next.toTree)]);
-    if (fromEntries === null || toEntries === null) {
-      throw new Error('TREE_NOT_FOUND');
-    }
+    const [fromEntries, toEntries] = await Promise.all([
+      readEntries({ repo, hash: next.fromTree }),
+      readEntries({ repo, hash: next.toTree })
+    ]);
     if (fromEntries.length + toEntries.length > TREE_ENTRIES_MAX) {
       throw new Error('FOOTPRINT_TOO_LARGE');
     }
@@ -87,10 +94,18 @@ export async function diffCommits({ repo, fromCommit, toCommit }: DiffParams): P
         continue;
       }
       const path = `${next.prefix}${name}`;
-      if (fromEntry?.type === 'tree' && toEntry?.type === 'tree') {
-        pending.push({ prefix: `${path}/`, fromTree: fromEntry.hash, toTree: toEntry.hash });
-      } else {
+      const fromTree = fromEntry?.type === 'tree' ? fromEntry.hash : null;
+      const toTree = toEntry?.type === 'tree' ? toEntry.hash : null;
+      if (fromTree !== null && toTree !== null) {
+        pending.push({ prefix: `${path}/`, fromTree, toTree });
+      } else if (!shouldListFolderFiles || (fromTree === null && toTree === null)) {
         paths.push(path);
+      } else {
+        // One side holds a folder, so its files are listed, and so is a file that the other side holds at this path.
+        pending.push({ prefix: `${path}/`, fromTree, toTree });
+        if ((fromTree === null ? fromEntry : toEntry) !== undefined) {
+          paths.push(path);
+        }
       }
     }
     if (paths.length > FOOTPRINT_PATHS_MAX) {
@@ -98,4 +113,20 @@ export async function diffCommits({ repo, fromCommit, toCommit }: DiffParams): P
     }
   }
   return paths.toSorted();
+}
+
+type ReadEntriesParams = {
+  repo: ArtifactsRepo;
+  hash: string | null;
+};
+
+async function readEntries({ repo, hash }: ReadEntriesParams): Promise<ArtifactsTreeEntry[]> {
+  if (hash === null) {
+    return [];
+  }
+  const entries = await repo.readTree(hash);
+  if (entries === null) {
+    throw new Error('TREE_NOT_FOUND');
+  }
+  return entries;
 }

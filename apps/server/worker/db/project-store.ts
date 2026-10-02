@@ -5,7 +5,7 @@ import { and, asc, desc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } fr
 
 import type { JOB_KINDS } from './schema';
 import type { MeetingPair } from '../footprint';
-import type { ResolvedConflict } from '../schemas';
+import type { OverlapResolution, ResolvedConflict } from '../schemas';
 
 import {
   batch,
@@ -63,6 +63,10 @@ type RestackedParams = {
 type RestackConflictsParams = {
   changeId: string;
   conflicts: string[];
+};
+
+type MergeResolutionParams = PairParams & {
+  overlapResolution: OverlapResolution;
 };
 
 type ResolvedConflictsParams = {
@@ -130,9 +134,11 @@ type ChangeCheckParams = {
   name: string;
 };
 
+// ranFor is the change whose job ran the command, or null when the job found a result that was already stored.
 type ChangeCheckOutcomeParams = {
   key: string;
   outcome: 'pass' | 'fail';
+  ranFor: string | null;
 };
 
 type QueueJobParams = {
@@ -207,6 +213,11 @@ export class ProjectStore {
 
   findChange(changeId: string): ChangeRecord | null {
     return this.db.select().from(change).where(eq(change.id, changeId)).get() ?? null;
+  }
+
+  // The newest changes first.
+  recentChanges(limit: number): ChangeRecord[] {
+    return this.db.select().from(change).orderBy(desc(change.number)).limit(limit).all();
   }
 
   activeChanges(): ChangeRecord[] {
@@ -333,6 +344,18 @@ export class ProjectStore {
       .all();
   }
 
+  // The newest events of the project after a sequence number, oldest first.
+  latestEventsAfter({ after, limit }: Omit<EventsAfterParams, 'changeId'>): EventRecord[] {
+    return this.db
+      .select()
+      .from(event)
+      .where(gt(event.seq, after))
+      .orderBy(desc(event.seq))
+      .limit(limit)
+      .all()
+      .toReversed();
+  }
+
   findMergeCheck({ leftId, rightId }: PairParams): MergeCheckRecord | null {
     return (
       this.db
@@ -353,9 +376,18 @@ export class ProjectStore {
           leftHead: record.leftHead,
           rightHead: record.rightHead,
           outcome: record.outcome,
-          conflicts: record.conflicts
+          conflicts: record.conflicts,
+          resolution: record.resolution
         }
       })
+      .run();
+  }
+
+  setMergeResolution({ leftId, rightId, overlapResolution }: MergeResolutionParams): void {
+    this.db
+      .update(mergeCheck)
+      .set({ resolution: overlapResolution })
+      .where(and(eq(mergeCheck.leftId, leftId), eq(mergeCheck.rightId, rightId)))
       .run();
   }
 
@@ -482,11 +514,12 @@ export class ProjectStore {
     }
   }
 
-  // Gives a new result to every change that waits on its key, and returns those changes.
-  resolveChangeChecks({ key, outcome }: ChangeCheckOutcomeParams): string[] {
+  // Gives a new result to every change that waits on its key, and returns those changes. Only the change whose job ran
+  // the command counts the result as run; every other waiting change kept it.
+  resolveChangeChecks({ key, outcome, ranFor }: ChangeCheckOutcomeParams): string[] {
     return this.db
       .update(changeCheck)
-      .set({ outcome })
+      .set({ outcome, kept: sql`${changeCheck.changeId} IS NOT ${ranFor}` })
       .where(and(eq(changeCheck.key, key), eq(changeCheck.outcome, 'pending')))
       .returning({ changeId: changeCheck.changeId })
       .all()

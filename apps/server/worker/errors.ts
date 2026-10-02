@@ -3,6 +3,8 @@ import { z } from '@hono/zod-openapi';
 export const ERROR_STATUS = {
   PROJECT_NOT_FOUND: 404,
   CHANGE_NOT_FOUND: 404,
+  REF_NOT_FOUND: 404,
+  PATH_NOT_FOUND: 404,
   PROJECT_EXISTS: 409,
   TRUNK_EMPTY: 409,
   BATCH_NOT_READY: 409,
@@ -15,6 +17,8 @@ export type ErrorCode = keyof typeof ERROR_STATUS;
 const errorCodeSchema = z.enum([
   'PROJECT_NOT_FOUND',
   'CHANGE_NOT_FOUND',
+  'REF_NOT_FOUND',
+  'PATH_NOT_FOUND',
   'PROJECT_EXISTS',
   'TRUNK_EMPTY',
   'BATCH_NOT_READY',
