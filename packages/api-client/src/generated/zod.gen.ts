@@ -138,7 +138,8 @@ export const zWaitReason = z.object({
         'RESTACK_CONFLICT',
         'LANDS_AFTER',
         'CHECKING',
-        'CHECKS',
+        'CHECKS_PENDING',
+        'CHECKS_INVALID',
         'CHECKS_FAILED',
         'LANDING'
     ]),
@@ -177,6 +178,7 @@ export const zChange = z.object({
     landsBefore: z.array(z.string().regex(/^c-[1-9][0-9]{0,8}$/)),
     waitsFor: z.array(zWaitReason),
     checks: z.array(zChangeCheck),
+    checksError: z.string().nullable(),
     batchId: z.string().regex(/^b-[1-9][0-9]{0,8}$/).nullable(),
     landedCommit: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
     createdAt: z.string()

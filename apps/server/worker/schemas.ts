@@ -116,7 +116,8 @@ const waitReasonSchema = z
       'RESTACK_CONFLICT',
       'LANDS_AFTER',
       'CHECKING',
-      'CHECKS',
+      'CHECKS_PENDING',
+      'CHECKS_INVALID',
       'CHECKS_FAILED',
       'LANDING'
     ]),
@@ -153,6 +154,7 @@ export const changeSchema = z
     landsBefore: z.array(changeIdSchema),
     waitsFor: z.array(waitReasonSchema),
     checks: z.array(changeCheckSchema),
+    checksError: z.string().nullable(),
     batchId: batchIdSchema.nullable(),
     landedCommit: commitSchema.nullable(),
     createdAt: z.string()

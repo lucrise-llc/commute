@@ -153,13 +153,14 @@ export type Change = {
     landsBefore: Array<string>;
     waitsFor: Array<WaitReason>;
     checks: Array<ChangeCheck>;
+    checksError: string | null;
     batchId: string | null;
     landedCommit: string | null;
     createdAt: string;
 };
 
 export type WaitReason = {
-    code: 'NO_COMMITS' | 'RESTACKING' | 'RESTACK_CONFLICT' | 'LANDS_AFTER' | 'CHECKING' | 'CHECKS' | 'CHECKS_FAILED' | 'LANDING';
+    code: 'NO_COMMITS' | 'RESTACKING' | 'RESTACK_CONFLICT' | 'LANDS_AFTER' | 'CHECKING' | 'CHECKS_PENDING' | 'CHECKS_INVALID' | 'CHECKS_FAILED' | 'LANDING';
     changeIds: Array<string>;
 };
 

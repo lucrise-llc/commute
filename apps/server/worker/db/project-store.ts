@@ -111,7 +111,9 @@ type FinishBatchParams = {
 
 type ReplaceChangeChecksParams = {
   changeId: string;
+  head: string;
   checks: ChangeCheckRecord[];
+  error: string | null;
 };
 
 type ChangeCheckParams = {
@@ -436,7 +438,9 @@ export class ProjectStore {
     );
   }
 
-  replaceChangeChecks({ changeId, checks }: ReplaceChangeChecksParams): void {
+  // Records the checks of a head, or the reason they could not be read.
+  replaceChangeChecks({ changeId, head, checks, error }: ReplaceChangeChecksParams): void {
+    this.db.update(change).set({ checksHead: head, checksError: error }).where(eq(change.id, changeId)).run();
     this.db.delete(changeCheck).where(eq(changeCheck.changeId, changeId)).run();
     for (const check of checks) {
       this.db.insert(changeCheck).values(check).run();

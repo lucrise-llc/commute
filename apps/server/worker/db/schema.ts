@@ -4,7 +4,7 @@ export const CHANGE_STATES = ['starting', 'open', 'landing', 'landed'] as const;
 export const FOOTPRINT_SOURCES = ['declared', 'pushed'] as const;
 export const MERGE_OUTCOMES = ['clean', 'conflict'] as const;
 export const BATCH_STATES = ['landing', 'landed', 'failed'] as const;
-export const JOB_KINDS = ['merge', 'restack', 'land', 'check'] as const;
+export const JOB_KINDS = ['merge', 'restack', 'land', 'evaluate', 'check'] as const;
 export const CHECK_OUTCOMES = ['pass', 'fail'] as const;
 export const CHANGE_CHECK_OUTCOMES = ['pending', 'pass', 'fail'] as const;
 
@@ -27,6 +27,9 @@ export const change = sqliteTable('change', {
   restackConflicts: text('restack_conflicts', { mode: 'json' }).$type<string[]>(),
   batchId: text('batch_id'),
   landedCommit: text('landed_commit'),
+  // The head whose checks are evaluated, and why they could not be, when commute.json is invalid.
+  checksHead: text('checks_head'),
+  checksError: text('checks_error'),
   createdAt: text('created_at').notNull()
 });
 
@@ -78,11 +81,9 @@ export const mergeCheck = sqliteTable(
 // reads, so a change reuses a result that another change produced.
 export const checkResult = sqliteTable('check_result', {
   key: text('key').primaryKey(),
-  name: text('name').notNull(),
   outcome: text('outcome', { enum: CHECK_OUTCOMES }).notNull(),
   exitCode: integer('exit_code').notNull(),
   output: text('output').notNull(),
-  ranFor: text('ran_for').notNull(),
   ranAt: text('ran_at').notNull()
 });
 
@@ -113,9 +114,9 @@ export const batch = sqliteTable('batch', {
   createdAt: text('created_at').notNull()
 });
 
-// Work that runs from the alarm. The target is the change to restack, the batch to land, or the left change of a
-// merge check, whose right change is the partner. A job queued again while it runs gets a new version, so the run
-// that ends does not delete or delay it.
+// Work that runs from the alarm. The target is the change to restack, to evaluate, or to check, the batch to land, or
+// the left change of a merge check. The partner is the right change of a merge check, or the name of a check. A job
+// queued again while it runs gets a new version, so the run that ends does not delete or delay it.
 export const job = sqliteTable('job', {
   key: text('key').primaryKey(),
   kind: text('kind', { enum: JOB_KINDS }).notNull(),

@@ -18,14 +18,12 @@ import { diffCommits, meetingPairs } from './footprint';
 import { resultKey, subtreeHashes } from './check-keys';
 import { artifactsErrorCode, errorCodeOf } from './errors';
 import { changeEventSchema, waitRequestSchema } from './schemas';
-import { PROJECT_FILE_PATH, readProjectFile } from './project-file';
+import { CHECKS_INVALID, readProjectFile } from './project-file';
 import { changeRepoName, issueAgentToken, issueJobToken } from './repos';
 
 const TRUNK_BRANCH = 'main';
 const READY_POLLS_MAX = 50;
 const READY_POLL_INTERVAL_MS = 100;
-const FORK_ATTEMPTS_MAX = 3;
-const FORK_RETRY_DELAY_MS = 500;
 const EVENTS_REPLAY_MAX = 100;
 const SOCKET_REPLAYED = 'replayed';
 const WEBSOCKET_NORMAL_CLOSURE = 1_000;
@@ -187,7 +185,8 @@ type CheckJobParams = ChangeRef & {
   name: string;
 };
 
-type EvaluateChecksParams = ChangeRef & {
+type ChecksAtHeadParams = {
+  changeId: string;
   repo: ArtifactsRepo;
   head: string;
 };
@@ -206,8 +205,8 @@ type LandingChangeParams = {
 };
 
 // One coordinator per project. It owns the life of each change: its footprint and overlaps, the merge checks of its
-// pairs, its batch, its landing on trunk, and the restacks that follow. It also holds the event stream that agents
-// wait on.
+// pairs, the checks of its head, its batch, its landing on trunk, and the restacks that follow. It also holds the event
+// stream that agents wait on.
 export class Coordinator extends DurableObject<Env> {
   private readonly store: ProjectStore;
   private readonly pushReads = new Map<string, Promise<void>>();
@@ -287,6 +286,7 @@ export class Coordinator extends DurableObject<Env> {
       ...this.landingOrder(changeId),
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
       checks: this.store.changeChecks(changeId).map((check) => this.checkView(check)),
+      checksError: change.checksError,
       batchId: change.batchId,
       landedCommit: change.landedCommit,
       createdAt: change.createdAt
@@ -435,6 +435,9 @@ export class Coordinator extends DurableObject<Env> {
     if (job.kind === 'restack') {
       return this.runRestackJob({ projectId, jobKey: job.key, changeId: job.target });
     }
+    if (job.kind === 'evaluate') {
+      return this.runEvaluateJob({ projectId, changeId: job.target });
+    }
     if (job.kind === 'check') {
       if (job.partner === null) {
         throw new Error(`Check job ${job.key} has no check name.`);
@@ -471,26 +474,7 @@ export class Coordinator extends DurableObject<Env> {
     }
   }
 
-  // Artifacts sometimes answers a fork with INTERNAL_ERROR (twice in about 50 forks during verification), so a fork
-  // that fails that way runs again on a clean name.
-  private async forkTrunk(change: ChangeRef): Promise<ForkedChange> {
-    for (let attempt = 1; attempt <= FORK_ATTEMPTS_MAX; attempt += 1) {
-      try {
-        return await this.forkTrunkOnce(change);
-      } catch (error) {
-        const code = artifactsErrorCode(error);
-        if (attempt === FORK_ATTEMPTS_MAX || (code !== 'INTERNAL_ERROR' && code !== 'UPSTREAM_UNAVAILABLE')) {
-          throw error;
-        }
-        logError({ event: 'fork_retry', ...change, attempt, error });
-        await this.env.ARTIFACTS.delete(changeRepoName(change));
-        await scheduler.wait(FORK_RETRY_DELAY_MS * attempt);
-      }
-    }
-    throw new Error(`Fork of ${change.changeId} failed ${FORK_ATTEMPTS_MAX} times.`);
-  }
-
-  private async forkTrunkOnce({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
+  private async forkTrunk({ projectId, changeId }: ChangeRef): Promise<ForkedChange> {
     const repoName = changeRepoName({ projectId, changeId });
     using trunk = await this.env.ARTIFACTS.get(projectId);
     const forked = await trunk.fork(repoName, { defaultBranchOnly: true });
@@ -539,7 +523,7 @@ export class Coordinator extends DurableObject<Env> {
     this.store.setHead({ changeId, commit: head.hash });
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
-    await this.evaluateChecks({ projectId, changeId, repo, head: head.hash });
+    await this.queueChecks(changeId);
     log({
       event: 'push_recorded',
       projectId,
@@ -841,57 +825,38 @@ export class Coordinator extends DurableObject<Env> {
     const overlaps = this.recordOverlaps({ changeId, isPush: true });
     await this.queueMergeChecks({ changeId, overlaps });
     this.emit({ changeId, payload: { type: 'restacked', trunkCommit: trunkHead, headCommit: result.headCommit } });
-    await this.evaluateChecks({ projectId, changeId, repo, head: result.headCommit });
+    await this.queueChecks(changeId);
     log({ event: 'change_restacked', projectId, changeId, outcome: result.outcome, trunkHead });
   }
 
+  private async queueChecks(changeId: string): Promise<void> {
+    this.store.queueJob({ kind: 'evaluate', target: changeId, runAfter: Date.now() });
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+
   // Reads the checks that the head declares in commute.json and keys each one to the subtrees it reads. A key with a
-  // result is kept; a key without one queues a run. A project file that does not parse fails as a check named after it.
-  private async evaluateChecks({ projectId, changeId, repo, head }: EvaluateChecksParams): Promise<void> {
-    const projectFile = await readProjectFile({ repo, commit: head });
-    const previous = new Map(this.store.changeChecks(changeId).map((check) => [check.name, check]));
-    const checks: ChangeCheckRecord[] = [];
-    if (!projectFile.isValid) {
-      const key = `project-file:${head}`;
-      this.store.saveCheckResult({
-        key,
-        name: PROJECT_FILE_PATH,
-        outcome: 'fail',
-        exitCode: 1,
-        output: projectFile.error,
-        ranFor: changeId,
-        ranAt: new Date().toISOString()
-      });
-      checks.push({
-        changeId,
-        name: PROJECT_FILE_PATH,
-        head,
-        key,
-        command: '',
-        reads: {},
-        previousReads: null,
-        kept: false,
-        outcome: 'fail'
-      });
+  // result is kept; a key without one queues a run. A project file that does not parse, or checks that read too much,
+  // keep the change waiting with the reason.
+  private async runEvaluateJob({ projectId, changeId }: ChangeRef): Promise<JobOutcome> {
+    const change = this.store.findChange(changeId);
+    if (change?.state !== 'open' || change.headCommit === null) {
+      return 'done';
     }
-    for (const declaration of projectFile.isValid ? projectFile.checks : []) {
-      const reads = await subtreeHashes({ repo, commit: head, paths: declaration.reads });
-      const key = await resultKey({ check: declaration, hashes: reads });
-      const result = this.store.findCheckResult(key);
-      const before = previous.get(declaration.name);
-      checks.push({
-        changeId,
-        name: declaration.name,
-        head,
-        key,
-        command: declaration.command,
-        reads,
-        previousReads: before === undefined || before.head === head ? (before?.previousReads ?? null) : before.reads,
-        kept: result !== null,
-        outcome: result?.outcome ?? 'pending'
-      });
+    const head = change.headCommit;
+    using repo = await this.env.ARTIFACTS.get(changeRepoName({ projectId, changeId }));
+    let checks: ChangeCheckRecord[];
+    try {
+      checks = await this.checksAtHead({ changeId, repo, head });
+    } catch (error) {
+      if (isError(error, CHECKS_INVALID)) {
+        const reason = error instanceof Error && error.cause instanceof Error ? error.cause.message : String(error);
+        this.store.replaceChangeChecks({ changeId, head, checks: [], error: reason });
+        log({ event: 'checks_invalid', projectId, changeId, head, reason });
+        return 'done';
+      }
+      throw error;
     }
-    this.store.replaceChangeChecks({ changeId, checks });
+    this.store.replaceChangeChecks({ changeId, head, checks, error: null });
 
     const pending = checks.filter((check) => check.outcome === 'pending');
     for (const check of pending) {
@@ -903,6 +868,35 @@ export class Coordinator extends DurableObject<Env> {
       this.announceChecks(changeId);
     }
     log({ event: 'checks_evaluated', projectId, changeId, head, checks: checks.length, pending: pending.length });
+    return 'done';
+  }
+
+  private async checksAtHead({ changeId, repo, head }: ChecksAtHeadParams): Promise<ChangeCheckRecord[]> {
+    const previous = new Map(this.store.changeChecks(changeId).map((check) => [check.name, check]));
+    const checks: ChangeCheckRecord[] = [];
+    for (const declaration of await readProjectFile({ repo, commit: head })) {
+      const reads = await subtreeHashes({ repo, commit: head, paths: declaration.reads });
+      const key = await resultKey({ check: declaration, hashes: reads });
+      const result = this.store.findCheckResult(key);
+      // previousReads describes the head before this one, so evaluating the same head again keeps it.
+      const before = previous.get(declaration.name);
+      let previousReads = before?.reads ?? null;
+      if (before?.head === head) {
+        previousReads = before.previousReads;
+      }
+      checks.push({
+        changeId,
+        name: declaration.name,
+        head,
+        key,
+        command: declaration.command,
+        reads,
+        previousReads,
+        kept: result !== null,
+        outcome: result?.outcome ?? 'pending'
+      });
+    }
+    return checks;
   }
 
   private async runCheckJob({ projectId, jobKey, changeId, name }: CheckJobParams): Promise<JobOutcome> {
@@ -911,7 +905,8 @@ export class Coordinator extends DurableObject<Env> {
     if (check?.outcome !== 'pending' || change?.headCommit !== check.head) {
       return 'done';
     }
-    if (this.store.findCheckResult(check.key) === null) {
+    let result = this.store.findCheckResult(check.key);
+    if (result === null) {
       let run: CheckRun;
       try {
         const side = await this.repoSide({
@@ -932,23 +927,19 @@ export class Coordinator extends DurableObject<Env> {
         }
         throw error;
       }
-      this.store.saveCheckResult({
+      result = {
         key: check.key,
-        name,
         outcome: run.exitCode === 0 ? 'pass' : 'fail',
         exitCode: run.exitCode,
         output: run.output,
-        ranFor: changeId,
         ranAt: new Date().toISOString()
-      });
+      };
+      this.store.saveCheckResult(result);
       log({ event: 'check_ran', projectId, changeId, name, exitCode: run.exitCode });
     }
-    const result = this.store.findCheckResult(check.key);
-    if (result !== null) {
-      for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome })) {
-        if (this.store.changeChecks(waitingChangeId).every((waiting) => waiting.outcome !== 'pending')) {
-          this.announceChecks(waitingChangeId);
-        }
+    for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome })) {
+      if (this.store.changeChecks(waitingChangeId).every((waiting) => waiting.outcome !== 'pending')) {
+        this.announceChecks(waitingChangeId);
       }
     }
     return 'done';
@@ -997,8 +988,10 @@ export class Coordinator extends DurableObject<Env> {
     }
     const reasons: WaitReason[] = [];
     const checks = this.store.changeChecks(change.id);
-    if (checks.some((check) => check.head !== change.headCommit || check.outcome === 'pending')) {
-      reasons.push({ code: 'CHECKS', changeIds: [] });
+    if (change.checksHead !== change.headCommit || checks.some((check) => check.outcome === 'pending')) {
+      reasons.push({ code: 'CHECKS_PENDING', changeIds: [] });
+    } else if (change.checksError !== null) {
+      reasons.push({ code: 'CHECKS_INVALID', changeIds: [] });
     } else if (checks.some((check) => check.outcome === 'fail')) {
       reasons.push({ code: 'CHECKS_FAILED', changeIds: [] });
     }

@@ -1,6 +1,6 @@
 import type { CheckDeclaration } from './project-file';
 
-import { REPOSITORY_ROOT } from './project-file';
+import { CHECKS_INVALID, REPOSITORY_ROOT } from './project-file';
 
 // The hash a read path gets when the commit has nothing at that path.
 const ABSENT = 'absent';
@@ -28,7 +28,9 @@ export async function subtreeHashes({ repo, commit, paths }: SubtreeHashesParams
       return cached;
     }
     if (trees.size >= TREE_READS_MAX) {
-      throw new Error('CHECK_READS_TOO_LARGE');
+      throw new Error(CHECKS_INVALID, {
+        cause: new Error(`The checks read more than ${TREE_READS_MAX} trees. Declare narrower read paths.`)
+      });
     }
     const entries = await repo.readTree(hash);
     if (entries === null) {

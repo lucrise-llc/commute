@@ -3,7 +3,7 @@ import { z } from '@hono/zod-openapi';
 import { isCanonicalPath } from './footprint';
 
 // The project file at the root of trunk declares the checks.
-export const PROJECT_FILE_PATH = 'commute.json';
+const PROJECT_FILE_PATH = 'commute.json';
 // A check that reads the whole repository declares this path, and runs again after every landing.
 export const REPOSITORY_ROOT = '.';
 
@@ -33,37 +33,30 @@ const projectFileSchema = z.object({
 
 export type CheckDeclaration = z.infer<typeof checkSchema>;
 
-export type ProjectFile =
-  | {
-      isValid: true;
-      checks: CheckDeclaration[];
-    }
-  | {
-      isValid: false;
-      error: string;
-    };
+// The code of a project file that does not parse, or of checks that read too much. The reason is in the cause.
+export const CHECKS_INVALID = 'CHECKS_INVALID';
 
 type ReadProjectFileParams = {
   repo: ArtifactsRepo;
   commit: string;
 };
 
-// A commit without a project file declares no checks. A project file that does not parse is reported, so the change
-// waits until it is fixed.
-export async function readProjectFile({ repo, commit }: ReadProjectFileParams): Promise<ProjectFile> {
+// A commit without a project file declares no checks.
+export async function readProjectFile({ repo, commit }: ReadProjectFileParams): Promise<CheckDeclaration[]> {
   const blob = await repo.readFile({ ref: commit, path: PROJECT_FILE_PATH });
   if (blob === null) {
-    return { isValid: true, checks: [] };
+    return [];
   }
+  const text = await blob.text();
   let content: unknown;
   try {
-    content = JSON.parse(await blob.text());
+    content = JSON.parse(text);
   } catch (error) {
-    return { isValid: false, error: `${PROJECT_FILE_PATH} is not JSON: ${String(error)}` };
+    throw new Error(CHECKS_INVALID, { cause: error });
   }
   const parsed = projectFileSchema.safeParse(content);
   if (!parsed.success) {
-    return { isValid: false, error: `${PROJECT_FILE_PATH} is not valid: ${parsed.error.message}` };
+    throw new Error(CHECKS_INVALID, { cause: new Error(z.prettifyError(parsed.error)) });
   }
-  return { isValid: true, checks: parsed.data.checks };
+  return parsed.data.checks;
 }

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "98de2290-86fb-4521-93b6-6cac4bc8858f",
+  "id": "b0404ba9-e1ce-4391-a717-d39976cdd66c",
   "prevIds": [
     "b4f13b77-27f6-434a-b703-9e824d39e196"
   ],
@@ -198,6 +198,26 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checks_head",
+      "entityType": "columns",
+      "table": "change"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checks_error",
+      "entityType": "columns",
+      "table": "change"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -312,16 +332,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "name",
-      "entityType": "columns",
-      "table": "check_result"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "outcome",
       "entityType": "columns",
       "table": "check_result"
@@ -343,16 +353,6 @@
       "default": null,
       "generated": null,
       "name": "output",
-      "entityType": "columns",
-      "table": "check_result"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "ran_for",
       "entityType": "columns",
       "table": "check_result"
     },

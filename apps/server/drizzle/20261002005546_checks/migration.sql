@@ -13,10 +13,11 @@ CREATE TABLE `change_check` (
 --> statement-breakpoint
 CREATE TABLE `check_result` (
 	`key` text PRIMARY KEY,
-	`name` text NOT NULL,
 	`outcome` text NOT NULL,
 	`exit_code` integer NOT NULL,
 	`output` text NOT NULL,
-	`ran_for` text NOT NULL,
 	`ran_at` text NOT NULL
 );
+--> statement-breakpoint
+ALTER TABLE `change` ADD `checks_head` text;--> statement-breakpoint
+ALTER TABLE `change` ADD `checks_error` text;
