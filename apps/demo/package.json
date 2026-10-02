@@ -10,7 +10,8 @@
     "encode": "node src/encode.ts"
   },
   "dependencies": {
-    "@commute/api-client": "^0.0.0"
+    "@commute/api-client": "^0.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "playwright": "^1.57.0"

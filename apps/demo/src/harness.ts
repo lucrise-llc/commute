@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 // Runs the Commute demo. Alice and Bob each run 10 scripted agents on the storefront project. Each agent starts a
 // change with the commute CLI, edits one file, commits and pushes with plain git, and waits for its events. The
-// script approves the batches, or a person approves them in the console when --console-approvals is set.
+// script approves the batches, or a person approves them in the console when --console-approvals is set. With
+// --transcripts <dir>, it writes each agent's commands and their output to <dir>/<agent>.json.
 import type { ChangeEvent } from '@commute/api-client';
 
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { parseArgs, promisify } from 'node:util';
+import { dirname, join, relative } from 'node:path';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { approveBatch, createClient, createProject, getChange, getLanding, zChangeEvent } from '@commute/api-client';
 
 import type { Agent, Edit } from './agents.ts';
+import type { Transcript, TranscriptCommand } from './transcript.ts';
 
 import { AGENTS, BATCHES } from './agents.ts';
+import { TRANSCRIPT_COMMANDS_MAX } from './transcript.ts';
 
 const runFile = promisify(execFile);
 const SEED_DIR = fileURLToPath(new URL('../seed', import.meta.url));
@@ -25,21 +28,28 @@ const NAME_WIDTH = 8;
 const START_CONCURRENCY = 3;
 const START_STAGGER_MS = 200;
 const WAIT_TIMEOUT_SECONDS = '900';
+// An agent sees about ten events before its change lands.
+const WAITS_MAX = 50;
+const JSON_INDENT = 2;
 const CHANGE_LINE = /^change\s+(c-\d+)$/m;
+const SHELL_WORD = /^[\w@%+=:,./-]+$/;
 
 const { values } = parseArgs({
   options: {
     url: { type: 'string', default: process.env['COMMUTE_URL'] ?? 'http://localhost:8787' },
     project: { type: 'string', default: `demo-${Date.now().toString(ID_RADIX)}` },
-    'console-approvals': { type: 'boolean', default: false }
+    'console-approvals': { type: 'boolean', default: false },
+    transcripts: { type: 'string' }
   }
 });
+const runStartedAt = Date.now();
 const url = values.url;
 const projectId = values.project;
 const isScriptApproving = !values['console-approvals'];
 const client = createClient({ baseUrl: url });
 const work = await mkdtemp(join(tmpdir(), 'commute-demo-'));
 const agentEnv = { ...process.env, COMMUTE_URL: url, COMMUTE_PROJECT: projectId, GIT_TERMINAL_PROMPT: '0' };
+const transcripts = new Map<string, TranscriptCommand[]>();
 
 step(`project ${projectId} on ${url}, working in ${work}`);
 await seedTrunk();
@@ -100,6 +110,9 @@ for (const [index, batch] of BATCHES.entries()) {
   step(`batch ${index + 1} landed`);
 }
 await Promise.all(agentRuns);
+if (values.transcripts !== undefined) {
+  await writeTranscripts(values.transcripts);
+}
 events.close();
 await summarize(events.all);
 
@@ -148,11 +161,11 @@ async function seedTrunk(): Promise<void> {
 }
 
 async function startAgent(agent: Agent): Promise<string> {
-  const { stdout } = await runFile(
-    'node',
-    [CLI_PATH, 'start', agent.intent, '--paths', agent.edit.path, '--as', agent.owner, '--dir', agent.name],
-    { cwd: work, env: agentEnv }
-  );
+  const stdout = await agentCommute({
+    agent,
+    args: ['start', agent.intent, '--paths', agent.edit.path, '--as', agent.owner, '--dir', agent.name],
+    cwd: work
+  });
   const changeId = CHANGE_LINE.exec(stdout)?.[1];
   if (changeId === undefined) {
     throw new Error(`commute start for ${agent.name} printed no change: ${stdout}`);
@@ -172,35 +185,86 @@ type RunAgentParams = {
 async function runAgent({ agent, changeId }: RunAgentParams): Promise<void> {
   const dir = join(work, agent.name);
   await applyEdit({ dir, edit: agent.edit });
-  await git({ args: ['add', '-A'], cwd: dir });
-  await git({
-    args: [
-      '-c',
-      `user.name=${agent.owner}`,
-      '-c',
-      `user.email=${agent.owner}@demo.commute.invalid`,
-      'commit',
-      '-q',
-      '-m',
-      agent.intent
-    ],
-    cwd: dir
-  });
-  await git({ args: ['push', '-q'], cwd: dir });
+  await agentGit({ agent, args: ['add', '-A'], cwd: dir });
+  await agentGit({ agent, args: ['commit', '-q', '-m', agent.intent], cwd: dir });
+  // Without -q, git prints the ref update, which the transcript shows.
+  await agentGit({ agent, args: ['push'], cwd: dir });
   console.log(`${agent.name.padEnd(NAME_WIDTH)} ${changeId} pushed`);
-  for (;;) {
-    const { stdout } = await runFile('node', [CLI_PATH, 'wait', '--timeout', WAIT_TIMEOUT_SECONDS], {
-      cwd: dir,
-      env: agentEnv
-    });
+  for (let waits = 0; waits < WAITS_MAX; waits += 1) {
+    const stdout = await agentCommute({ agent, args: ['wait', '--timeout', WAIT_TIMEOUT_SECONDS], cwd: dir });
     const line = stdout.trimEnd();
     console.log(`${agent.name.padEnd(NAME_WIDTH)} ${changeId} ${line}`);
     if (line.startsWith('restack')) {
-      await git({ args: ['pull', '-q', '--ff-only'], cwd: dir });
+      await agentGit({ agent, args: ['pull', '-q', '--ff-only'], cwd: dir });
     }
     if (line.startsWith('landed')) {
       return;
     }
+  }
+  throw new Error(`AGENT_WAITS_EXHAUSTED: ${agent.name} saw ${WAITS_MAX} events, and ${changeId} did not land.`);
+}
+
+type AgentCommandParams = {
+  agent: Agent;
+  args: string[];
+  cwd: string;
+};
+
+async function agentGit({ agent, args, cwd }: AgentCommandParams): Promise<string> {
+  return runRecorded({ agent, file: 'git', args, shown: ['git', ...args], cwd });
+}
+
+// The transcript shows the CLI as the installed `commute` command, with the real arguments.
+async function agentCommute({ agent, args, cwd }: AgentCommandParams): Promise<string> {
+  return runRecorded({ agent, file: 'node', args: [CLI_PATH, ...args], shown: ['commute', ...args], cwd });
+}
+
+type RunRecordedParams = AgentCommandParams & {
+  file: string;
+  shown: string[];
+};
+
+// Runs a command of an agent and adds it to the agent's transcript. The agent commits as its owner through the
+// environment, so its commit command is the one an agent types.
+async function runRecorded({ agent, file, args, shown, cwd }: RunRecordedParams): Promise<string> {
+  const commands = transcripts.get(agent.name) ?? [];
+  if (commands.length >= TRANSCRIPT_COMMANDS_MAX) {
+    throw new Error(`TRANSCRIPT_FULL: ${agent.name} ran more than ${TRANSCRIPT_COMMANDS_MAX} commands.`);
+  }
+  const email = `${agent.owner}@demo.commute.invalid`;
+  const env = {
+    ...agentEnv,
+    GIT_AUTHOR_NAME: agent.owner,
+    GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: agent.owner,
+    GIT_COMMITTER_EMAIL: email
+  };
+  const atMs = Date.now() - runStartedAt;
+  const { stdout, stderr } = await runFile(file, args, { cwd, env });
+  commands.push({
+    atMs,
+    durationMs: Date.now() - runStartedAt - atMs,
+    dir: relative(work, cwd) || '.',
+    command: shown.map(shellWord).join(' '),
+    output: `${stdout}${stderr}`
+  });
+  transcripts.set(agent.name, commands);
+  return stdout;
+}
+
+function shellWord(word: string): string {
+  return SHELL_WORD.test(word) ? word : `"${word.replaceAll(/["\\$`]/g, '\\$&')}"`;
+}
+
+async function writeTranscripts(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  for (const agent of AGENTS) {
+    const transcript: Transcript = {
+      agent: agent.name,
+      changeId: changeIdOf(agent.name),
+      commands: transcripts.get(agent.name) ?? []
+    };
+    await writeFile(join(dir, `${agent.name}.json`), `${JSON.stringify(transcript, null, JSON_INDENT)}\n`);
   }
 }
 
