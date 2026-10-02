@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/harness.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "record": "node src/record.ts"
+    "record": "node src/record.ts",
+    "encode": "node src/encode.ts"
   },
   "dependencies": {
     "@commute/api-client": "^0.0.0"
