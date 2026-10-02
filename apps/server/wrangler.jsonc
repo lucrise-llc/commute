@@ -22,6 +22,10 @@
   "vars": {
     "ARTIFACTS_GIT_ORIGIN": "https://ef2e81e746f2503a8ca3fa19fd88ba30.artifacts.cloudflare.net/git/commute-dev"
   },
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
   "artifacts": [
     {
       "binding": "ARTIFACTS",

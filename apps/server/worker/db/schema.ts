@@ -1,5 +1,7 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+import type { ResolvedConflict } from '../schemas';
+
 export const CHANGE_STATES = ['starting', 'open', 'landing', 'landed'] as const;
 export const FOOTPRINT_SOURCES = ['declared', 'pushed'] as const;
 export const MERGE_OUTCOMES = ['clean', 'conflict'] as const;
@@ -30,6 +32,8 @@ export const change = sqliteTable('change', {
   // The head whose checks are evaluated, and why they could not be, when commute.json is invalid.
   checksHead: text('checks_head'),
   checksError: text('checks_error'),
+  // The files whose restack conflicts Commute resolved, for the person who approves the batch.
+  resolvedConflicts: text('resolved_conflicts', { mode: 'json' }).$type<ResolvedConflict[]>(),
   createdAt: text('created_at').notNull()
 });
 
@@ -104,6 +108,16 @@ export const changeCheck = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.changeId, table.name] })]
 );
+
+// The resolution of one conflict hunk, keyed by the hash of its base, ours, and theirs lines. lines is null when the
+// hunk needs its owner, and reason says why.
+export const resolution = sqliteTable('resolution', {
+  key: text('key').primaryKey(),
+  lines: text('lines', { mode: 'json' }).$type<string[]>(),
+  dropped: text('dropped', { mode: 'json' }).$type<ResolvedConflict['dropped']>().notNull(),
+  reason: text('reason'),
+  createdAt: text('created_at').notNull()
+});
 
 // The changes of a batch name it in change.batch_id.
 export const batch = sqliteTable('batch', {

@@ -1,10 +1,11 @@
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 
 import { alias } from 'drizzle-orm/sqlite-core';
-import { and, asc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getColumns, gt, inArray, lte, min, ne, or, sql } from 'drizzle-orm';
 
 import type { JOB_KINDS } from './schema';
 import type { MeetingPair } from '../footprint';
+import type { ResolvedConflict } from '../schemas';
 
 import {
   batch,
@@ -16,11 +17,13 @@ import {
   job,
   mergeCheck,
   project,
-  reportedOverlap
+  reportedOverlap,
+  resolution
 } from './schema';
 
 // A change is active from the moment its fork exists until it lands.
 const ACTIVE_STATES = ['open', 'landing'] as const;
+const LANDED_INTENTS_MAX = 5;
 
 export type ProjectRecord = typeof project.$inferSelect;
 export type ChangeRecord = typeof change.$inferSelect;
@@ -30,6 +33,7 @@ export type BatchRecord = typeof batch.$inferSelect;
 export type JobRecord = typeof job.$inferSelect;
 export type CheckResultRecord = typeof checkResult.$inferSelect;
 export type ChangeCheckRecord = typeof changeCheck.$inferSelect;
+export type ResolutionRecord = typeof resolution.$inferSelect;
 type JobKind = (typeof JOB_KINDS)[number];
 
 export type OtherChange = {
@@ -59,6 +63,11 @@ type RestackedParams = {
 type RestackConflictsParams = {
   changeId: string;
   conflicts: string[];
+};
+
+type ResolvedConflictsParams = {
+  changeId: string;
+  conflicts: ResolvedConflict[];
 };
 
 type LandingParams = {
@@ -214,6 +223,24 @@ export class ProjectStore {
 
   setRestackConflicts({ changeId, conflicts }: RestackConflictsParams): void {
     this.db.update(change).set({ restackConflicts: conflicts }).where(eq(change.id, changeId)).run();
+  }
+
+  addResolvedConflicts({ changeId, conflicts }: ResolvedConflictsParams): void {
+    const resolved = [...(this.findChange(changeId)?.resolvedConflicts ?? []), ...conflicts];
+    this.db.update(change).set({ resolvedConflicts: resolved }).where(eq(change.id, changeId)).run();
+  }
+
+  // The intents of the landed changes that touched one of the paths, newest first.
+  landedIntents(paths: string[]): string[] {
+    return this.db
+      .selectDistinct({ number: change.number, intent: change.intent })
+      .from(change)
+      .innerJoin(footprint, eq(footprint.changeId, change.id))
+      .where(and(eq(change.state, 'landed'), inArray(footprint.path, paths)))
+      .orderBy(desc(change.number))
+      .limit(LANDED_INTENTS_MAX)
+      .all()
+      .map((row) => row.intent);
   }
 
   setLanding({ changeIds, batchId }: LandingParams): void {
@@ -413,6 +440,14 @@ export class ProjectStore {
 
   findCheckResult(key: string): CheckResultRecord | null {
     return this.db.select().from(checkResult).where(eq(checkResult.key, key)).get() ?? null;
+  }
+
+  findResolution(key: string): ResolutionRecord | null {
+    return this.db.select().from(resolution).where(eq(resolution.key, key)).get() ?? null;
+  }
+
+  saveResolution(record: ResolutionRecord): void {
+    this.db.insert(resolution).values(record).onConflictDoNothing().run();
   }
 
   saveCheckResult(record: CheckResultRecord): void {

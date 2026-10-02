@@ -25,10 +25,19 @@ export function describeEvent(event: ChangeEvent): string {
       return `landed   on trunk as ${short(event.landedCommit)} in batch ${event.batchId}, approved by ${event.approver}`;
     }
     case 'restacked': {
-      return `restack  onto trunk ${short(event.trunkCommit)}: run git pull before your next push`;
+      const resolved =
+        event.resolvedPaths.length === 0 ? '' : `, with Commute's resolution of ${event.resolvedPaths.join(', ')}`;
+      return `restack  onto trunk ${short(event.trunkCommit)}${resolved}: run git pull before your next push`;
     }
     case 'restack_conflict': {
-      return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}`;
+      return `conflict restacking onto trunk ${short(event.trunkCommit)} on ${event.conflicts.join(', ')}: ${event.reason}`;
+    }
+    case 'resolution': {
+      const other = `${event.otherChange.changeId} "${event.otherChange.intent}"`;
+      if (event.outcome === 'needs_owner') {
+        return `resolve  the conflict with ${other} needs you: ${event.reason ?? 'no reason given'}`;
+      }
+      return `resolve  the conflict with ${other} on ${event.conflicts.join(', ')} is resolved; it applies when ${event.otherChange.changeId} lands`;
     }
     case 'checks_done': {
       const failed = event.failed.length === 0 ? 'none failed' : `failed: ${event.failed.join(', ')}`;

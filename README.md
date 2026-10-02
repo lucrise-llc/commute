@@ -25,7 +25,7 @@ agent fixes a text conflict in about a minute. The cost moves to other places:
 | A few branches are in flight. | Hundreds of changes are in flight at once, from many agents. | One repository per change, and an index of the paths each change touches. |
 | Checks and reviews attach to a commit, and rebases are rare. | Each landing rebases the changes above it, so their results go stale and run again. | Each result attaches to the content it checked. |
 | Stacks put dependent work in order. | Most agent changes are independent, but a stack makes them wait anyway. | Changes run in parallel. They wait only when a real merge shows a conflict. |
-| People resolve conflicts by hand. | Agents resolve text quickly, but they do not know why the other change exists. | A resolver agent gets the intent of both changes. Its resolution is stored for reuse. |
+| People resolve conflicts by hand. | Agents resolve text quickly, but they do not know why the other change exists. | A model chooses lines from both changes with the intent of each. It cannot write new code. |
 | People watch check pages. | Agents ask for status again and again. | Agents wait for events. |
 | People tell each other about overlapping work. | Agents cannot talk to each other, so people pass the news. | The coordinator finds overlaps and shares each change's intent. |
 
@@ -100,18 +100,21 @@ When trunk moves, Commute compares the hashes. A check runs again only when a
 folder it reads has a new hash. A landing in `src/admin` runs no checks for a
 change in `src/cart`. Keyed by commit, the same landing would run all of them.
 
-### 6. Resolve once, with both intents
+### 6. Resolve once, by choosing lines
 
-![A resolver agent reads both intents and the conflict, and the stored resolution is reused for the same conflict later](docs/img/resolve-once.svg)
+![A resolver model chooses lines from both changes with both intents, and the stored resolution applies when the first change lands](docs/img/resolve-once.svg)
 
-Some changes do collide. When the change ahead lands, Commute moves the change
-behind it onto the new trunk. If a hunk conflicts, a resolver agent receives
-three things: the hunk, and the intent of each change. It writes a resolution,
-and the checks for the affected folders run on the result. No person is asked.
+Some changes do collide. Commute finds the conflict at the first push of the
+second change, so it resolves the conflict before anyone waits for it. When
+both changes insert lines at the same place, a Workers AI model receives those
+lines and the intent of each change. It answers with the IDs of the lines, in
+order. It can never write a line, so a resolution puts no new code on trunk.
 
-Commute stores the resolution under the hash of the conflict. When another
-change hits the same conflict, the stored resolution applies, and the resolver
-does not run.
+Commute stores the resolution under the hash of the hunk. When the first change
+lands, the second change restacks, and the stored resolution applies without a
+second model call. The checks for the affected folders run on the result. No
+person is asked. When both changes edit the same lines, or one side deleted or
+renamed the file, the conflict goes to the owner of the change with the reason.
 
 ### 7. People decide at the boundary
 
@@ -168,7 +171,8 @@ flowchart LR
     remote -->|push| coord
     agents -->|commute start, commute wait| api["Workers<br/>API and console"]
     api --> coord["Durable Object<br/>coordinator per project"]
-    coord --> runners["Containers<br/>runners for merges, checks, resolver"]
+    coord --> runners["Containers<br/>runners for merges and checks"]
+    coord -->|conflict hunks| ai["Workers AI<br/>resolver model"]
     coord -->|lands batches| trunk["Artifacts<br/>trunk"]
     people["People"] -->|browser| api
 ```
@@ -177,7 +181,8 @@ flowchart LR
 |---|---|
 | Artifacts | Holds trunk and one repository per change. It forks trunk for each change. |
 | Durable Objects | Hold one coordinator per project: the footprint index, the order between changes, the result keys, and the landing queue. |
-| Containers | Run the merge checks, the checks, and the resolver agent, from an image that includes Git. |
+| Containers | Run the merge checks, the checks, and the merge commits of resolutions, from an image that includes Git. |
+| Workers AI | Chooses the lines of each conflict resolution, in JSON mode. |
 | Workers | Serve the API, the console, the Commute remote, and the events that agents wait for. |
 
 ## Using it
@@ -195,9 +200,11 @@ plan     after c-142
 $ cd c-157
 $ git push
 $ commute wait
-resolved conflict with c-142 resolved with both intents, stored as r-23
-checks   1 kept, 4 ran again: src/cart and src/tax changed
-ready    joins batch 43
+resolve  the conflict with c-142 "Fix rounding in cart totals" on src/cart/pricing.ts is resolved; it applies when c-142 lands
+$ commute wait
+restack  onto trunk 9c41e0d2a7b3, with Commute's resolution of src/cart/pricing.ts: run git pull before your next push
+$ commute wait
+checks   4 kept, 1 ran; none failed
 ```
 
 ## Glossary
@@ -213,10 +220,10 @@ ready    joins batch 43
 | Overlap | Two changes in flight whose footprints meet. |
 | Sequence | The order the coordinator sets between two changes that conflict. |
 | Result | The outcome of a check, stored under the hashes of the folders the check reads. |
-| Resolution | How a conflict was resolved, stored under the hash of the conflict. |
+| Resolution | The lines chosen from both sides of a conflict hunk, stored under the hash of the hunk. |
 | Landing batch | Ready changes that commute with each other and with trunk. One approval lands the batch. |
 | Coordinator | The process that holds the footprint index, the sequences, the result keys, and the landing queue for one project. |
-| Event | A message from the coordinator: overlap found, check done, restacked, resolved, or landed. |
+| Event | A message from the coordinator: overlap found, check done, restacked, resolution, or landed. |
 
 ## Status
 

@@ -15,6 +15,8 @@ export type ChangeEvent = ({
 } & RestackedEvent) | ({
     type: 'restack_conflict';
 } & RestackConflictEvent) | ({
+    type: 'resolution';
+} & ResolutionEvent) | ({
     type: 'checks_done';
 } & ChecksDoneEvent) | ({
     type: 'landing_failed';
@@ -68,6 +70,7 @@ export type RestackedEvent = {
     at: string;
     trunkCommit: string;
     headCommit: string;
+    resolvedPaths: Array<string>;
 };
 
 export type RestackConflictEvent = {
@@ -77,6 +80,21 @@ export type RestackConflictEvent = {
     at: string;
     trunkCommit: string;
     conflicts: Array<string>;
+    reason: string;
+};
+
+export type ResolutionEvent = {
+    seq: number;
+    type: 'resolution';
+    changeId: string;
+    at: string;
+    otherChange: {
+        changeId: string;
+        intent: string;
+    };
+    outcome: 'ready' | 'needs_owner';
+    conflicts: Array<string>;
+    reason: string | null;
 };
 
 export type ChecksDoneEvent = {
@@ -154,6 +172,7 @@ export type Change = {
     waitsFor: Array<WaitReason>;
     checks: Array<ChangeCheck>;
     checksError: string | null;
+    resolvedConflicts: Array<ResolvedConflict> | null;
     batchId: string | null;
     landedCommit: string | null;
     createdAt: string;
@@ -176,6 +195,14 @@ export type ChangeCheck = {
     } | null;
     exitCode: number | null;
     output: string | null;
+};
+
+export type ResolvedConflict = {
+    path: string;
+    dropped: Array<{
+        text: string;
+        reason: string;
+    }>;
 };
 
 export type Landing = {
