@@ -3,11 +3,12 @@
 // strip below it, because a browser player ignores a subtitle track. ffmpeg needs no text renderer: Playwright draws
 // each caption as an image, and ffmpeg overlays the image for the time of its cue.
 import { chromium } from 'playwright';
-import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { parseArgs, promisify } from 'node:util';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 
+const runFile = promisify(execFile);
 const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const SUBTITLES_PATH = `${RECORDING_DIR}/commute-demo.srt`;
 const CAPTIONS_DIR = `${RECORDING_DIR}/captions`;
@@ -34,7 +35,7 @@ type Cue = {
 
 const [videoPath] = parseArgs({ allowPositionals: true }).positionals;
 if (videoPath === undefined) {
-  throw new Error('Usage: npm run encode -w @commute/demo -- <recorded .webm>');
+  throw new Error('MISSING_VIDEO_PATH: run npm run encode -w @commute/demo -- <recorded .webm>');
 }
 
 const cues = parseSubtitles(await readFile(SUBTITLES_PATH, 'utf8'));
@@ -50,31 +51,28 @@ const filter = [
   `[0:v]pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT + STRIP_HEIGHT}:0:0:color=${STRIP_COLOR}[padded]`,
   ...overlays
 ].join(';');
-await run({
-  command: 'ffmpeg',
-  args: [
-    '-v',
-    'error',
-    '-y',
-    '-i',
-    videoPath,
-    ...captionPaths.flatMap((path) => ['-i', path]),
-    '-filter_complex',
-    filter,
-    '-map',
-    '[out]',
-    '-c:v',
-    'libx264',
-    '-crf',
-    QUALITY_CRF,
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    '-an',
-    OUTPUT_PATH
-  ]
-});
+await runFile('ffmpeg', [
+  '-v',
+  'error',
+  '-y',
+  '-i',
+  videoPath,
+  ...captionPaths.flatMap((path) => ['-i', path]),
+  '-filter_complex',
+  filter,
+  '-map',
+  '[out]',
+  '-c:v',
+  'libx264',
+  '-crf',
+  QUALITY_CRF,
+  '-pix_fmt',
+  'yuv420p',
+  '-movflags',
+  '+faststart',
+  '-an',
+  OUTPUT_PATH
+]);
 const { size } = await stat(OUTPUT_PATH);
 if (size > OUTPUT_BYTES_MAX) {
   throw new Error(`VIDEO_TOO_LARGE: ${OUTPUT_PATH} has ${size} bytes, more than ${OUTPUT_BYTES_MAX}.`);
@@ -125,17 +123,4 @@ async function drawCaptions(captions: Cue[]): Promise<string[]> {
 function captionHtml(text: string): string {
   const escaped = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
   return `<body style="margin:0;height:${STRIP_HEIGHT}px;display:flex;align-items:center;justify-content:center;background:${STRIP_COLOR};color:#f0f0f0;font:500 26px/1.3 -apple-system,'Segoe UI',sans-serif;text-align:center;padding:0 48px;box-sizing:border-box">${escaped}</body>`;
-}
-
-type RunParams = {
-  command: string;
-  args: string[];
-};
-
-async function run({ command, args }: RunParams): Promise<void> {
-  const child = spawn(command, args, { stdio: 'inherit' });
-  const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
-  if (code !== 0) {
-    throw new Error(`${command} exited with ${String(code)}.`);
-  }
 }
