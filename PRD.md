@@ -203,14 +203,14 @@ check runs again for a change whose subtrees did not move.
 - When a merge check finds a conflict between two changes in flight, the
   coordinator resolves it for the change that lands later. It does not wait for
   the first change to land.
-- A Workers AI model receives each conflicting hunk and the intent of both
-  changes. It answers with the IDs of lines that the two changes wrote, in
-  order. It cannot write a line, so a resolution puts no new code on trunk. It
-  can drop a line, such as a duplicate, with a reason.
-- An answer must place every line of both sides once, kept or dropped. A hunk
-  whose right result needs a new line goes to the owner of the change. So do an
-  answer that breaks the rule and a conflict that is not between two text
-  files, such as a deleted, renamed, or binary file.
+- A Workers AI model receives each hunk where both changes insert lines at the
+  same place, and the intent of both changes. It answers with the IDs of those
+  lines, in order. It cannot write a line, so a resolution puts no new code on
+  trunk. It can drop a line only when the line repeats one it keeps.
+- A hunk where both changes edit the same lines goes to the owner of the change
+  without a model call, because its result needs a choice or a new line. So do
+  an answer that does not place every line once and a conflict that is not
+  between two text files, such as a deleted, renamed, or binary file.
 - The coordinator stores each resolution. Its key is the hash of the hunk: its
   base, ours, and theirs lines. When the first change lands, the restack of the
   second change finds the stored resolution and applies it without a second
@@ -220,10 +220,10 @@ check runs again for a change whose subtrees did not move.
   lists the files that Commute resolved and every dropped line, and the note of
   the landed commit says `resolved-by: commute`.
 
-Acceptance: two changes that conflict are resolved when the conflict is found.
-The resolution applies at landing without a second model call, the checks pass,
-and neither person acts. A delete against an edit goes to the owner with the
-reason.
+Acceptance: two changes that insert lines at the same place are resolved when
+the conflict is found. The resolution applies at landing without a second model
+call, the checks pass, and neither person acts. Two edits of the same line, and
+a delete against an edit, go to the owner with the reason.
 
 #### D7. Console: code, changes, the change page, and the overlap page
 

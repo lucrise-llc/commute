@@ -6,8 +6,8 @@ import type { ProjectStore, ResolutionRecord } from './db/project-store';
 
 import { sha256Hex } from './hash';
 
-// The resolver only chooses and orders lines that the two changes wrote, so it cannot put new code on trunk. A
-// conflict whose right result needs a new line goes to the owner of the change.
+// The resolver only orders lines that both changes inserted at the same place, so it cannot put new code on trunk or
+// choose between two edits. A hunk where both changes edit the same lines goes to the owner of the change.
 const RESOLVER_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const CONFLICT_FILES_MAX = 10;
 const HUNKS_MAX = 20;
@@ -20,7 +20,7 @@ const SYSTEM_PROMPT = [
   'You merge a conflict between two changes to the same lines of one file.',
   'You can only choose and order the numbered lines that the two changes wrote. You never write, edit, or join a line.',
   'Keep every line of both changes, in the order that serves both intents.',
-  'Drop a line only when keeping it would be wrong, for example a duplicate, and give the reason.',
+  'Drop a line only when it repeats a line that you keep, and give the reason.',
   'When a correct result needs a line that neither change wrote, set canResolve to false and give the reason.'
 ].join(' ');
 
@@ -140,6 +140,12 @@ export async function resolveConflicts({
   );
   if (hunks.length > HUNKS_MAX) {
     return needsOwner(`More than ${HUNKS_MAX} hunks conflict.`);
+  }
+  const editedPath = files.find((file) =>
+    file.segments.some((segment) => segment.kind === 'conflict' && segment.hunk.base.length > 0)
+  )?.path;
+  if (editedPath !== undefined) {
+    return needsOwner(`${editedPath}: both changes edit the same lines.`);
   }
   if (hunks.some((hunk) => Math.max(hunk.base.length, hunk.ours.length, hunk.theirs.length) > HUNK_SIDE_LINES_MAX)) {
     return needsOwner(`A conflicting hunk has more than ${HUNK_SIDE_LINES_MAX} lines on one side.`);
@@ -332,7 +338,8 @@ type ChoiceFromAnswerParams = {
   answer: Answer | null;
 };
 
-// An answer resolves the hunk only when it places every line of both sides exactly once, kept or dropped.
+// An answer resolves the hunk only when it places every line of both sides exactly once, and every dropped line
+// repeats a kept line.
 function choiceFromAnswer({ hunk, answer }: ChoiceFromAnswerParams): Choice {
   if (answer === null) {
     return { lines: null, dropped: [], reason: 'The resolver did not answer in the expected form.' };
@@ -355,9 +362,10 @@ function choiceFromAnswer({ hunk, answer }: ChoiceFromAnswerParams): Choice {
     }
     return text;
   };
-  return {
-    lines: answer.lines.map(textOf),
-    dropped: answer.dropped.map((drop) => ({ text: textOf(drop.line), reason: drop.reason })),
-    reason: null
-  };
+  const lines = answer.lines.map(textOf);
+  const dropped = answer.dropped.map((drop) => ({ text: textOf(drop.line), reason: drop.reason }));
+  if (dropped.some((drop) => !lines.includes(drop.text))) {
+    return { lines: null, dropped: [], reason: 'The resolver dropped a line that no kept line repeats.' };
+  }
+  return { lines, dropped, reason: null };
 }

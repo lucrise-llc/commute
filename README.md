@@ -105,16 +105,16 @@ change in `src/cart`. Keyed by commit, the same landing would run all of them.
 ![A resolver model chooses lines from both changes with both intents, and the stored resolution applies when the first change lands](docs/img/resolve-once.svg)
 
 Some changes do collide. Commute finds the conflict at the first push of the
-second change, so it resolves the conflict before anyone waits for it. A
-Workers AI model receives the conflicting hunk and the intent of each change.
-It answers with the IDs of lines that the two changes wrote, in order. It can
-never write a line, so a resolution puts no new code on trunk.
+second change, so it resolves the conflict before anyone waits for it. When
+both changes insert lines at the same place, a Workers AI model receives those
+lines and the intent of each change. It answers with the IDs of the lines, in
+order. It can never write a line, so a resolution puts no new code on trunk.
 
 Commute stores the resolution under the hash of the hunk. When the first change
 lands, the second change restacks, and the stored resolution applies without a
 second model call. The checks for the affected folders run on the result. No
-person is asked. A conflict that needs a new line, or a file that one side
-deleted or renamed, goes to the owner of the change with the reason.
+person is asked. When both changes edit the same lines, or one side deleted or
+renamed the file, the conflict goes to the owner of the change with the reason.
 
 ### 7. People decide at the boundary
 
