@@ -9,8 +9,8 @@ import { useEvents } from './use-events';
 import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { countChecks, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
 import { CheckIcon, CheckOutcomeIcon, ClockIcon, EventIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
+import { countChecks, describeCheck, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
 
 const TABS = [
   { name: 'activity', label: 'Activity' },
@@ -153,10 +153,7 @@ function Checks({ change }: ChangeProps): React.JSX.Element {
           <CheckOutcomeIcon outcome={check.outcome} />
           <details className="grow">
             <summary>
-              <strong>{check.name}</strong>{' '}
-              <span className="meta">
-                {check.kept ? 'kept: a result for this content already existed' : 'ran for this content'}
-              </span>
+              <strong>{check.name}</strong> <span className="meta">{describeCheck(check)}</span>
             </summary>
             <table className="reads">
               <thead>
