@@ -14,6 +14,8 @@ const HUNKS_MAX = 20;
 const HUNK_SIDE_LINES_MAX = 100;
 const CONTEXT_LINES = 5;
 const ANSWER_TOKENS_MAX = 512;
+// A model call that takes longer fails the job, which retries it, instead of holding the job queue.
+const ANSWER_TIMEOUT_MS = 60_000;
 const MARKER_LENGTH = 7;
 
 const SYSTEM_PROMPT = [
@@ -294,15 +296,19 @@ async function chooseLines({ ai, hunk, ...prompt }: ChooseLinesParams): Promise<
   const ids = [...hunk.theirs.keys()].map((index) => `t${index + 1}`);
   ids.push(...[...hunk.ours.keys()].map((index) => `o${index + 1}`));
   const schema = answerSchemaFor(ids);
-  const output = await ai.run(RESOLVER_MODEL, {
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt({ hunk, ...prompt }) }
-    ],
-    response_format: { type: 'json_schema', json_schema: z.toJSONSchema(schema) },
-    temperature: 0,
-    max_tokens: ANSWER_TOKENS_MAX
-  });
+  const output = await ai.run(
+    RESOLVER_MODEL,
+    {
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt({ hunk, ...prompt }) }
+      ],
+      response_format: { type: 'json_schema', json_schema: z.toJSONSchema(schema) },
+      temperature: 0,
+      max_tokens: ANSWER_TOKENS_MAX
+    },
+    { signal: AbortSignal.timeout(ANSWER_TIMEOUT_MS) }
+  );
   return choiceFromAnswer({ hunk, answer: parseAnswer({ response: aiOutputSchema.parse(output).response, schema }) });
 }
 
