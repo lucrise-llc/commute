@@ -94,7 +94,8 @@ export const checkResult = sqliteTable('check_result', {
 });
 
 // The checks of a change at its current head. previousReads holds the subtree hashes at the head before, so a
-// reader sees what a restack changed. kept means the result existed before this head asked for it.
+// reader sees what a restack changed. kept means this head did not run the command: another change's run, before or
+// at the same time, gave the result.
 export const changeCheck = sqliteTable(
   'change_check',
   {

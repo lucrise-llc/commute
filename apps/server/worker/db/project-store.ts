@@ -134,9 +134,11 @@ type ChangeCheckParams = {
   name: string;
 };
 
+// ranFor is the change whose job ran the command, or null when the job found a result that was already stored.
 type ChangeCheckOutcomeParams = {
   key: string;
   outcome: 'pass' | 'fail';
+  ranFor: string | null;
 };
 
 type QueueJobParams = {
@@ -512,11 +514,12 @@ export class ProjectStore {
     }
   }
 
-  // Gives a new result to every change that waits on its key, and returns those changes.
-  resolveChangeChecks({ key, outcome }: ChangeCheckOutcomeParams): string[] {
+  // Gives a new result to every change that waits on its key, and returns those changes. Only the change whose job ran
+  // the command counts the result as run; every other waiting change kept it.
+  resolveChangeChecks({ key, outcome, ranFor }: ChangeCheckOutcomeParams): string[] {
     return this.db
       .update(changeCheck)
-      .set({ outcome })
+      .set({ outcome, kept: sql`${changeCheck.changeId} IS NOT ${ranFor}` })
       .where(and(eq(changeCheck.key, key), eq(changeCheck.outcome, 'pending')))
       .returning({ changeId: changeCheck.changeId })
       .all()

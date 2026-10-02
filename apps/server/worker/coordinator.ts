@@ -1105,6 +1105,7 @@ export class Coordinator extends DurableObject<Env> {
       return 'done';
     }
     let result = this.store.findCheckResult(check.key);
+    let ranFor: string | null = null;
     if (result === null) {
       let run: CheckRun;
       try {
@@ -1134,9 +1135,10 @@ export class Coordinator extends DurableObject<Env> {
         ranAt: new Date().toISOString()
       };
       this.store.saveCheckResult(result);
+      ranFor = changeId;
       log({ event: 'check_ran', projectId, changeId, name, exitCode: run.exitCode });
     }
-    for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome })) {
+    for (const waitingChangeId of this.store.resolveChangeChecks({ key: check.key, outcome: result.outcome, ranFor })) {
       if (this.store.changeChecks(waitingChangeId).every((waiting) => waiting.outcome !== 'pending')) {
         this.announceChecks(waitingChangeId);
       }

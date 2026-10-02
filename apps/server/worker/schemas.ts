@@ -128,7 +128,7 @@ const waitReasonSchema = z
   .openapi('WaitReason');
 
 // A check of a change at its head. reads and previousReads map each read path to its subtree hash at this head and
-// at the head before. kept means the result was reused, not run.
+// at the head before. kept means this head did not run the command, because another change's run gave the result.
 const changeCheckSchema = z
   .object({
     name: z.string(),
