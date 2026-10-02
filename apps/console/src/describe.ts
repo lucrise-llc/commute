@@ -1,6 +1,6 @@
 import type { ChangeEvent, WaitReason } from '@commute/api-client';
 
-const SHORT_COMMIT_LENGTH = 12;
+const SHORT_COMMIT_LENGTH = 7;
 
 export function shortCommit(commit: string): string {
   return commit.slice(0, SHORT_COMMIT_LENGTH);
@@ -84,4 +84,26 @@ export function describeWait(reason: WaitReason): string {
       throw new Error(`Unknown wait reason: ${String(unknown)}`);
     }
   }
+}
+
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3_600;
+const SECONDS_PER_DAY = 86_400;
+const MILLISECONDS_PER_SECOND = 1_000;
+const relativeTime = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+// "3 minutes ago", as a Git host shows the age of a commit or an event.
+export function timeAgo(iso: string): string {
+  const seconds = Math.round((new Date(iso).getTime() - Date.now()) / MILLISECONDS_PER_SECOND);
+  const elapsed = Math.abs(seconds);
+  if (elapsed < SECONDS_PER_MINUTE) {
+    return relativeTime.format(seconds, 'second');
+  }
+  if (elapsed < SECONDS_PER_HOUR) {
+    return relativeTime.format(Math.round(seconds / SECONDS_PER_MINUTE), 'minute');
+  }
+  if (elapsed < SECONDS_PER_DAY) {
+    return relativeTime.format(Math.round(seconds / SECONDS_PER_HOUR), 'hour');
+  }
+  return relativeTime.format(Math.round(seconds / SECONDS_PER_DAY), 'day');
 }
