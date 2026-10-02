@@ -19,6 +19,8 @@ export function ChangesPage(): React.JSX.Element {
   const me = personName.trim();
   const rows = (changes.data ?? []).filter((change) => !isMineOnly || change.owner === me);
   const overlaps = events.filter((event) => event.type === 'merge_checked' && event.outcome === 'sequenced');
+  const kept = rows.reduce((sum, change) => sum + change.checks.kept, 0);
+  const ran = rows.reduce((sum, change) => sum + change.checks.ran, 0);
   return (
     <>
       <h2>Changes</h2>
@@ -27,6 +29,9 @@ export function ChangesPage(): React.JSX.Element {
           <input type="checkbox" checked={isMineOnly} onChange={(event) => setMineOnly(event.target.checked)} /> Mine
           {me === '' ? ' (type your name above)' : ` (${me})`}
         </label>
+      </p>
+      <p>
+        Checks of the current heads: {kept} kept from earlier runs, {ran} ran.
       </p>
       <table>
         <thead>
