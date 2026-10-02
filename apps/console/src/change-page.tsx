@@ -9,8 +9,8 @@ import { useEvents } from './use-events';
 import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { countChecks, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
 import { CheckIcon, CheckOutcomeIcon, ClockIcon, EventIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
+import { countChecks, describeCheck, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
 
 const TABS = [
   { name: 'activity', label: 'Activity' },
@@ -153,10 +153,7 @@ function Checks({ change }: ChangeProps): React.JSX.Element {
           <CheckOutcomeIcon outcome={check.outcome} />
           <details className="grow">
             <summary>
-              <strong>{check.name}</strong>{' '}
-              <span className="meta">
-                {check.kept ? 'kept: a result for this content already existed' : 'ran for this content'}
-              </span>
+              <strong>{check.name}</strong> <span className="meta">{describeCheck(check)}</span>
             </summary>
             <table className="reads">
               <thead>
@@ -261,7 +258,8 @@ function Sidebar({ change }: ChangeProps): React.JSX.Element {
 // its content, and the batch to approve. There is no action to update the base; the coordinator restacks.
 function LandingBox({ change }: ChangeProps): React.JSX.Element {
   const { projectId } = useProject();
-  const { kept, ran, pending } = countChecks(change.checks);
+  const { kept, ran } = countChecks(change.checks);
+  const isChecking = change.waitsFor.some((reason) => reason.code === 'CHECKS_PENDING');
   const isReady = change.waitsFor.length === 0;
   return (
     <>
@@ -291,11 +289,11 @@ function LandingBox({ change }: ChangeProps): React.JSX.Element {
           </span>
         </div>
         <div className="box-row">
-          {pending === 0 ? <CheckIcon className="icon-open" /> : <ClockIcon className="icon-landing" />}
+          {isChecking ? <ClockIcon className="icon-landing" /> : <CheckIcon className="icon-open" />}
           <span className="grow">
-            {pending === 0
-              ? `Every check result matches the current content: ${kept} kept, ${ran} ran.`
-              : `${pending} checks are running on the current content.`}
+            {isChecking
+              ? 'Checks are running on the current content.'
+              : `Every check result matches the current content: ${kept} kept, ${ran} ran.`}
           </span>
         </div>
         {change.resolvedConflicts === null ? null : (

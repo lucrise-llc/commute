@@ -276,8 +276,8 @@ export class Coordinator extends DurableObject<Env> {
       overlaps: change.state === 'landed' ? [] : this.currentOverlaps(changeId),
       ...this.landingOrder(changeId),
       waitsFor: change.state === 'landed' ? [] : this.waitReasons(change),
-      checks: this.store.changeChecks(changeId).map((check) => this.checkView(check)),
-      checksError: change.checksError,
+      checks: this.currentChecks(change).map((check) => this.checkView(check)),
+      checksError: change.checksHead === change.headCommit ? change.checksError : null,
       resolvedConflicts: change.resolvedConflicts,
       batchId: change.batchId,
       landedCommit: change.landedCommit,
@@ -292,7 +292,7 @@ export class Coordinator extends DurableObject<Env> {
       if (change.state === 'starting') {
         continue;
       }
-      const checks = this.store.changeChecks(change.id);
+      const checks = this.currentChecks(change);
       items.push({
         changeId: change.id,
         intent: change.intent,
@@ -1157,6 +1157,16 @@ export class Coordinator extends DurableObject<Env> {
         failed: checks.filter((check) => check.outcome === 'fail').map((check) => check.name)
       }
     });
+  }
+
+  // A push or a restack moves the head before the evaluate job plans its checks. Until then, the checks of the earlier
+  // head have no result for the current content.
+  private currentChecks(change: ChangeRecord): ChangeCheckRecord[] {
+    const checks = this.store.changeChecks(change.id);
+    if (change.checksHead === change.headCommit) {
+      return checks;
+    }
+    return checks.map((check) => ({ ...check, outcome: 'pending', kept: false }));
   }
 
   private checkView(check: ChangeCheckRecord): Change['checks'][number] {

@@ -22,6 +22,13 @@ export function countChecks(checks: Change['checks']): CheckCounts {
   };
 }
 
+export function describeCheck(check: Change['checks'][number]): string {
+  if (check.outcome === 'pending') {
+    return 'no result for this content yet';
+  }
+  return check.kept ? 'kept: a result for this content already existed' : 'ran for this content';
+}
+
 export function ownerName(owner: string | null): string {
   return owner ?? 'unknown';
 }

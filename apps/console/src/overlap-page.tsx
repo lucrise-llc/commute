@@ -4,8 +4,8 @@ import { Link, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getChange, getOverlap } from '@commute/api-client';
 
-import { ownerName } from './describe';
 import { useProject } from './project-context';
+import { describeCheck, ownerName } from './describe';
 import { CheckOutcomeIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
 
 // Two changes side by side: intents, footprints, the merge result, the conflicting hunk with its resolution, and the
@@ -150,7 +150,7 @@ function LaterChecks({ changeId }: LaterChecksProps): React.JSX.Element {
         <div className="box-row" key={check.name}>
           <CheckOutcomeIcon outcome={check.outcome} />
           <strong>{check.name}</strong>
-          <span className="meta">{check.kept ? 'kept' : 'ran for this content'}</span>
+          <span className="meta">{describeCheck(check)}</span>
         </div>
       ))}
     </div>
