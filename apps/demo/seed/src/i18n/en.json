@@ -1,0 +1,18 @@
+{
+  "home.title": "Storefront",
+  "home.subtitle": "Things we like",
+  "cart.title": "Your cart",
+  "cart.empty": "Your cart is empty",
+  "cart.checkout": "Check out",
+  "search.placeholder": "Search the store",
+  "search.empty": "Nothing found",
+  "catalog.title": "All products",
+  "catalog.sort": "Sort by",
+  "account.title": "Your account",
+  "account.signout": "Sign out",
+  "footer.help": "Help",
+  "footer.terms": "Terms",
+  "footer.privacy": "Privacy",
+  "errors.notFound": "Page not found",
+  "errors.offline": "You are offline"
+}

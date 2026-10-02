@@ -248,6 +248,24 @@ checks   4 kept, 1 ran; none failed
 | Coordinator | The process that holds the footprint index, the sequences, the result keys, and the landing queue for one project. |
 | Event | A message from the coordinator: overlap found, check done, restacked, resolution, or landed. |
 
+## Run it
+
+Commute runs on `wrangler dev`, with runner containers in local Docker and the
+live Artifacts and Workers AI services.
+
+1. Install Node 24.21 (see `.node-version`) and start Docker.
+2. Run `npx wrangler login`. Set `account_id` in `apps/server/wrangler.jsonc`
+   to an account with Artifacts and Workers AI.
+3. Run `npm install`, then `npm run dev`. The API, the Commute remote, and the
+   console are on `http://localhost:8787`.
+4. In a second terminal, run `npm start -w @commute/demo`. Alice and Bob each
+   start 10 agents on a small storefront, and four landing batches land all 20
+   changes. Open the console at the project the script prints, such as
+   `http://localhost:8787/p/demo-abc123/changes`.
+
+To drive one change by hand, create a project, push a first commit to its
+trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
+
 ## Status
 
 Commute is a prototype, and "Commute" is a working name.
