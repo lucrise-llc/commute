@@ -13,7 +13,9 @@ independent changes in any order. Those changes keep their check results.
 **Demo video:** [docs/demo/commute-demo.mp4](docs/demo/commute-demo.mp4). Alice and
 Bob each run 10 agents on one repository. Overlaps show up at the start, changes
 land in parallel batches, and Commute resolves a conflict between the two people
-before either of them waits for it.
+before either of them waits for it. The video shows only the console, while the
+agents run in the background. The narration is a subtitle track in the video and
+in [docs/demo/commute-demo.srt](docs/demo/commute-demo.srt).
 
 ## Why Commute, not GitHub
 

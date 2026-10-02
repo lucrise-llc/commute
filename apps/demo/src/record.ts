@@ -18,6 +18,7 @@ const ID_RADIX = 36;
 const AGENT_LINE = /^(alice-\d+|bob-\d+)\s+change\s+(c-\d+)$/;
 // The harness prints its steps quickly, but a batch can take minutes to become ready.
 const LINE_TIMEOUT_MS = 900_000;
+const CHECKS_TIMEOUT_MS = 300_000;
 // How long a page stays on screen, in seconds, and how long a subtitle stays at most.
 const PAGE_SECONDS = 10;
 const BEAT_SECONDS = 14;
@@ -102,9 +103,12 @@ say('The batch lands in parallel. The changes still in flight move onto the new 
 await hold(PAGE_SECONDS);
 await approveInConsole({ batch: 2, text: `Alice lands ${alice3} on its own.` });
 await show(`/p/${projectId}/changes/${bob2}`);
+await nextLine(new RegExp(`^bob-2\\s+${bob2} restack .+ with Commute's resolution`));
 say(`${bob2} moves onto the new trunk with the stored resolution: no second model call, and neither person acts.`);
 await hold(BEAT_SECONDS);
 await show(`/p/${projectId}/changes/${bob2}?tab=checks`);
+// The routes check runs on the resolved content while the others keep their results.
+await page.getByText('ran for this content', { exact: true }).waitFor({ timeout: CHECKS_TIMEOUT_MS });
 say(
   'Only the routes check runs again. The other checks keep their results, because the folders they read did not change.'
 );
