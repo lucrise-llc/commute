@@ -10,6 +10,11 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
+**Demo video:** [docs/demo/commute-demo.mp4](docs/demo/commute-demo.mp4). Alice and
+Bob each run 10 agents on one repository. Overlaps show up at the start, changes
+land in parallel batches, and Commute resolves a conflict between the two people
+before either of them waits for it.
+
 ## Why Commute, not GitHub
 
 GitHub was built for people who open a few pull requests a day. Commute is built
