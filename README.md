@@ -10,12 +10,13 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
-**Demo video:** [docs/demo/commute-demo.mp4](docs/demo/commute-demo.mp4). Alice and
-Bob each run 10 agents on one repository. Overlaps show up at the start, changes
-land in parallel batches, and Commute resolves a conflict between the two people
-before either of them waits for it. The video shows only the console, while the
-agents run in the background. The narration is a subtitle track in the video and
-in [docs/demo/commute-demo.srt](docs/demo/commute-demo.srt).
+**Demo video:** Alice and Bob each run 10 agents on one repository. Overlaps
+show up at the start, changes land in parallel batches, and Commute resolves a
+conflict between the two people before either of them waits for it. The video
+shows only the console while the agents run in the background, with the
+narration in captions below it.
+
+https://github.com/user-attachments/assets/a7bbad71-550e-470e-b429-781f5c2241fb
 
 ## Why Commute, not GitHub
 
@@ -269,6 +270,10 @@ live Artifacts and Workers AI services.
    start 10 agents on a small storefront, and four landing batches land all 20
    changes. Open the console at the project the script prints, such as
    `http://localhost:8787/p/demo-abc123/changes`.
+5. To record the demo video, run `npm run record -w @commute/demo` instead. It
+   runs the same agents and records the console. Then run
+   `npm run encode -w @commute/demo -- <the .webm path it prints>` to add the
+   captions and write `apps/demo/recording/commute-demo.mp4`.
 
 To drive one change by hand, create a project, push a first commit to its
 trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
