@@ -1,3 +1,5 @@
+import type { ChangeListItem } from '@commute/api-client';
+
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -5,99 +7,128 @@ import { listChanges } from '@commute/api-client';
 
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { describeEvent, describeWait } from './describe';
+import { describeEvent, describeWait, ownerName } from './describe';
+import { ChangeLandedIcon, ChangeOpenIcon, EventIcon, StateIcon } from './icons';
 
-const FEED_EVENTS_SHOWN = 30;
+const FEED_EVENTS_SHOWN = 12;
 
 export function ChangesPage(): React.JSX.Element {
   const { projectId, personName, events } = useProject();
   const [isMineOnly, setMineOnly] = useState(false);
+  const [isLandedShown, setLandedShown] = useState(false);
   const changes = useQuery({
     queryKey: [projectId, 'changes'],
     queryFn: async () => (await listChanges({ path: { projectId }, throwOnError: true })).data
   });
   const me = personName.trim();
-  const rows = (changes.data ?? []).filter((change) => !isMineOnly || change.owner === me);
+  const mine = (changes.data ?? []).filter((change) => !isMineOnly || change.owner === me);
+  const inFlight = mine.filter((change) => change.state !== 'landed');
+  const landed = mine.filter((change) => change.state === 'landed');
+  const rows = isLandedShown ? landed : inFlight;
+  const kept = mine.reduce((sum, change) => sum + change.checks.kept, 0);
+  const ran = mine.reduce((sum, change) => sum + change.checks.ran, 0);
   // The sequenced pairs in flight, as the coordinator reports them in each change's landsAfter.
   const sequences = (changes.data ?? []).flatMap((change) =>
     change.landsAfter.map((earlierChangeId) => ({ changeId: change.changeId, earlierChangeId }))
   );
-  const kept = rows.reduce((sum, change) => sum + change.checks.kept, 0);
-  const ran = rows.reduce((sum, change) => sum + change.checks.ran, 0);
   return (
-    <>
-      <h2>Changes</h2>
-      <p>
-        <label>
-          <input type="checkbox" checked={isMineOnly} onChange={(event) => setMineOnly(event.target.checked)} /> Mine
-          {me === '' ? ' (type your name above)' : ` (${me})`}
-        </label>
-      </p>
-      <p>
-        Checks of the current heads: {kept} kept from earlier runs, {ran} ran.
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Change</th>
-            <th>Intent</th>
-            <th>Owner</th>
-            <th>State</th>
-            <th>Checks</th>
-            <th>Waits for</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="with-sidebar">
+      <div>
+        <div className="toolbar">
+          <label>
+            <input type="checkbox" checked={isMineOnly} onChange={(event) => setMineOnly(event.target.checked)} /> Mine
+            {me === '' ? '' : ` (${me})`}
+          </label>
+          <span className="meta">
+            Checks of the current heads: {kept} kept from earlier runs, {ran} ran
+          </span>
+        </div>
+        <div className="box">
+          <div className="box-header">
+            <button
+              type="button"
+              className={`link-button ${isLandedShown ? 'meta' : 'row-title'}`}
+              onClick={() => setLandedShown(false)}
+            >
+              <ChangeOpenIcon className="icon-open" /> {inFlight.length} In flight
+            </button>
+            <button
+              type="button"
+              className={`link-button ${isLandedShown ? 'row-title' : 'meta'}`}
+              onClick={() => setLandedShown(true)}
+            >
+              <ChangeLandedIcon className="icon-landed" /> {landed.length} Landed
+            </button>
+          </div>
+          {rows.length === 0 ? <div className="box-body meta">No changes here.</div> : null}
           {rows.map((change) => (
-            <tr key={change.changeId}>
-              <td>
-                <Link to={`/p/${projectId}/changes/${change.changeId}`}>{change.changeId}</Link>
-              </td>
-              <td>{change.intent}</td>
-              <td>{change.owner ?? ''}</td>
-              <td>
-                {change.state}
-                {change.resolvedConflicts > 0 ? ', resolved by Commute' : ''}
-              </td>
-              <td>
-                {change.checks.kept} kept, {change.checks.ran} ran
-                {change.checks.pending > 0 ? `, ${change.checks.pending} running` : ''}
-                {change.checks.failed > 0 ? `, ${change.checks.failed} failed` : ''}
-              </td>
-              <td>{change.state === 'landed' ? '' : change.waitsFor.map(describeWait).join('; ') || 'ready'}</td>
-            </tr>
+            <ChangeRow key={change.changeId} change={change} />
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
       <aside>
         <ApproveBatch />
-        <section>
-          <h3>Overlaps</h3>
-          {sequences.length === 0 ? <p>No change waits for another.</p> : null}
-          <ul>
-            {sequences.map(({ changeId, earlierChangeId }) => (
-              <li key={`${changeId}-${earlierChangeId}`}>
-                <Link to={`/p/${projectId}/overlaps/${changeId}/${earlierChangeId}`}>
-                  {changeId} lands after {earlierChangeId}
-                </Link>
-              </li>
+        <div className="box">
+          <div className="box-header">
+            <strong>Sequenced</strong>
+          </div>
+          {sequences.length === 0 ? <div className="box-body meta">No change waits for another.</div> : null}
+          {sequences.map(({ changeId, earlierChangeId }) => (
+            <div className="box-row" key={`${changeId}-${earlierChangeId}`}>
+              <Link to={`/p/${projectId}/overlaps/${changeId}/${earlierChangeId}`}>
+                {changeId} lands after {earlierChangeId}
+              </Link>
+            </div>
+          ))}
+        </div>
+        <div className="box">
+          <div className="box-header">
+            <strong>Activity</strong>
+          </div>
+          {events
+            .slice(-FEED_EVENTS_SHOWN)
+            .toReversed()
+            .map((event) => (
+              <div className="box-row" key={event.seq}>
+                <EventIcon event={event} />
+                <span className="grow">
+                  <Link to={`/p/${projectId}/changes/${event.changeId}`}>{event.changeId}</Link>{' '}
+                  <span className="meta">{describeEvent(event)}</span>
+                </span>
+              </div>
             ))}
-          </ul>
-        </section>
-        <section>
-          <h3>Events</h3>
-          <ol reversed>
-            {events
-              .slice(-FEED_EVENTS_SHOWN)
-              .toReversed()
-              .map((event) => (
-                <li key={event.seq}>
-                  <Link to={`/p/${projectId}/changes/${event.changeId}`}>{event.changeId}</Link> {describeEvent(event)}
-                </li>
-              ))}
-          </ol>
-        </section>
+        </div>
       </aside>
-    </>
+    </div>
+  );
+}
+
+type ChangeRowProps = {
+  change: ChangeListItem;
+};
+
+function ChangeRow({ change }: ChangeRowProps): React.JSX.Element {
+  const { projectId } = useProject();
+  const waiting = change.waitsFor.map(describeWait).join('; ');
+  let status = 'landed';
+  if (change.state !== 'landed') {
+    status = waiting === '' ? 'ready to land' : waiting;
+  }
+  return (
+    <div className="box-row">
+      <StateIcon state={change.state} />
+      <div className="grow">
+        <Link className="row-title" to={`/p/${projectId}/changes/${change.changeId}`}>
+          {change.intent}
+        </Link>{' '}
+        {change.resolvedConflicts > 0 ? <span className="label">resolved by Commute</span> : null}
+        <div className="meta">
+          {change.changeId} by {ownerName(change.owner)} · {status} · checks {change.checks.kept} kept,{' '}
+          {change.checks.ran} ran
+          {change.checks.pending > 0 ? `, ${change.checks.pending} running` : ''}
+          {change.checks.failed > 0 ? `, ${change.checks.failed} failed` : ''}
+        </div>
+      </div>
+    </div>
   );
 }

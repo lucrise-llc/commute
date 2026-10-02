@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { approveBatch, getLanding } from '@commute/api-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { ownerName } from './describe';
 import { useProject } from './project-context';
 
 // The ready batch and its approval. Every ready change is in the batch until a person unchecks it. Any team member
@@ -16,7 +17,7 @@ export function ApproveBatch(): React.JSX.Element {
     queryFn: async () => (await getLanding({ path: { projectId }, throwOnError: true })).data
   });
   if (landing.data === undefined) {
-    return <p>Loading the batch…</p>;
+    return <div className="box box-body meta">Loading the batch…</div>;
   }
   const { ready, batch } = landing.data;
   const approver = personName.trim();
@@ -42,42 +43,45 @@ export function ApproveBatch(): React.JSX.Element {
     await queryClient.invalidateQueries({ queryKey: [projectId] });
   };
   return (
-    <section>
-      <h3>Landing batch</h3>
+    <div className="box">
+      <div className="box-header">
+        <strong>Landing batch</strong>
+      </div>
       {batch === null ? null : (
-        <p>
-          Landing {batch.batchId}: {batch.changeIds.join(', ')}, approved by {batch.approver}.
-        </p>
+        <div className="box-body meta">
+          Landing {batch.batchId} ({batch.changeIds.join(', ')}), approved by {batch.approver}.
+        </div>
       )}
-      {ready.length === 0 ? (
-        <p>No change is ready.</p>
-      ) : (
-        <ul>
-          {ready.map((change) => (
-            <li key={change.changeId}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={!leftOut.has(change.changeId)}
-                  onChange={() => toggle(change.changeId)}
-                  data-change-id={change.changeId}
-                />{' '}
-                {change.changeId} "{change.intent}" ({change.owner ?? 'no owner'})
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-      <button
-        type="button"
-        disabled={chosen.length === 0 || batch !== null || approver === ''}
-        onClick={() => {
-          approve().catch(reportError);
-        }}
-      >
-        Approve {chosen.length} as {approver === '' ? '(type your name)' : approver}
-      </button>
-      {error === null ? null : <p>Approval failed: {error}</p>}
-    </section>
+      {ready.length === 0 && batch === null ? <div className="box-body meta">No change is ready.</div> : null}
+      {ready.map((change) => (
+        <label className="box-row" key={change.changeId}>
+          <input
+            type="checkbox"
+            checked={!leftOut.has(change.changeId)}
+            onChange={() => toggle(change.changeId)}
+            data-change-id={change.changeId}
+          />
+          <span className="grow">
+            {change.intent}
+            <div className="meta">
+              {change.changeId} by {ownerName(change.owner)}
+            </div>
+          </span>
+        </label>
+      ))}
+      <div className="box-body">
+        <button
+          type="button"
+          className="button-primary"
+          disabled={chosen.length === 0 || batch !== null || approver === ''}
+          onClick={() => {
+            approve().catch(reportError);
+          }}
+        >
+          Approve {chosen.length} as {approver === '' ? '(type your name)' : approver}
+        </button>
+        {error === null ? null : <div className="meta icon-fail">Approval failed: {error}</div>}
+      </div>
+    </div>
   );
 }

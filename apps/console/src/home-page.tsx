@@ -8,8 +8,9 @@ export function HomePage(): React.JSX.Element {
     await navigate(`/p/${projectId.trim()}`);
   };
   return (
-    <main>
-      <h1>Commute</h1>
+    <main className="page">
+      <h1 className="title">Commute</h1>
+      <p className="meta">Open a project to see its code, its changes in flight, and its landing batches.</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
