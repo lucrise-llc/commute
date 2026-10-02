@@ -1,104 +1,63 @@
 #!/usr/bin/env node
-// Records the demo video. A stage page shows captions and the agents' terminal next to the console. The recorder
-// runs the harness with console approvals and approves each batch in the console, as a person would.
-import type { ServerResponse } from 'node:http';
-
+// Records the demo video: the console, full screen, while the harness runs 20 agents for two people in the
+// background. The recorder does only what a person does: it opens pages, types a name, and approves each batch.
+// The narration goes to a subtitle file, so the picture shows only the product.
 import { chromium } from 'playwright';
-import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 const CONSOLE_URL = process.env['COMMUTE_URL'] ?? 'http://localhost:8787';
-const STAGE_PORT = 4_545;
 const VIEWPORT = { width: 1_600, height: 900 };
 const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const HARNESS_PATH = fileURLToPath(new URL('harness.ts', import.meta.url));
-const STAGE_PATH = fileURLToPath(new URL('stage.html', import.meta.url));
+const SUBTITLES_PATH = `${RECORDING_DIR}/commute-demo.srt`;
 const SECOND_MS = 1_000;
 const ID_RADIX = 36;
-// How long each beat stays on screen, in seconds.
-const TITLE_SECONDS = 6;
-const CARD_SECONDS = 14;
-const PUSH_SECONDS = 20;
-const BEAT_SECONDS = 12;
-const PAGE_SECONDS = 10;
-const FILES_SECONDS = 8;
-const SUMMARY_SECONDS = 15;
-const CLICK_SECONDS = 2;
-const AFTER_LANDING_SECONDS = 4;
 const AGENT_LINE = /^(alice-\d+|bob-\d+)\s+change\s+(c-\d+)$/;
 // The harness prints its steps quickly, but a batch can take minutes to become ready.
 const LINE_TIMEOUT_MS = 900_000;
+// How long a page stays on screen, in seconds, and how long a subtitle stays at most.
+const PAGE_SECONDS = 10;
+const BEAT_SECONDS = 14;
+const CLICK_SECONDS = 2;
+const AFTER_LANDING_SECONDS = 5;
+const SUBTITLE_SECONDS_MAX = 9;
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_MINUTE = 60_000;
+const TWO_DIGITS = 2;
+const THREE_DIGITS = 3;
+
+type Cue = {
+  at: number;
+  text: string;
+};
 
 const projectId = `demo-${Date.now().toString(ID_RADIX)}`;
-const streams = new Set<ServerResponse>();
 const lines: string[] = [];
 const lineListeners = new Set<() => void>();
-let harnessExitCode: number | null | undefined;
 const changeIds = new Map<string, string>();
-
-let onStreamOpen: () => void = () => undefined;
-const streamOpen = new Promise<void>((resolve) => {
-  onStreamOpen = resolve;
-});
-const stage = createServer((request, response) => {
-  if (request.url === '/stream') {
-    response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
-    streams.add(response);
-    request.on('close', () => streams.delete(response));
-    onStreamOpen();
-    return;
-  }
-  readFile(STAGE_PATH, 'utf8')
-    .then((html) => {
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      response.end(html);
-    })
-    .catch((error: unknown) => {
-      response.writeHead(500);
-      response.end(String(error));
-    });
-});
-await new Promise<void>((resolve) => stage.listen(STAGE_PORT, resolve));
+const cues: Cue[] = [];
+let harnessExitCode: number | null | undefined;
 
 await mkdir(RECORDING_DIR, { recursive: true });
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: VIEWPORT, recordVideo: { dir: RECORDING_DIR, size: VIEWPORT } });
 const page = await context.newPage();
-await page.goto(`http://localhost:${STAGE_PORT}/`);
-await streamOpen;
-const frame = page.frameLocator('#console');
+const videoStart = Date.now();
 
-send('card', {
-  title: 'Commute',
-  items: ['Many coding agents work on one repository at the same time.', 'Changes that commute land in any order.']
-});
-await hold(TITLE_SECONDS);
-send('card', {
-  title: 'Why a new forge',
-  items: [
-    'Conflicts are cheap: an agent fixes a text conflict in about a minute.',
-    'Waiting is expensive: a stack makes each change wait for the one ahead.',
-    'A rebase throws away results: checks keyed to a commit run again.'
-  ]
-});
-await hold(CARD_SECONDS);
-send('card', { title: null, items: [] });
-
-caption('Start', 'Alice and Bob each start 10 agents with commute start. Overlaps show up before any code is written.');
 const harness = spawn('node', [HARNESS_PATH, '--project', projectId, '--console-approvals'], {
   env: { ...process.env, COMMUTE_URL: CONSOLE_URL },
   stdio: ['ignore', 'pipe', 'inherit']
 });
 createInterface({ input: harness.stdout }).on('line', (line) => {
+  console.log(line);
   lines.push(line);
   const agent = AGENT_LINE.exec(line);
   if (agent?.[1] !== undefined && agent[2] !== undefined) {
     changeIds.set(agent[1], agent[2]);
   }
-  send('line', line);
   for (const listener of lineListeners) {
     listener();
   }
@@ -115,72 +74,74 @@ const harnessExit = new Promise<number | null>((resolve) =>
 
 await nextLine(/^== trunk seeded/);
 await show(`/p/${projectId}/changes`);
+say('Alice and Bob each start 10 coding agents on one repository. Each agent runs commute start, then plain git.');
 await nextLine(/^== all 20 agents started/);
-caption('Push', 'Each agent pushes with plain git. Merge checks run only where two footprints meet.');
-await hold(PUSH_SECONDS);
-await show(`/p/${projectId}/tree/trunk/src/cart`);
-caption('Code', 'The code view shows trunk, and each folder lists the changes in flight that touch it.');
-await hold(BEAT_SECONDS);
-await show(`/p/${projectId}/changes`);
-caption('Checks', 'Each check runs once per content. Changes that did not touch a folder keep its results.');
-
-await approveInConsole({
-  batch: 1,
-  text: 'Bob approves one batch with changes from both people. Two conflicting pairs wait for the change ahead.'
-});
-caption('Kept', 'The changes in flight move onto the new trunk. Only checks whose folders changed run again.');
+say('Commute knows the files of each change before any code is written, and merges every pair that overlaps.');
+await hold(PAGE_SECONDS);
+await show(`/p/${projectId}/tree/trunk/src`);
+say('The code view is trunk at its last landing. Each folder lists the changes in flight that touch it.');
 await hold(PAGE_SECONDS);
 
 const alice3 = changeIdOf('alice-3');
 const bob2 = changeIdOf('bob-2');
+await nextLine(new RegExp(`^bob-2\\s+${bob2} resolve `));
 await show(`/p/${projectId}/changes/${bob2}`);
-caption(
-  'Conflict',
-  `Alice's ${alice3} and Bob's ${bob2} add a page at the same line. Commute resolved it at Bob's first push by choosing lines from both.`
-);
+say(`Alice's ${alice3} and Bob's ${bob2} add a page at the same line. Commute found the conflict at Bob's first push.`);
 await hold(BEAT_SECONDS);
 await show(`/p/${projectId}/overlaps/${bob2}/${alice3}`);
+say(
+  'It resolved the conflict by choosing lines that both changes wrote, with both intents in mind. It wrote no new line.'
+);
+await hold(BEAT_SECONDS);
+
+await approveInConsole({
+  batch: 1,
+  text: 'Bob approves one batch of 16 changes from both people. The two changes that wait for an earlier one stay out.'
+});
+say('The batch lands in parallel. The changes still in flight move onto the new trunk.');
 await hold(PAGE_SECONDS);
-await approveInConsole({ batch: 2, text: `Alice approves ${alice3} alone. Nobody touches ${bob2}.` });
+await approveInConsole({ batch: 2, text: `Alice lands ${alice3} on its own.` });
 await show(`/p/${projectId}/changes/${bob2}`);
-caption('Resolved', `${bob2} restacks with the stored resolution. No second model call, and neither person acts.`);
-await hold(PAGE_SECONDS);
+say(`${bob2} moves onto the new trunk with the stored resolution: no second model call, and neither person acts.`);
+await hold(BEAT_SECONDS);
 await show(`/p/${projectId}/changes/${bob2}?tab=checks`);
-caption('One check runs', 'Only the routes check runs again, because only src/routes.mjs changed under it.');
+say(
+  'Only the routes check runs again. The other checks keep their results, because the folders they read did not change.'
+);
 await hold(PAGE_SECONDS);
 await show(`/p/${projectId}/changes/${bob2}?tab=files`);
-await hold(FILES_SECONDS);
+say('The diff keeps both pages.');
+await hold(PAGE_SECONDS);
 
-await approveInConsole({ batch: 3, text: 'Bob approves the next batch.' });
+await approveInConsole({ batch: 3, text: 'Bob approves the next batch, with a change from each person.' });
 await approveInConsole({
   batch: 4,
-  text: "Alice's gift wrap change landed after her discount, with its conflict resolved the same way."
+  text: "Alice's gift wrap change lands last. Commute resolved its conflict with her discount the same way."
 });
-
-caption('Agent view', 'Agents use commute start, plain git, and commute wait. No agent and no page polls.');
-await show(`/p/${projectId}/tree/trunk`);
 await nextLine(/^checks /);
+await show(`/p/${projectId}/changes`);
+await page
+  .getByText(/Landed$/)
+  .first()
+  .click();
+say(
+  'All 20 changes landed in four batches. Commute resolved both conflicts, and Alice and Bob never messaged each other.'
+);
 await hold(BEAT_SECONDS);
-const summary = lines.slice(lines.findIndex((line) => line === '== summary') + 1);
-send('card', { title: 'One run, 20 agents, two people', items: summary });
-await hold(SUMMARY_SECONDS);
+await show(`/p/${projectId}`);
+say('Commute: changes that commute land in any order.');
+await hold(PAGE_SECONDS);
 
 await harnessExit;
 const video = page.video();
 await context.close();
 await browser.close();
-stage.close();
+await writeFile(SUBTITLES_PATH, subtitles());
 console.log(`video ${await video?.path()}`);
+console.log(`subtitles ${SUBTITLES_PATH}`);
 
-function send(event: string, data: unknown): void {
-  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const stream of streams) {
-    stream.write(message);
-  }
-}
-
-function caption(title: string, text: string): void {
-  send('caption', { title, text });
+function say(text: string): void {
+  cues.push({ at: Date.now() - videoStart, text });
 }
 
 async function hold(seconds: number): Promise<void> {
@@ -188,13 +149,8 @@ async function hold(seconds: number): Promise<void> {
 }
 
 async function show(path: string): Promise<void> {
-  await page.evaluate((url) => {
-    const element = document.getElementById('console');
-    if (element instanceof HTMLIFrameElement) {
-      element.src = url;
-    }
-  }, `${CONSOLE_URL}${path}`);
-  await frame.locator('main').waitFor();
+  await page.goto(`${CONSOLE_URL}${path}`);
+  await page.locator('main').waitFor();
 }
 
 // Resolves with the first harness line that matches. It fails when the harness exits first or the line is late.
@@ -249,15 +205,37 @@ async function approveInConsole({ batch, text }: ApproveParams): Promise<void> {
     throw new Error(`The approval line of batch ${batch} names no approver or changes.`);
   }
   const batchIds = new Set(ids.split(', '));
-  caption('Land', text);
   await show(`/p/${projectId}/changes`);
+  say(text);
   // fill sets the whole value at once; typing key by key loses keys while live events re-render the page.
-  await frame.getByLabel('Your name', { exact: true }).fill(approver);
-  for (const box of await frame.locator('input[data-change-id]').all()) {
+  await page.getByLabel('Your name', { exact: true }).fill(approver);
+  for (const box of await page.locator('input[data-change-id]').all()) {
     await box.setChecked(batchIds.has((await box.getAttribute('data-change-id')) ?? ''));
   }
   await hold(CLICK_SECONDS);
-  await frame.getByRole('button', { name: /^Approve/ }).click();
+  await page.getByRole('button', { name: /^Approve/ }).click();
   await nextLine(new RegExp(`^== batch ${batch} landed`));
   await hold(AFTER_LANDING_SECONDS);
+}
+
+// SubRip subtitles: each cue shows until the next one starts, for at most SUBTITLE_SECONDS_MAX.
+function subtitles(): string {
+  return cues
+    .map((cue, index) => {
+      const next = cues[index + 1]?.at ?? cue.at + SUBTITLE_SECONDS_MAX * SECOND_MS;
+      const end = Math.min(next, cue.at + SUBTITLE_SECONDS_MAX * SECOND_MS);
+      return `${index + 1}\n${timestamp(cue.at)} --> ${timestamp(end)}\n${cue.text}\n`;
+    })
+    .join('\n');
+}
+
+function pad(value: number, width: number): string {
+  return String(value).padStart(width, '0');
+}
+
+function timestamp(ms: number): string {
+  const hours = Math.floor(ms / MS_PER_HOUR);
+  const minutes = Math.floor((ms % MS_PER_HOUR) / MS_PER_MINUTE);
+  const seconds = Math.floor((ms % MS_PER_MINUTE) / SECOND_MS);
+  return `${pad(hours, TWO_DIGITS)}:${pad(minutes, TWO_DIGITS)}:${pad(seconds, TWO_DIGITS)},${pad(ms % SECOND_MS, THREE_DIGITS)}`;
 }
