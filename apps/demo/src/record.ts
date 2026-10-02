@@ -21,9 +21,9 @@ const PUSHED_LINE = /^\S+\s+c-\d+ pushed$/;
 // The harness prints its steps quickly, but a batch can take minutes to become ready.
 const LINE_TIMEOUT_MS = 900_000;
 const CHECKS_TIMEOUT_MS = 300_000;
-// Holds for reading: a caption stays on screen for about 200 words a minute.
-const READING_MS_LEAD = 1_000;
-const READING_MS_PER_WORD = 300;
+// Holds for reading: a caption stays on screen for about 150 words a minute, after a lead to find what it describes.
+const READING_MS_LEAD = 2_000;
+const READING_MS_PER_WORD = 400;
 const LOOK_MS = 1_500;
 const END_MS = 3_000;
 // After its restack, Bob's routes change runs the routes check again and keeps the results of the other five checks.
@@ -39,8 +39,8 @@ let batchesRequested = 0;
 const { browser, context } = await launchCaptureBrowser();
 await installCursor(context);
 const page = await context.newPage();
-const changesTab = page.getByRole('link', { name: /^Changes\b/ });
-const codeTab = page.getByRole('link', { name: 'Code', exact: true });
+const changesTab = page.getByRole('tab', { name: /^Changes\b/ });
+const codeTab = page.getByRole('tab', { name: 'Code', exact: true });
 const yourName = page.getByLabel('Your name', { exact: true });
 const ordersRow = page.getByRole('link', { name: ORDERS_INTENT, exact: true });
 
@@ -80,6 +80,12 @@ const overlapEntry = page.getByText(`overlaps ${bob2} "`).first();
 await fastUntil(async () => overlapEntry.waitFor());
 await hoverWhile({ target: overlapEntry, text: 'Commute lists the overlaps before any code is pushed.' });
 await fastUntil(async () => waitForLines({ pattern: PUSHED_LINE, count: AGENTS.length }));
+const sequencedPair = page.getByRole('link', { name: `${bob2} lands after ${alice3}`, exact: true });
+await fastUntil(async () => sequencedPair.waitFor({ timeout: CHECKS_TIMEOUT_MS }));
+await hoverWhile({
+  target: sequencedPair,
+  text: `Only two pairs need an order. One crosses from Alice to Bob: Bob's ${bob2} lands after Alice's ${alice3}. The other changes run in parallel.`
+});
 await hands.click(codeTab);
 await hands.click(page.getByRole('link', { name: 'src', exact: true }));
 await hoverWhile({
@@ -94,14 +100,18 @@ await narrate(`Bob's ${bob2} and Alice's ${alice3} add a page at the same line o
 await fastUntil(async () => nextLine(new RegExp(`^bob-2\\s+${bob2} resolve `)));
 await hands.click(page.getByRole('link', { name: 'View the overlap', exact: true }).last());
 await hoverWhile({
-  target: page.getByText(/'search',\s*'orders',|'orders',\s*'search',/).first(),
+  target: page
+    .getByRole('cell')
+    .filter({ hasText: /'search',\s*'orders',|'orders',\s*'search',/ })
+    .last(),
   text: 'Commute resolved the conflict by choosing lines that both changes wrote. It writes no code of its own.'
 });
 await narrate(`The resolution waits until ${alice3} lands. Neither person does anything.`);
 
 capture.chapter('3 · People approve batches, and changes land in parallel');
-const batch1 = await fastUntil(nextBatchRequest);
 await hands.click(changesTab);
+capture.say('Each change runs its checks in a runner container, and turns ready to land when they pass.');
+const batch1 = await fastUntil(nextBatchRequest);
 capture.say(`Bob approves the first batch: ${batch1.changeIds.size} changes from both people.`);
 await chooseBatch(batch1);
 await approve({
@@ -111,6 +121,10 @@ await approve({
 
 capture.chapter('4 · Check results that still hold are kept');
 const batch2 = await fastUntil(nextBatchRequest);
+await hoverWhile({
+  target: page.getByText(/^Checks of the current heads/),
+  text: 'The changes still in flight moved onto the new trunk. This counter shows the check results they kept instead of running again.'
+});
 await chooseBatch(batch2);
 await approve({ request: batch2, caption: `Alice lands ${alice3}.` });
 await hands.click(ordersRow);
@@ -120,8 +134,8 @@ await hoverWhile({
   target: page.getByText(/with the resolution of/).first(),
   text: `${bob2} moves onto the new trunk with the stored resolution. No second model call.`
 });
-await hands.click(page.getByRole('link', { name: /^Checks\b/ }));
-const routesRan = page.getByText(/^routes\s+ran for this content$/);
+await hands.click(page.getByRole('tab', { name: /^Checks\b/ }));
+const routesRan = page.getByText('ran for this content', { exact: true });
 await fastUntil(async () => {
   await waitForLines({ pattern: new RegExp(`^bob-2\\s+${bob2} checks `), after: restackLine });
   await page
@@ -134,7 +148,7 @@ await hoverWhile({
   target: routesRan,
   text: 'Only the routes check runs again. The other five read files that did not change, so their results are kept.'
 });
-await hands.click(page.getByRole('link', { name: /^Files changed\b/ }));
+await hands.click(page.getByRole('tab', { name: /^Files changed\b/ }));
 await narrate('The diff keeps both pages.');
 
 capture.chapter('5 · Everything lands');
@@ -150,6 +164,12 @@ await fastUntil(async () => nextLine(new RegExp(`^landed\\s+${AGENTS.length} of 
 await hands.click(page.getByRole('link', { name: /^\d+ Landed$/ }));
 await narrate(`${AGENTS.length} changes landed in four batches. Alice and Bob never had to coordinate.`);
 await hands.click(codeTab);
+await hands.click(page.getByRole('link', { name: 'src', exact: true }));
+await hands.click(page.getByRole('link', { name: 'routes.mjs', exact: true }));
+await hoverWhile({
+  target: page.getByRole('cell', { name: "'orders',", exact: true }),
+  text: "Trunk has both pages: Alice's search page and Bob's orders page."
+});
 await hold(END_MS);
 
 const timelinePath = await capture.stop();
@@ -306,6 +326,8 @@ async function approve({ request, caption }: ApproveParams): Promise<void> {
   await hands.click(
     page.getByRole('button', { name: `Approve ${request.changeIds.size} as ${request.approver}`, exact: true })
   );
+  // Ticking the boxes can scroll the page down; the person scrolls back up to watch the list.
+  await hands.hover({ target: changesTab, ms: LOOK_MS });
   if (caption !== undefined) {
     await narrate(caption);
   }
