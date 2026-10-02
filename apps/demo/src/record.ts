@@ -72,7 +72,7 @@ await page.getByRole('main').waitFor();
 const hands = await createHands(page);
 const capture = await startCapture({ page, recordingDir: RECORDING_DIR });
 
-capture.chapter('1 · Overlaps are known at the start');
+capture.chapter('Overlaps are known at the start');
 await narrate(`Alice and Bob start ${AGENTS.length} agents. Each change appears when its agent runs commute start.`);
 const [alice3, bob2] = await fastUntil(async () => Promise.all([changeIdOf('alice-3'), changeIdOf('bob-2')]));
 // The activity feed lists the newest events, so the overlap is shown while the agents still start.
@@ -93,7 +93,7 @@ await hoverWhile({
   text: 'The code view shows trunk, and the changes in flight in each folder.'
 });
 
-capture.chapter('2 · A conflict, resolved at the first push');
+capture.chapter('A conflict, resolved at the first push');
 await hands.click(changesTab);
 await hands.click(ordersRow);
 await narrate(`Bob's ${bob2} and Alice's ${alice3} add a page at the same line of routes.mjs.`);
@@ -108,7 +108,7 @@ await hoverWhile({
 });
 await narrate(`The resolution waits until ${alice3} lands. Neither person does anything.`);
 
-capture.chapter('3 · People approve batches, and changes land in parallel');
+capture.chapter('People approve batches, and changes land in parallel');
 await hands.click(changesTab);
 capture.say('Each change runs its checks in a runner container, and turns ready to land when they pass.');
 const batch1 = await fastUntil(nextBatchRequest);
@@ -119,7 +119,7 @@ await approve({
   caption: 'The batch lands at once. Changes that wait for an earlier change move onto the new trunk.'
 });
 
-capture.chapter('4 · Check results that still hold are kept');
+capture.chapter('Check results that still hold are kept');
 const batch2 = await fastUntil(nextBatchRequest);
 await hoverWhile({
   target: page.getByText(/^Checks of the current heads/),
@@ -151,7 +151,7 @@ await hoverWhile({
 await hands.click(page.getByRole('tab', { name: /^Files changed\b/ }));
 await narrate('The diff keeps both pages.');
 
-capture.chapter('5 · Everything lands');
+capture.chapter('Everything lands');
 await hands.click(changesTab);
 const batch3 = await fastUntil(nextBatchRequest);
 capture.say("The last two batches land the same way. Commute also resolved Alice's two pricing changes.");

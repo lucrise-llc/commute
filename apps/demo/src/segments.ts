@@ -10,7 +10,8 @@ import { FRAME_MS } from './clips.ts';
 
 export const FAST_SPEED = 8;
 const NORMAL_SPEED = 1;
-const CAPTION_MS_MAX = 9_000;
+// Longer than the longest reading hold in record.ts, so a caption stays while the cursor rests on what it describes.
+const CAPTION_MS_MAX = 15_000;
 // 15 minutes of video in one segment.
 const SEGMENT_FRAMES_MAX = 27_000;
 

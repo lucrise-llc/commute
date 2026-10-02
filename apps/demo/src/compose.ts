@@ -28,7 +28,7 @@ import {
   VIDEO_WIDTH
 } from './graphics.ts';
 
-const DEFAULT_RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
+const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const TRANSCRIPTS_DIR = 'transcripts';
 const WORK_DIR = 'compose';
 const OUTPUT_FILE = 'commute-demo.mp4';
@@ -56,8 +56,6 @@ const STRIP_TOP = VIDEO_HEIGHT - STRIP_HEIGHT;
 
 const { values } = parseArgs({
   options: {
-    recording: { type: 'string', default: DEFAULT_RECORDING_DIR },
-    agent: { type: 'string', default: TERMINAL_AGENT },
     crf: { type: 'string', default: DEFAULT_CRF }
   }
 });
@@ -65,13 +63,13 @@ const crf = Number(values.crf);
 if (!Number.isInteger(crf) || crf < CRF_MIN || crf > CRF_MAX) {
   throw new Error(`INVALID_CRF: --crf is a whole number from ${CRF_MIN} to ${CRF_MAX}.`);
 }
-const recordingDir = values.recording;
+const recordingDir = RECORDING_DIR;
 const workDir = join(recordingDir, WORK_DIR);
 const output = join(recordingDir, OUTPUT_FILE);
 
 const timeline = timelineSchema.parse(JSON.parse(await readFile(join(recordingDir, TIMELINE_FILE), 'utf8')));
 const transcript = transcriptSchema.parse(
-  JSON.parse(await readFile(join(recordingDir, TRANSCRIPTS_DIR, `${values.agent}.json`), 'utf8'))
+  JSON.parse(await readFile(join(recordingDir, TRANSCRIPTS_DIR, `${TERMINAL_AGENT}.json`), 'utf8'))
 );
 const segments = planSegments({ timeline, recordingDir });
 const replay = planReplay({ transcript, intro: TERMINAL_INTRO, cues: TERMINAL_CUES });
@@ -102,8 +100,9 @@ await renderGraphic({
   size: { width: BADGE_WIDTH, height: STRIP_HEIGHT },
   isTransparent: true
 });
-for (const segment of segments) {
-  await addConsoleSegment(segment);
+// The segment before the first chapter mark has no chapter, so each chapter's number is its segment's index.
+for (const [index, segment] of segments.entries()) {
+  await addConsoleSegment({ segment, number: index });
 }
 await addCard({ card: { kind: 'architecture' }, durationMs: ARCHITECTURE_MS });
 await addCard({ card: { kind: 'closing' }, durationMs: CLOSING_MS });
@@ -154,9 +153,14 @@ async function addFrames({ frames, overlays }: AddFramesParams): Promise<void> {
 }
 
 // The chapter card, then the console over the caption strip. The speed badge shows at the right end of the strip.
-async function addConsoleSegment(segment: ConsoleSegment): Promise<void> {
+type AddConsoleSegmentParams = {
+  segment: ConsoleSegment;
+  number: number;
+};
+
+async function addConsoleSegment({ segment, number }: AddConsoleSegmentParams): Promise<void> {
   if (segment.chapter !== null) {
-    await addCard({ card: { kind: 'chapter', title: segment.chapter }, durationMs: CHAPTER_MS });
+    await addCard({ card: { kind: 'chapter', number, title: segment.chapter }, durationMs: CHAPTER_MS });
   }
   if (segment.frames.length === 0) {
     return;

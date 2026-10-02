@@ -8,6 +8,8 @@ import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 
+import { FRAME_MS } from './clips.ts';
+
 const VIEWPORT = { width: 1_280, height: 640 };
 const DEVICE_SCALE_FACTOR = 1.5;
 const FRAME_WIDTH = 1_920;
@@ -17,9 +19,6 @@ const FRAMES_DIR = 'frames';
 const FRAME_NAME_DIGITS = 6;
 const MS_PER_SECOND = 1_000;
 const JSON_INDENT = 2;
-// The video has 30 frames per second, so the capture keeps only the last frame of each 1/30 s slot.
-const VIDEO_FPS = 30;
-const SLOT_MS = MS_PER_SECOND / VIDEO_FPS;
 // About 55 minutes of frames that change in every slot.
 const FRAMES_MAX = 100_000;
 const MARKS_MAX = 500;
@@ -127,7 +126,8 @@ export async function startCapture({ page, recordingDir }: StartCaptureParams): 
     });
     // The first frame can show a page that was drawn before the capture started.
     const atMs = Math.max(0, z.number().parse(event.metadata.timestamp) * MS_PER_SECOND - startedAt);
-    if (pending !== null && Math.floor(pending.atMs / SLOT_MS) !== Math.floor(atMs / SLOT_MS)) {
+    // Only the last frame of each video frame's time slot is kept.
+    if (pending !== null && Math.floor(pending.atMs / FRAME_MS) !== Math.floor(atMs / FRAME_MS)) {
       store(pending);
     }
     pending = { data: event.data, atMs };

@@ -18,8 +18,6 @@ const FOLLOW_MS = 200;
 const FOLLOW_SLACK_PX = 4;
 const AIM_ATTEMPTS_MAX = 3;
 const SCROLL_SETTLE_MS_MAX = 1_500;
-const WHEEL_STEP_PX = 40;
-const WHEEL_DELTA_MAX = 5_000;
 const HALF = 0.5;
 const EASE_POWER = 3;
 const EASE_SCALE = 4;
@@ -69,24 +67,16 @@ function mountCursor({ svg, css, storageKey, rippleMs }: CursorOptions): void {
       cursor.style.transform = `translate(${left}px, ${top}px)`;
       cursor.classList.add('is-placed');
     };
-    try {
-      const saved = sessionStorage.getItem(storageKey);
-      if (saved !== null) {
-        const [left = 0, top = 0] = saved.split(',').map(Number);
-        place({ left, top });
-      }
-    } catch {
-      // The cursor shows at the next mouse move when the page blocks storage.
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved !== null) {
+      const [left = 0, top = 0] = saved.split(',').map(Number);
+      place({ left, top });
     }
     window.addEventListener(
       'mousemove',
       (event) => {
         place({ left: event.clientX, top: event.clientY });
-        try {
-          sessionStorage.setItem(storageKey, `${event.clientX},${event.clientY}`);
-        } catch {
-          // As above.
-        }
+        sessionStorage.setItem(storageKey, `${event.clientX},${event.clientY}`);
       },
       { capture: true, passive: true }
     );
@@ -135,7 +125,6 @@ export type Hands = {
   click: (target: Locator) => Promise<void>;
   type: (params: TypeParams) => Promise<void>;
   hover: (params: HoverParams) => Promise<void>;
-  scroll: (deltaY: number) => Promise<void>;
 };
 
 // The cursor starts at the center of the viewport. Install the cursor on the context before the page opens.
@@ -225,19 +214,7 @@ export async function createHands(page: Page): Promise<Hands> {
     }
   };
 
-  // Scrolls by wheel steps under the cursor: slow at the start and the end, as a hand on a trackpad.
-  const scroll = async (deltaY: number): Promise<void> => {
-    if (Math.abs(deltaY) > WHEEL_DELTA_MAX) {
-      throw new Error(`SCROLL_TOO_FAR: ${deltaY} px, more than ${WHEEL_DELTA_MAX}.`);
-    }
-    const steps = Math.max(1, Math.round(Math.abs(deltaY) / WHEEL_STEP_PX));
-    for (let step = 1; step <= steps; step += 1) {
-      await page.mouse.wheel(0, deltaY * (easeInOut(step / steps) - easeInOut((step - 1) / steps)));
-      await pause(STEP_MS);
-    }
-  };
-
-  return { click, type, hover, scroll };
+  return { click, type, hover };
 }
 
 // Scrolls smoothly until the target is in the viewport. A scroll that cannot move far enough ends after a bound.

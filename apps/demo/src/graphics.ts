@@ -16,7 +16,6 @@ export const TEXT_COLOR = '#f1f2f4';
 export const MUTED_COLOR = '#9299a4';
 export const ACCENT_COLOR = '#f6821f';
 export const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
-const CHAPTER_TITLE = /^(?<number>\d+) · (?<title>.+)$/;
 
 // The caption style, shared by the strip under the console and the terminal replay. A caption takes two lines at most.
 export const CAPTION_CSS = `
@@ -38,6 +37,7 @@ export type Card =
     }
   | {
       kind: 'chapter';
+      number: number;
       title: string;
     }
   | {
@@ -87,12 +87,8 @@ function cardBody(card: Card): string {
         <div class="statement">${escapeHtml(card.text)}</div>`;
     }
     case 'chapter': {
-      const groups = CHAPTER_TITLE.exec(card.title)?.groups;
-      if (groups?.['number'] === undefined || groups['title'] === undefined) {
-        return `<div class="chapter-title">${escapeHtml(card.title)}</div>`;
-      }
-      return `<div class="chapter-number">${escapeHtml(groups['number'])}</div>
-        <div class="chapter-title">${escapeHtml(groups['title'])}</div>`;
+      return `<div class="chapter-number">${card.number}</div>
+        <div class="chapter-title">${escapeHtml(card.title)}</div>`;
     }
     case 'architecture': {
       const rows = ARCHITECTURE_ROWS.map(
