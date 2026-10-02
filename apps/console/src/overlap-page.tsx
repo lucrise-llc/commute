@@ -191,8 +191,10 @@ function LaterChecks({ changeId }: LaterChecksProps): React.JSX.Element {
       {checks.map((check) => (
         <BoxRow key={check.name} className="items-center">
           <CheckOutcomeIcon outcome={check.outcome} />
-          <strong>{check.name}</strong>
-          <span className="text-sm text-kumo-subtle">{describeCheck(check)}</span>
+          <span className="flex items-baseline gap-2">
+            <strong>{check.name}</strong>
+            <span className="text-sm text-kumo-subtle">{describeCheck(check)}</span>
+          </span>
         </BoxRow>
       ))}
     </Box>
