@@ -232,7 +232,7 @@ type TypeNameParams = {
 };
 
 async function typeName({ frame: consoleFrame, name }: TypeNameParams): Promise<void> {
-  const field = consoleFrame.getByLabel('Your name');
+  const field = consoleFrame.getByLabel('Your name', { exact: true });
   await field.fill('');
   await field.pressSequentially(name, { delay: 80 });
 }
