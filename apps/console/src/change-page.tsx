@@ -1,16 +1,24 @@
+import type { BadgeVariant } from '@cloudflare/kumo';
 import type { Change, ChangeEvent, Diff } from '@commute/api-client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { getChange, getDiff, listCommits } from '@commute/api-client';
+import { ArrowsMergeIcon, ClockIcon, IntersectIcon } from '@phosphor-icons/react';
+import { Badge, Banner, cn, Code, Collapsible, Link, Table, Tabs, Text } from '@cloudflare/kumo';
 
+import { Box, BoxRow } from './box';
+import { Loading } from './loading';
 import { DiffView } from './diff-view';
 import { useEvents } from './use-events';
+import { RouterLink } from './router-link';
 import { CommitList } from './commits-page';
 import { ApproveBatch } from './approve-batch';
 import { useProject } from './project-context';
-import { CheckIcon, CheckOutcomeIcon, ClockIcon, EventIcon, OverlapIcon, ResolveIcon, StateIcon } from './icons';
-import { countChecks, describeCheck, describeEvent, describeWait, ownerName, shortCommit, timeAgo } from './describe';
+import { SidebarSection } from './sidebar-section';
+import { ShortCommit, TimeAgo } from './short-forms';
+import { CheckOutcomeIcon, EventIcon, ICON_CLASS, StateIcon } from './icons';
+import { countChecks, describeCheck, describeEvent, describeWait, ownerName } from './describe';
 
 const TABS = [
   { name: 'activity', label: 'Activity' },
@@ -20,6 +28,8 @@ const TABS = [
 ] as const;
 
 const STATE_LABELS = { open: 'Open', landing: 'Landing', landed: 'Landed' } as const;
+
+const STATE_BADGES: Record<Change['state'], BadgeVariant> = { open: 'green', landing: 'orange', landed: 'blue' };
 
 export function ChangePage(): React.JSX.Element {
   const { projectId } = useProject();
@@ -40,10 +50,10 @@ export function ChangePage(): React.JSX.Element {
   });
   const events = useEvents({ projectId, changeId });
   if (change.error !== null) {
-    return <p>The change {changeId} was not found.</p>;
+    return <Banner variant="error">The change {changeId} was not found.</Banner>;
   }
   if (change.data === undefined) {
-    return <p className="meta">Loading {changeId}…</p>;
+    return <Loading text={`Loading ${changeId}…`} />;
   }
   const data = change.data;
   const commitCount = commits.data?.commits.length;
@@ -56,35 +66,48 @@ export function ChangePage(): React.JSX.Element {
   const owner = ownerName(data.owner);
   return (
     <>
-      <h1 className="title">
-        {data.intent} <span className="id">{changeId}</span>
+      <h1 className="text-3xl font-normal">
+        {data.intent} <span className="font-light text-kumo-subtle">{changeId}</span>
       </h1>
-      <div className="subtitle">
-        <span className={`pill ${data.state}`}>
-          <StateIcon state={data.state} />
+      <div className="mt-2 flex items-center gap-2 text-kumo-subtle">
+        <Badge variant={STATE_BADGES[data.state]} className="px-3 py-1 text-sm">
+          <StateIcon state={data.state} className="text-current" />
           {STATE_LABELS[data.state]}
-        </span>
+        </Badge>
         {data.state === 'landed' ? (
           <span>
-            <strong>{owner}</strong>'s change landed on <strong>trunk</strong> as{' '}
-            <code>{shortCommit(data.landedCommit ?? '')}</code>
+            <strong className="text-kumo-default">{owner}</strong>'s change landed on{' '}
+            <strong className="text-kumo-default">trunk</strong> as <ShortCommit commit={data.landedCommit ?? ''} />
           </span>
         ) : (
           <span>
-            <strong>{owner}</strong> wants to land {commitCount ?? '…'} commits into <strong>trunk</strong> from{' '}
-            <Link to={`/p/${projectId}/tree/${changeId}`}>{changeId}</Link>
+            <strong className="text-kumo-default">{owner}</strong> wants to land {commitCount ?? '…'} commits into{' '}
+            <strong className="text-kumo-default">trunk</strong> from{' '}
+            <Link variant="plain" href={`/p/${projectId}/tree/${changeId}`}>
+              {changeId}
+            </Link>
           </span>
         )}
       </div>
-      <nav className="subtabs">
-        {TABS.map(({ name, label }) => (
-          <Link key={name} to={`?tab=${name}`} className={name === tab ? 'active' : ''}>
-            {label} <span className="counter">{counts[name] ?? '…'}</span>
-          </Link>
-        ))}
-      </nav>
-      <div className="with-sidebar">
-        <div>
+      <Tabs
+        variant="underline"
+        value={tab}
+        className="mt-4 mb-6"
+        listClassName="h-auto pb-0"
+        tabs={TABS.map(({ name, label }) => ({
+          value: name,
+          label: (
+            <span className="flex items-center gap-2">
+              {label}
+              <Badge variant="secondary">{counts[name] ?? '…'}</Badge>
+            </span>
+          ),
+          render: <RouterLink href={`?tab=${name}`} />,
+          nativeButton: false
+        }))}
+      />
+      <div className="grid grid-cols-[minmax(0,1fr)_300px] items-start gap-6">
+        <div className="flex min-w-0 flex-col gap-4">
           {tab === 'activity' ? <Activity change={data} events={events} /> : null}
           {tab === 'commits' ? <CommitList repoRef={changeId} /> : null}
           {tab === 'checks' ? <Checks change={data} /> : null}
@@ -109,75 +132,98 @@ function Activity({ change, events }: ActivityProps): React.JSX.Element {
   const { projectId } = useProject();
   return (
     <>
-      <div className="box description">
-        <div className="box-header">
+      <Box
+        header={
           <span>
-            <strong>{ownerName(change.owner)}</strong> <span className="meta">started this change</span>
+            <strong>{ownerName(change.owner)}</strong>{' '}
+            <span className="font-normal text-kumo-subtle">started this change</span>
           </span>
-        </div>
-        <div className="box-body">{change.intent}</div>
-      </div>
-      <div className="timeline">
-        {events.map((event) => (
-          <div className="timeline-item" key={event.seq}>
-            <span className="dot">
-              <EventIcon event={event} />
-            </span>
-            {describeEvent(event)} <span className="meta">{timeAgo(event.at)}</span>
-            {event.type === 'merge_checked' || event.type === 'resolution' ? (
-              <>
-                {' · '}
-                <Link to={`/p/${projectId}/overlaps/${change.changeId}/${event.otherChange.changeId}`}>
-                  View the overlap
-                </Link>
-              </>
-            ) : null}
-          </div>
-        ))}
-      </div>
+        }
+      >
+        <p className="px-4 py-3">{change.intent}</p>
+      </Box>
+      {events.length === 0 ? null : (
+        <ol className="ml-4 border-l-2 border-kumo-hairline pl-6">
+          {events.map((event) => (
+            <li className="relative py-2" key={event.seq}>
+              <span className="absolute top-1.5 -left-[38px] grid size-7 place-items-center rounded-full bg-kumo-elevated ring ring-kumo-hairline">
+                <EventIcon event={event} />
+              </span>
+              {describeEvent(event)}{' '}
+              <span className="text-sm text-kumo-subtle">
+                <TimeAgo iso={event.at} />
+              </span>
+              {event.type === 'merge_checked' || event.type === 'resolution' ? (
+                <>
+                  <span className="text-kumo-subtle"> · </span>
+                  <Link
+                    variant="plain"
+                    href={`/p/${projectId}/overlaps/${change.changeId}/${event.otherChange.changeId}`}
+                  >
+                    View the overlap
+                  </Link>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
     </>
   );
 }
 
 function Checks({ change }: ChangeProps): React.JSX.Element {
   if (change.checksError !== null) {
-    return <div className="notice icon-fail">commute.json is not valid: {change.checksError}</div>;
+    return <Banner variant="error">commute.json is not valid: {change.checksError}</Banner>;
   }
   if (change.checks.length === 0) {
-    return <div className="notice">The project declares no checks.</div>;
+    return <Banner variant="secondary">The project declares no checks.</Banner>;
   }
   return (
-    <div className="box">
+    <Box>
       {change.checks.map((check) => (
-        <div className="box-row" key={check.name}>
-          <CheckOutcomeIcon outcome={check.outcome} />
-          <details className="grow">
-            <summary>
-              <strong>{check.name}</strong> <span className="meta">{describeCheck(check)}</span>
-            </summary>
-            <table className="reads">
-              <thead>
-                <tr>
-                  <th>Reads</th>
-                  <th>Hash now</th>
-                  <th>Hash before the last restack</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(check.reads).map(([path, hash]) => (
-                  <tr key={path}>
-                    <td className="mono">{path}</td>
-                    <td className="mono">{shortCommit(hash)}</td>
-                    <td className="mono">{shortCommit(check.previousReads?.[path] ?? '')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {check.output === null ? null : <pre className="box-body">{check.output}</pre>}
-          </details>
-        </div>
+        <BoxRow key={check.name}>
+          <span className="mt-0.5">
+            <CheckOutcomeIcon outcome={check.outcome} />
+          </span>
+          <Collapsible.Root className="min-w-0 grow">
+            <Collapsible.DefaultTrigger>
+              <span className="flex items-center gap-2">
+                <strong>{check.name}</strong>
+                <span className="font-normal text-kumo-subtle">{describeCheck(check)}</span>
+              </span>
+            </Collapsible.DefaultTrigger>
+            <Collapsible.DefaultPanel>
+              <Table className="text-sm">
+                <Table.Header variant="compact">
+                  <Table.Row>
+                    <Table.Head>Reads</Table.Head>
+                    <Table.Head>Hash now</Table.Head>
+                    <Table.Head>Hash before the last restack</Table.Head>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {Object.entries(check.reads).map(([path, hash]) => (
+                    <Table.Row key={path}>
+                      <Table.Cell className="font-mono">{path}</Table.Cell>
+                      <Table.Cell>
+                        <ShortCommit commit={hash} />
+                      </Table.Cell>
+                      <Table.Cell>
+                        <ShortCommit commit={check.previousReads?.[path] ?? ''} />
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table>
+              {check.output === null ? null : (
+                <Code code={check.output} className="whitespace-pre-wrap text-kumo-default" />
+              )}
+            </Collapsible.DefaultPanel>
+          </Collapsible.Root>
+        </BoxRow>
       ))}
-    </div>
+    </Box>
   );
 }
 
@@ -187,23 +233,22 @@ type FilesProps = {
 
 function Files({ diff }: FilesProps): React.JSX.Element {
   if (diff === undefined) {
-    return <p className="meta">Loading the diff…</p>;
+    return <Loading text="Loading the diff…" />;
   }
   return (
     <>
-      <p className="meta">
-        {diff.files.length} files changed against trunk {shortCommit(diff.baseCommit)}
+      <Text variant="secondary" size="sm">
+        {diff.files.length} files changed against trunk <ShortCommit commit={diff.baseCommit} />
         {diff.isTruncated ? `; the list stops at ${diff.files.length} files` : ''}
-      </p>
+      </Text>
       {diff.files.map((file) => (
-        <div className="box" key={file.path}>
-          <div className="box-header mono">{file.path}</div>
+        <Box key={file.path} header={<span className="font-mono text-sm">{file.path}</span>}>
           {file.isText ? (
             <DiffView before={file.before} after={file.after} />
           ) : (
-            <div className="box-body meta">Binary or large file.</div>
+            <p className="px-4 py-3 text-sm text-kumo-subtle">Binary or large file.</p>
           )}
-        </div>
+        </Box>
       ))}
     </>
   );
@@ -214,43 +259,53 @@ function Sidebar({ change }: ChangeProps): React.JSX.Element {
   const checks = countChecks(change.checks);
   return (
     <aside>
-      <div className="sidebar-section">
-        <h3>Owner</h3>
-        {ownerName(change.owner)}
-      </div>
-      <div className="sidebar-section">
-        <h3>Footprint</h3>
+      <SidebarSection title="Owner">{ownerName(change.owner)}</SidebarSection>
+      <SidebarSection title="Footprint">
         {change.footprint.length === 0
           ? change.declaredPaths.map((path) => (
-              <div className="mono" key={path}>
-                {path} <span className="meta">(declared)</span>
+              <div className="font-mono text-sm" key={path}>
+                {path} <span className="font-sans text-kumo-subtle">(declared)</span>
               </div>
             ))
           : change.footprint.map((path) => (
-              <div className="mono" key={path}>
+              <div className="font-mono text-sm" key={path}>
                 {path}
               </div>
             ))}
-      </div>
-      <div className="sidebar-section">
-        <h3>Overlaps</h3>
-        {change.overlaps.length === 0 ? <span className="meta">None</span> : null}
+      </SidebarSection>
+      <SidebarSection title="Overlaps">
+        {change.overlaps.length === 0 ? <span className="text-kumo-subtle">None</span> : null}
         {change.overlaps.map((overlap) => (
           <div key={overlap.changeId}>
-            <Link to={`/p/${projectId}/overlaps/${change.changeId}/${overlap.changeId}`}>{overlap.changeId}</Link>{' '}
-            <span className="meta">{overlap.intent}</span>
+            <Link variant="plain" href={`/p/${projectId}/overlaps/${change.changeId}/${overlap.changeId}`}>
+              {overlap.changeId}
+            </Link>{' '}
+            <span className="text-kumo-subtle">{overlap.intent}</span>
           </div>
         ))}
-      </div>
-      <div className="sidebar-section">
-        <h3>Checks</h3>
+      </SidebarSection>
+      <SidebarSection title="Checks">
         {checks.kept} kept, {checks.ran} ran{checks.pending > 0 ? `, ${checks.pending} running` : ''}
-      </div>
-      <div className="sidebar-section">
-        <h3>Base on trunk</h3>
-        <code>{shortCommit(change.baseCommit)}</code>
-      </div>
+      </SidebarSection>
+      <SidebarSection title="Base on trunk">
+        <ShortCommit commit={change.baseCommit} />
+      </SidebarSection>
     </aside>
+  );
+}
+
+type MergeRowProps = {
+  icon: React.ReactNode;
+  isStrong?: boolean;
+  children: React.ReactNode;
+};
+
+function MergeRow({ icon, isStrong = false, children }: MergeRowProps): React.JSX.Element {
+  return (
+    <BoxRow className="items-center">
+      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-kumo-elevated">{icon}</span>
+      <span className={cn('min-w-0 grow', isStrong && 'font-semibold')}>{children}</span>
+    </BoxRow>
   );
 }
 
@@ -261,64 +316,51 @@ function LandingBox({ change }: ChangeProps): React.JSX.Element {
   const { kept, ran } = countChecks(change.checks);
   const isChecking = change.waitsFor.some((reason) => reason.code === 'CHECKS_PENDING');
   const isReady = change.waitsFor.length === 0;
+  const passIcon = <CheckOutcomeIcon outcome="pass" />;
   return (
     <>
-      <div className="box landing-box">
-        <div className="box-row">
+      <Box className="mt-2">
+        <MergeRow
+          icon={
+            change.overlaps.length === 0 ? passIcon : <IntersectIcon className={cn(ICON_CLASS, 'text-kumo-warning')} />
+          }
+        >
           {change.overlaps.length === 0 ? (
-            <CheckIcon className="icon-open" />
+            'Commutes with every change in flight.'
           ) : (
-            <OverlapIcon className="icon-landing" />
+            <>
+              Overlaps{' '}
+              {change.overlaps.map((overlap) => (
+                <span key={overlap.changeId}>
+                  <Link variant="plain" href={`/p/${projectId}/overlaps/${change.changeId}/${overlap.changeId}`}>
+                    {overlap.changeId}
+                  </Link>{' '}
+                </span>
+              ))}
+              {change.landsAfter.length > 0
+                ? `and lands after ${change.landsAfter.join(', ')}.`
+                : 'and merges cleanly.'}
+            </>
           )}
-          <span className="grow">
-            {change.overlaps.length === 0 ? (
-              'Commutes with every change in flight.'
-            ) : (
-              <>
-                Overlaps{' '}
-                {change.overlaps.map((overlap) => (
-                  <Link key={overlap.changeId} to={`/p/${projectId}/overlaps/${change.changeId}/${overlap.changeId}`}>
-                    {overlap.changeId}{' '}
-                  </Link>
-                ))}
-                {change.landsAfter.length > 0
-                  ? `and lands after ${change.landsAfter.join(', ')}.`
-                  : 'and merges cleanly.'}
-              </>
-            )}
-          </span>
-        </div>
-        <div className="box-row">
-          {isChecking ? <ClockIcon className="icon-landing" /> : <CheckIcon className="icon-open" />}
-          <span className="grow">
-            {isChecking
-              ? 'Checks are running on the current content.'
-              : `Every check result matches the current content: ${kept} kept, ${ran} ran.`}
-          </span>
-        </div>
+        </MergeRow>
+        <MergeRow icon={<CheckOutcomeIcon outcome={isChecking ? 'pending' : 'pass'} />}>
+          {isChecking
+            ? 'Checks are running on the current content.'
+            : `Every check result matches the current content: ${kept} kept, ${ran} ran.`}
+        </MergeRow>
         {change.resolvedConflicts === null ? null : (
-          <div className="box-row">
-            <ResolveIcon className="icon-open" />
-            <span className="grow">
-              Commute resolved the conflict in {change.resolvedConflicts.map((conflict) => conflict.path).join(', ')}
-              {change.resolvedConflicts.some((conflict) => conflict.dropped.length > 0)
-                ? `, dropping ${change.resolvedConflicts.flatMap((conflict) => conflict.dropped.map((drop) => `"${drop.text}" (${drop.reason})`)).join(', ')}.`
-                : ', keeping every line of both changes.'}
-            </span>
-          </div>
+          <MergeRow icon={<ArrowsMergeIcon className={cn(ICON_CLASS, 'text-kumo-success')} />}>
+            Commute resolved the conflict in {change.resolvedConflicts.map((conflict) => conflict.path).join(', ')}
+            {change.resolvedConflicts.some((conflict) => conflict.dropped.length > 0)
+              ? `, dropping ${change.resolvedConflicts.flatMap((conflict) => conflict.dropped.map((drop) => `"${drop.text}" (${drop.reason})`)).join(', ')}.`
+              : ', keeping every line of both changes.'}
+          </MergeRow>
         )}
-        <div className="box-row">
-          {isReady ? <CheckIcon className="icon-open" /> : <ClockIcon className="icon-landing" />}
-          <strong className="grow">
-            {isReady
-              ? 'Ready to land with the next batch.'
-              : `Waiting: ${change.waitsFor.map(describeWait).join('; ')}.`}
-          </strong>
-        </div>
-      </div>
-      <div className="spaced">
-        <ApproveBatch />
-      </div>
+        <MergeRow isStrong icon={isReady ? passIcon : <ClockIcon className={cn(ICON_CLASS, 'text-kumo-warning')} />}>
+          {isReady ? 'Ready to land with the next batch.' : `Waiting: ${change.waitsFor.map(describeWait).join('; ')}.`}
+        </MergeRow>
+      </Box>
+      <ApproveBatch />
     </>
   );
 }

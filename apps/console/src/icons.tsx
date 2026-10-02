@@ -1,19 +1,39 @@
+import type { Icon } from '@phosphor-icons/react';
 import type { Change, ChangeEvent } from '@commute/api-client';
 
-// Commute's own small icon set, drawn on a 16 by 16 grid with the current text color.
+import { cn, Loader } from '@cloudflare/kumo';
+import {
+  ArrowsMergeIcon,
+  CheckCircleIcon,
+  ClockCountdownIcon,
+  GitMergeIcon,
+  GitPullRequestIcon,
+  IntersectIcon,
+  StackIcon,
+  XCircleIcon
+} from '@phosphor-icons/react';
 
-type IconProps = {
-  className?: string;
+// The size of an icon that sits in a line of text.
+export const ICON_CLASS = 'size-4 shrink-0';
+
+type ChangeState = Change['state'];
+
+const STATE_ICONS: Record<ChangeState, Icon> = {
+  open: GitPullRequestIcon,
+  landing: ClockCountdownIcon,
+  landed: GitMergeIcon
 };
 
-type SvgProps = IconProps & {
-  children: React.ReactNode;
+const STATE_COLORS: Record<ChangeState, string> = {
+  open: 'text-kumo-success',
+  landing: 'text-kumo-warning',
+  landed: 'text-kumo-info'
 };
 
-function Svg({ className, children }: SvgProps): React.JSX.Element {
+// Two paths that cross and continue: changes that commute.
+export function MarkIcon(): React.JSX.Element {
   return (
     <svg
-      className={className}
       width="16"
       height="16"
       viewBox="0 0 16 16"
@@ -24,127 +44,19 @@ function Svg({ className, children }: SvgProps): React.JSX.Element {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {children}
+      <path d="M2 5h5l4 6h3M2 11h5l4-6h3" />
     </svg>
   );
 }
 
-// Two paths that cross and continue: changes that commute.
-export function MarkIcon(): React.JSX.Element {
-  return (
-    <Svg>
-      <path d="M2 5h5l4 6h3M2 11h5l4-6h3" />
-    </Svg>
-  );
-}
-
-export function FolderIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M1.75 3.5h4.5l1.5 1.5h6.5v7.5h-12.5z" />
-    </Svg>
-  );
-}
-
-export function FileIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M3.5 1.75h6l3 3v9.5h-9zM9.5 1.75v3h3" />
-    </Svg>
-  );
-}
-
-export function ChangeOpenIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <circle cx="8" cy="8" r="6" />
-      <circle cx="8" cy="8" r="1.5" fill="currentColor" />
-    </Svg>
-  );
-}
-
-function ChangeLandingIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 4.5V8l2.5 1.5" />
-    </Svg>
-  );
-}
-
-export function ChangeLandedIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M4 2v12M4 6c0 3 8 2 8 6v2" />
-      <circle cx="4" cy="2.5" r="0.5" fill="currentColor" />
-    </Svg>
-  );
-}
-
-export function CheckIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M3 8.5l3 3 7-7" />
-    </Svg>
-  );
-}
-
-function CrossIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M4 4l8 8M12 4l-8 8" />
-    </Svg>
-  );
-}
-
-export function ClockIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 5v3h2.5" />
-    </Svg>
-  );
-}
-
-export function CommitIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M1 8h4M11 8h4" />
-      <circle cx="8" cy="8" r="3" />
-    </Svg>
-  );
-}
-
-export function OverlapIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <circle cx="6" cy="8" r="4" />
-      <circle cx="10" cy="8" r="4" />
-    </Svg>
-  );
-}
-
-// Two lines that join into one: lines from both changes, kept together.
-export function ResolveIcon({ className }: IconProps): React.JSX.Element {
-  return (
-    <Svg className={className}>
-      <path d="M4 2v3c0 3 4 3 4 6v3M12 2v3c0 3-4 3-4 6" />
-    </Svg>
-  );
-}
-
 type StateIconProps = {
-  state: Change['state'];
+  state: ChangeState;
+  className?: string;
 };
 
-export function StateIcon({ state }: StateIconProps): React.JSX.Element {
-  if (state === 'landed') {
-    return <ChangeLandedIcon className="icon-landed" />;
-  }
-  if (state === 'landing') {
-    return <ChangeLandingIcon className="icon-landing" />;
-  }
-  return <ChangeOpenIcon className="icon-open" />;
+export function StateIcon({ state, className }: StateIconProps): React.JSX.Element {
+  const StateGlyph = STATE_ICONS[state];
+  return <StateGlyph className={cn(ICON_CLASS, STATE_COLORS[state], className)} />;
 }
 
 type EventIconProps = {
@@ -155,23 +67,27 @@ export function EventIcon({ event }: EventIconProps): React.JSX.Element {
   switch (event.type) {
     case 'overlap_found':
     case 'merge_checked': {
-      return <OverlapIcon className="icon-muted" />;
+      return <IntersectIcon className={cn(ICON_CLASS, 'text-kumo-subtle')} />;
     }
     case 'resolution': {
-      return <ResolveIcon className={event.outcome === 'ready' ? 'icon-open' : 'icon-fail'} />;
+      return (
+        <ArrowsMergeIcon
+          className={cn(ICON_CLASS, event.outcome === 'ready' ? 'text-kumo-success' : 'text-kumo-danger')}
+        />
+      );
     }
     case 'restacked': {
-      return <CommitIcon className="icon-muted" />;
+      return <StackIcon className={cn(ICON_CLASS, 'text-kumo-subtle')} />;
     }
     case 'restack_conflict':
     case 'landing_failed': {
-      return <CrossIcon className="icon-fail" />;
+      return <XCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-danger')} />;
     }
     case 'checks_done': {
-      return event.failed.length === 0 ? <CheckIcon className="icon-open" /> : <CrossIcon className="icon-fail" />;
+      return <CheckOutcomeIcon outcome={event.failed.length === 0 ? 'pass' : 'fail'} />;
     }
     case 'landed': {
-      return <ChangeLandedIcon className="icon-landed" />;
+      return <StateIcon state="landed" />;
     }
     default: {
       const unknown: never = event;
@@ -186,10 +102,10 @@ type CheckOutcomeIconProps = {
 
 export function CheckOutcomeIcon({ outcome }: CheckOutcomeIconProps): React.JSX.Element {
   if (outcome === 'pass') {
-    return <CheckIcon className="icon-open" />;
+    return <CheckCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-success')} />;
   }
   if (outcome === 'fail') {
-    return <CrossIcon className="icon-fail" />;
+    return <XCircleIcon weight="fill" className={cn(ICON_CLASS, 'text-kumo-danger')} />;
   }
-  return <ClockIcon className="icon-landing" />;
+  return <Loader size="sm" aria-label="Running" className="shrink-0 text-kumo-warning" />;
 }

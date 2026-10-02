@@ -214,11 +214,11 @@ async function approveInConsole({ batch, text }: ApproveParams): Promise<void> {
   // fill sets the whole value at once; typing key by key loses keys while live events re-render the page.
   await page.getByLabel('Your name', { exact: true }).fill(approver);
   // The batch box loads after the page. Every ready change starts checked, so the boxes are set only once the whole
-  // batch is listed.
+  // batch is listed. Each box is the element with role checkbox that carries the change ID.
   for (const changeId of batchIds) {
-    await page.locator(`input[data-change-id="${changeId}"]`).waitFor();
+    await page.locator(`[data-change-id="${changeId}"]`).waitFor();
   }
-  for (const box of await page.locator('input[data-change-id]').all()) {
+  for (const box of await page.locator('[data-change-id]').all()) {
     await box.setChecked(batchIds.has((await box.getAttribute('data-change-id')) ?? ''));
   }
   await hold(CLICK_SECONDS);

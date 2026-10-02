@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { approveBatch, getLanding } from '@commute/api-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banner, Button, Checkbox, Text } from '@cloudflare/kumo';
 
+import { Box, BoxRow } from './box';
+import { Loading } from './loading';
 import { ownerName } from './describe';
 import { useProject } from './project-context';
 
@@ -17,7 +20,13 @@ export function ApproveBatch(): React.JSX.Element {
     queryFn: async () => (await getLanding({ path: { projectId }, throwOnError: true })).data
   });
   if (landing.data === undefined) {
-    return <div className="box box-body meta">Loading the batch…</div>;
+    return (
+      <Box header="Landing batch">
+        <BoxRow>
+          <Loading text="Loading the batch…" />
+        </BoxRow>
+      </Box>
+    );
   }
   const { ready, batch } = landing.data;
   const approver = personName.trim();
@@ -43,45 +52,55 @@ export function ApproveBatch(): React.JSX.Element {
     await queryClient.invalidateQueries({ queryKey: [projectId] });
   };
   return (
-    <div className="box">
-      <div className="box-header">
-        <strong>Landing batch</strong>
-      </div>
+    <Box header="Landing batch">
       {batch === null ? null : (
-        <div className="box-body meta">
-          Landing {batch.batchId} ({batch.changeIds.join(', ')}), approved by {batch.approver}.
-        </div>
+        <BoxRow>
+          <Text variant="secondary" size="sm">
+            Landing {batch.batchId} ({batch.changeIds.join(', ')}), approved by {batch.approver}.
+          </Text>
+        </BoxRow>
       )}
-      {ready.length === 0 && batch === null ? <div className="box-body meta">No change is ready.</div> : null}
+      {ready.length === 0 && batch === null ? (
+        <BoxRow>
+          <Text variant="secondary" size="sm">
+            No change is ready.
+          </Text>
+        </BoxRow>
+      ) : null}
       {ready.map((change) => (
-        <label className="box-row" key={change.changeId}>
-          <input
-            type="checkbox"
+        <BoxRow key={change.changeId}>
+          <Checkbox
             checked={!leftOut.has(change.changeId)}
-            onChange={() => toggle(change.changeId)}
+            onCheckedChange={() => toggle(change.changeId)}
             data-change-id={change.changeId}
+            label={
+              <span className="flex flex-col font-normal">
+                <span>{change.intent}</span>
+                <Text variant="secondary" size="xs" as="span">
+                  {change.changeId} by {ownerName(change.owner)}
+                </Text>
+              </span>
+            }
           />
-          <span className="grow">
-            {change.intent}
-            <div className="meta">
-              {change.changeId} by {ownerName(change.owner)}
-            </div>
-          </span>
-        </label>
+        </BoxRow>
       ))}
-      <div className="box-body">
-        <button
-          type="button"
-          className="button-primary"
+      <div className="flex flex-col gap-2 px-4 py-3">
+        <Button
+          variant="primary"
+          className="self-start"
           disabled={chosen.length === 0 || batch !== null || approver === ''}
           onClick={() => {
             approve().catch(reportError);
           }}
         >
           Approve {chosen.length} as {approver === '' ? '(type your name)' : approver}
-        </button>
-        {error === null ? null : <div className="meta icon-fail">Approval failed: {error}</div>}
+        </Button>
+        {error === null ? null : (
+          <Banner variant="error" size="sm">
+            Approval failed: {error}
+          </Banner>
+        )}
       </div>
-    </div>
+    </Box>
   );
 }
