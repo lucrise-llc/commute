@@ -10,13 +10,14 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
-**Demo video:** a walkthrough of one real run. Alice and Bob each start 10
-agents on one repository while a person uses the console. Overlaps show up at
-the start, a conflict is resolved at the first push, batches land in parallel,
-check results that still hold are kept, and Bob's agent only waits and pulls.
-Waits play at 8×.
+**Demo video:** one real run, explained. Alice and Bob each start 10 agents on
+one repository while a person uses the console. Animated scenes explain each
+idea, and Alice's and Bob's agents run side by side. Overlaps show up at the
+start, a conflict is resolved at the first push, batches land in parallel, and
+check results that still hold are kept. Neither agent edits the conflict.
+Waits in the console play at 8×.
 
-https://github.com/user-attachments/assets/df698511-2ab4-4e92-87d8-15c6cfcabbe7
+https://github.com/user-attachments/assets/20dd1ed4-30ba-4772-8ea4-7b289de10c3e
 
 ## Why Commute, not GitHub
 
@@ -274,12 +275,12 @@ live Artifacts and Workers AI services.
    runs the same agents while a scripted person uses the console. It saves the
    screencast, a timeline of captions and chapters, and the terminal transcript
    of each agent in `apps/demo/recording`. Then run
-   `npm run compose -w @commute/demo` to write
-   `apps/demo/recording/commute-demo.mp4`: title cards, a replay of one agent's
-   terminal, the console in chapters with captions, and closing cards. Compose
-   fails when the video is larger than 10 MB, the GitHub attachment limit. Then
-   run it again with a higher `--crf`, such as
-   `npm run compose -w @commute/demo -- --crf 31`.
+   `npm run compose -w @commute/demo` to write two videos to
+   `apps/demo/recording`: animated scenes, the sessions of Alice's and Bob's
+   agents side by side, the console in chapters with captions, and closing
+   scenes. `commute-demo.mp4` is 1080p at 60 fps. `commute-demo-github.mp4` is
+   720p at 30 fps and stays under 10 MB, the GitHub attachment limit: compose
+   raises its CRF until it fits. `--crf` sets the CRF it starts from.
 
 To drive one change by hand, create a project, push a first commit to its
 trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
