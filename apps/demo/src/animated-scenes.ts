@@ -6,11 +6,12 @@ import { mkdir, readFile } from 'node:fs/promises';
 import type { FrameEntry } from './clips.ts';
 
 import { FADE_MS, FRAME_MS } from './clips.ts';
-import { captionMarkup, htmlDocument, VIDEO_HEIGHT, VIDEO_WIDTH } from './graphics.ts';
+import { captionMarkup, escapeHtml, htmlDocument, VIDEO_HEIGHT, VIDEO_WIDTH } from './graphics.ts';
 
 const BACKGROUND = '#101010';
 const BLUE = '#1868bc';
 const GREEN = '#2dc242';
+const GREEN_BRIGHT = '#75e980';
 const ORANGE = '#df3d17';
 const WHITE = '#f4fcf3';
 const GREY = '#5e5e5e';
@@ -22,110 +23,137 @@ const SHEET_SAMPLE_COUNT = 6;
 const READING_CHARS_PER_SECOND = 15;
 const READING_LEAD_MS = 300;
 const MS_PER_SECOND = 1_000;
-const GRID_COLUMNS = 25;
-const GRID_ROWS = 9;
-const GRID_GAP_X = 57;
-const GRID_GAP_Y = 60;
-const GRID_START_X = 265;
-const GRID_START_Y = 195;
+const COORD_DIGITS = 2;
+const OPACITY_DIGITS = 3;
+const BATCH_TOTAL = 16;
+const CHANGE_TOTAL = 20;
+const BATCH_COUNT = 4;
+const MARK_VIEWBOX_SIZE = 16;
+const RESULT_SLOT = 3;
+const APPROVAL_SLOT = 2;
+const WORLD = {
+  boxLeft: 180,
+  boxTop: 122,
+  boxWidth: 280,
+  boxHeight: 170,
+  boxGap: 40,
+  boxCount: 5,
+  boxLabelY: 43,
+  boxCenterLabelY: 96,
+  boxLineStartY: 77,
+  boxLineGap: 29,
+  resultLineStartY: 76,
+  resultLineGap: 24,
+  busLeft: 180,
+  busTop: 430,
+  busWidth: 1_560,
+  busHeight: 90,
+  busLabelY: 55,
+  busCountX: 1_605,
+  connectorTop: 292,
+  connectorBottom: 430,
+  lowerConnectorTop: 520,
+  lowerConnectorBottom: 635,
+  bandLeft: 180,
+  bandTop: 635,
+  bandColumns: 33,
+  bandRows: 6,
+  bandGapX: 48,
+  bandGapY: 43,
+  iconSize: 24,
+  lowerConnectorStride: 4,
+  lowerConnectorCount: 9,
+  centerX: 960,
+  queueY: 580,
+  queueStartX: 610,
+  queueEndX: 960,
+  queueCount: 4,
+  queueBaseGap: 68,
+  queueGapGrowth: 12,
+  batchConnectorStride: 2,
+  batchConnectorCount: 16,
+  labelSize: 25,
+  packetRadius: 7
+};
 const MOTION = {
-  enterMs: 650,
-  enterLeadMs: 180,
-  staggerMs: 22,
-  gridDriftPx: 18,
-  gridDriftPeriodMs: 1_900,
-  gridVerticalDriftPx: 9,
-  gridVerticalPeriodMs: 2_200,
-  flowIrregularity: 0.35,
-  flowWave: 1.7,
-  packetPeriodMs: 2_300,
-  packetRadius: 6,
-  packetCount: 5,
-  queueCount: 36,
-  queueSpacing: 25,
-  landingIntervalMs: 1_700,
-  batchApprovalMs: 4_200,
-  batchFlightMs: 1_800,
-  batchStaggerMs: 65,
-  batchCount: 16,
+  enterMs: 900,
+  busEnterMs: 1_000,
+  boxesEnterMs: 1_450,
+  packetsEnterMs: 2_300,
+  agentStaggerMs: 5,
+  agentRisePx: 65,
+  packetFlightMs: 1_120,
+  packetPeriodMs: 2_100,
+  packetPeriodSpreadMs: 660,
+  packetOffsetStrideMs: 613,
+  packetPeriodStrideMs: 371,
+  pulseMs: 260,
+  pulseExtraWidth: 3,
+  queueLandMs: 1_600,
+  queueLaunchMs: 900,
+  conflictLandMs: 1_950,
+  conflictStopMs: 3_300,
+  laneRevealMs: 750,
   overlapPathsMs: 1_300,
   overlapMergeMs: 3_000,
   overlapResultMs: 7_200,
-  conflictLandingMs: 2_000,
-  conflictDiscoveryMs: 3_300,
+  resolutionModelMs: 4_700,
   resolutionAnswerMs: 8_000,
   resolutionApplyMs: 11_000,
-  resolutionModelMs: 4_700,
+  resolutionLineMs: 300,
+  resolutionLineStaggerMs: 300,
+  batchApproveMs: 4_200,
+  batchFlightMs: 1_150,
+  batchLaunchSpacingMs: 95,
+  batchShuffleStride: 7,
+  batchArrivalMs: 180,
   checkLandingMs: 6_700,
-  checkSaveMs: 900,
   checkHashMs: 7_350,
   checkRunMs: 8_200,
   checkPassMs: 9_800,
-  lineProgress: 1,
+  everythingBatchMs: 710,
+  everythingFlightMs: 520,
+  brandEnterMs: 850,
+  endClearMs: 800,
+  driftMs: 2_700,
+  driftPx: 3,
+  unit: 1,
   half: 0.5,
-  fontBaselineDivisor: 3,
-  boxInset: 8,
-  boxInsetPair: 16,
+  double: 2,
+  cubic: 3
+};
+const STYLE = {
+  boxStroke: 3,
+  boxInnerInset: 9,
+  boxInnerPair: 18,
+  boxDash: '10 9',
+  hatchWidth: 12,
+  hatchStroke: 2,
+  connectorStroke: 2,
+  connectorDash: '8 10',
+  fontBaseline: 8,
+  iconStroke: 2,
   iconCapLeft: 7,
   iconCapWidth: 10,
   iconBodyTop: 13,
   iconBodyWidth: 11,
   iconRight: 13,
-  iconSize: 24,
   iconDotRadius: 3,
-  iconRise: 70,
-  gridStaggerMs: 9,
-  gridEnterMs: 850,
-  brandGridOpacity: 0.16,
-  ambientGridOpacity: 0.16,
-  overlapOtherDelaySteps: 13,
-  architectureCoordinatorDelaySteps: 11,
-  architectureContainersDelaySteps: 13,
-  architectureResolverDelaySteps: 13,
-  labelEnterDistance: 32,
-  oneOpacity: 1,
-  sceneHeadingLeft: 160,
-  sceneHeadingTop: 115,
-  sceneHeadingRuleTop: 145,
-  sceneHeadingRuleRight: 1_760,
-  sceneHeadingFontSize: 45,
-  sceneHeadingLetterSpacing: 3,
-  gridUpperScale: 0.9,
-  gridUpperLeft: -90,
-  gridUpperTop: -40,
-  gridUpperOpacity: 0.65
+  markTileSize: 94,
+  markTileRadius: 18,
+  markNameSize: 86,
+  markUrlSize: 38,
+  markLeft: 660,
+  markTop: 166,
+  markNameX: 782,
+  markNameY: 232,
+  markUrlY: 342
 };
-const EASING = { cubic: 3, double: 2 };
-const SVG_STYLE = {
-  hatchWidth: 12,
-  hatchAngle: 35,
-  hatchStrokeWidth: 2,
-  boxStrokeWidth: 3,
-  boxDash: '7 6',
-  connectorStrokeWidth: 2,
-  connectorDash: '7 9',
-  headingDash: '5 8',
-  hatchOpacity: 0.85,
-  boxFontSize: 29
-};
-const FLEET_LAYOUT = {
-  trunk: { left: 760, top: 765, width: 400, height: 76, label: 'TRUNK' },
-  packetX: 960,
-  packetStartY: 710,
-  packetEndY: 765
-};
-const BRAND_LAYOUT = {
-  centerX: 960,
-  nameY: 470,
-  nameFontSize: 154,
-  taglineY: 555,
-  taglineFontSize: 43
-};
-const AMBIENT_VISUALS = new Set(['overlaps', 'resolution', 'batch', 'checks', 'everything', 'architecture']);
+const OPENING_VISUALS = new Set(['fleet', 'queue', 'rerun', 'late-conflict', 'lanes', 'dependency', 'brand']);
 const STAGE_HTML = htmlDocument({
   css: `*{box-sizing:border-box}html,body{margin:0;width:${VIDEO_WIDTH}px;height:${VIDEO_HEIGHT}px;background:${BACKGROUND}}
     #art{width:${VIDEO_WIDTH}px;height:${ART_HEIGHT}px;overflow:hidden}svg{display:block}
-    #caption{height:${CAPTION_HEIGHT}px;background:#0c0d0f;color:#f1f2f4;display:flex;align-items:center;
+    #caption{height:${CAPTION_HEIGHT}px;background:${BACKGROUND};color:#f1f2f4;display:flex;align-items:center;
     justify-content:center;padding:0 240px;text-align:center;text-wrap:balance;font:500 36px/1.35 -apple-system,
     BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;-webkit-font-smoothing:antialiased}
     .caption-text{max-width:1440px;max-height:100px}
@@ -374,971 +402,614 @@ type SceneArtParams = {
   sequenceTimeMs: number;
 };
 
-function sceneArt({ visual, timeMs, sequenceTimeMs }: SceneArtParams): string {
-  const ambient = AMBIENT_VISUALS.has(visual) ? agentGrid(sequenceTimeMs, MOTION.ambientGridOpacity) : '';
-  const content = `${ambient}${visualArt({ visual, timeMs, sequenceTimeMs })}`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${ART_HEIGHT}">
-    <defs><pattern id="hatch" width="${SVG_STYLE.hatchWidth}" height="${SVG_STYLE.hatchWidth}" patternUnits="userSpaceOnUse" patternTransform="rotate(${SVG_STYLE.hatchAngle})"><path d="M0 0V${SVG_STYLE.hatchWidth}" stroke="#1c4a27" stroke-width="${SVG_STYLE.hatchStrokeWidth}"/></pattern></defs>
-    <rect width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" fill="${BACKGROUND}"/>${content}</svg>`;
-}
-
-type VisualArtParams = {
-  visual: string;
-  timeMs: number;
-  sequenceTimeMs: number;
+type Slot = {
+  index: number;
+  label: string;
+  lines?: string[];
+  hasDetails?: boolean;
 };
 
-function visualArt({ visual, timeMs, sequenceTimeMs }: VisualArtParams): string {
-  switch (visual) {
-    case 'fleet':
-      return `${heading('MANY AGENTS · ONE REPOSITORY')}${agentGrid(sequenceTimeMs)}${box(FLEET_LAYOUT.trunk)}${flow({ fromX: FLEET_LAYOUT.packetX, fromY: FLEET_LAYOUT.packetStartY, toX: FLEET_LAYOUT.packetX, toY: FLEET_LAYOUT.packetEndY, timeMs, count: MOTION.packetCount })}`;
-    case 'queue':
-      return `${heading('ONE LINE')}${queueArt({ timeMs, sequenceTimeMs })}`;
-    case 'rerun':
-      return `${heading('TRUNK MOVES · CHECKS RESTART')}${rerunArt({ timeMs, sequenceTimeMs })}`;
-    case 'late-conflict':
-      return `${heading('CONFLICT FOUND LATE')}${conflictArt({ timeMs, sequenceTimeMs })}`;
-    case 'lanes':
-      return `${heading('ONE LANE PER AREA OF CODE')}${lanesArt({ timeMs, sequenceTimeMs, hasDependency: false })}`;
-    case 'dependency':
-      return `${heading('ORDER ONLY WHERE IT MATTERS')}${lanesArt({ timeMs, sequenceTimeMs, hasDependency: true })}`;
-    case 'brand':
-      return `${brandGrid(sequenceTimeMs, timeMs)}<text x="${BRAND_LAYOUT.centerX}" y="${BRAND_LAYOUT.nameY}" text-anchor="middle" fill="${WHITE}" font-size="${BRAND_LAYOUT.nameFontSize}" font-weight="700" font-family="Arial,sans-serif">Commute</text><text x="${BRAND_LAYOUT.centerX}" y="${BRAND_LAYOUT.taglineY}" text-anchor="middle" fill="${WHITE}" font-size="${BRAND_LAYOUT.taglineFontSize}" font-family="Arial,sans-serif">Many coding agents, one repository.</text>`;
-    case 'overlaps':
-      return `${heading('OVERLAPS ARE KNOWN AT THE START')}${overlapsArt(timeMs)}`;
-    case 'resolution':
-      return `${heading('RESOLVED AT THE FIRST PUSH')}${resolutionArt(timeMs)}`;
-    case 'batch':
-      return `${heading('ONE APPROVAL · ONE BATCH')}${batchArt(timeMs)}`;
-    case 'checks':
-      return `${heading('RESULTS FOLLOW CONTENT')}${checksArt(timeMs)}`;
-    case 'everything':
-      return `${heading('EVERYTHING LANDS')}${everythingArt(timeMs)}`;
-    case 'agent':
-      return `${heading("WHAT BOB'S AGENT SAW")}${agentArt(timeMs)}`;
-    case 'architecture':
-      return `${heading('COMMUTE RUNS ON CLOUDFLARE')}${architectureArt(timeMs)}`;
-    case 'end':
-      return endArt(timeMs, sequenceTimeMs);
-    default:
-      throw new Error(`UNKNOWN_SCENE: ${visual}`);
-  }
+function sceneArt({ visual, timeMs, sequenceTimeMs }: SceneArtParams): string {
+  const isOpening = OPENING_VISUALS.has(visual);
+  const worldTimeMs = isOpening ? sequenceTimeMs : timeMs;
+  const slots = slotsForVisual({ visual, timeMs });
+  const hasQueue = visual === 'queue' || visual === 'rerun' || visual === 'late-conflict';
+  const busLabel = visual === 'brand' ? 'COMMUTE' : 'TRUNK';
+  const busValue = busValueForVisual({ visual, timeMs });
+  const queueTimeMs = visual === 'queue' || visual === 'rerun' ? worldTimeMs : timeMs;
+  const busPulse = busPulseForVisual({ visual, timeMs: queueTimeMs });
+  const busOpacity = visual === 'fleet' ? smooth((worldTimeMs - MOTION.busEnterMs) / MOTION.enterMs) : MOTION.unit;
+  const pieces = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${ART_HEIGHT}"><defs>
+      <pattern id="hatch" width="${STYLE.hatchWidth}" height="${STYLE.hatchWidth}" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+        <path d="M0 0V${STYLE.hatchWidth}" stroke="#1c4a27" stroke-width="${STYLE.hatchStroke}"/>
+      </pattern></defs><rect width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" fill="${BACKGROUND}"/>`,
+    connectorLines({ slots, hasQueue, timeMs, visual }),
+    `<g opacity="${busOpacity.toFixed(OPACITY_DIGITS)}">${busBox({ label: busLabel, value: busValue, pulse: busPulse })}</g>`,
+    ...slots.map((slot) => slotBox({ slot, worldTimeMs, visual })),
+    agentBand({ worldTimeMs, isOpening }),
+    connectorPackets({ slots, hasQueue, worldTimeMs, visual }),
+    detailForVisual({ visual, timeMs: visual === 'rerun' ? worldTimeMs : timeMs }),
+    '</svg>'
+  ];
+  return pieces.join('');
 }
 
 function smooth(progress: number): number {
-  const clamped = Math.max(0, Math.min(1, progress));
-  return clamped * clamped * (EASING.cubic - EASING.double * clamped);
+  const clamped = Math.max(0, Math.min(MOTION.unit, progress));
+  return clamped * clamped * (MOTION.cubic - MOTION.double * clamped);
 }
 
-function heading(label: string): string {
-  return `<text x="${MOTION.sceneHeadingLeft}" y="${MOTION.sceneHeadingTop}" fill="${WHITE}" font-size="${MOTION.sceneHeadingFontSize}" font-weight="700" font-family="Arial,sans-serif" letter-spacing="${MOTION.sceneHeadingLetterSpacing}">${label}</text><path d="M${MOTION.sceneHeadingLeft} ${MOTION.sceneHeadingRuleTop}H${MOTION.sceneHeadingRuleRight}" stroke="${GREY}" stroke-dasharray="${SVG_STYLE.headingDash}"/>`;
+function slotLeft(index: number): number {
+  return WORLD.boxLeft + index * (WORLD.boxWidth + WORLD.boxGap);
 }
 
-type BoxParams = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  label: string;
-  color?: string;
-  fontSize?: number;
-};
+function slotCenter(index: number): number {
+  return slotLeft(index) + WORLD.boxWidth * MOTION.half;
+}
 
-function box({ left, top, width, height, label, color = GREEN, fontSize = SVG_STYLE.boxFontSize }: BoxParams): string {
-  return `<g><rect x="${left}" y="${top}" width="${width}" height="${height}" fill="#122116" stroke="${color}" stroke-width="${SVG_STYLE.boxStrokeWidth}"/>
-    <rect x="${left + MOTION.boxInset}" y="${top + MOTION.boxInset}" width="${width - MOTION.boxInsetPair}" height="${height - MOTION.boxInsetPair}" fill="url(#hatch)" stroke="${color}" stroke-dasharray="${SVG_STYLE.boxDash}" opacity="${SVG_STYLE.hatchOpacity}"/>
-    <text x="${left + width * MOTION.half}" y="${top + height * MOTION.half + fontSize / MOTION.fontBaselineDivisor}" text-anchor="middle" fill="${WHITE}" font-size="${fontSize}" font-family="Menlo,Consolas,monospace">${label}</text></g>`;
+function iconCenter(column: number): number {
+  return WORLD.bandLeft + column * WORLD.bandGapX + WORLD.iconSize * MOTION.half;
 }
 
 function line(path: string): string {
-  return `<path d="${path}" fill="none" stroke="${GREY}" stroke-width="${SVG_STYLE.connectorStrokeWidth}" stroke-dasharray="${SVG_STYLE.connectorDash}"/>`;
+  return `<path d="${path}" fill="none" stroke="${GREY}" stroke-width="${STYLE.connectorStroke}" stroke-dasharray="${STYLE.connectorDash}"/>`;
 }
 
-function dot(left: number, top: number): string {
-  return `<circle cx="${left}" cy="${top}" r="${MOTION.packetRadius}" fill="${ORANGE}"/>`;
+function packet(left: number, top: number): string {
+  return `<circle cx="${left.toFixed(COORD_DIGITS)}" cy="${top.toFixed(COORD_DIGITS)}" r="${WORLD.packetRadius}" fill="${ORANGE}"/>`;
 }
 
-type FlowParams = {
+type PacketOnParams = {
   fromX: number;
   fromY: number;
   toX: number;
   toY: number;
   timeMs: number;
-  count: number;
-  periodMs?: number;
-  delayMs?: number;
+  seed: number;
 };
 
-function flow({
-  fromX,
-  fromY,
-  toX,
-  toY,
-  timeMs,
-  count,
-  periodMs = MOTION.packetPeriodMs,
-  delayMs = 0
-}: FlowParams): string {
-  const packets: string[] = [];
-  const activeMs = Math.max(0, timeMs - delayMs);
-  for (let index = 0; index < count; index += 1) {
-    const spacing = (index + Math.sin(index * MOTION.flowWave) * MOTION.flowIrregularity) / count;
-    const progress = (activeMs / periodMs + spacing) % MOTION.lineProgress;
-    const left = fromX + (toX - fromX) * progress;
-    const top = fromY + (toY - fromY) * progress;
-    const opacity = Math.min(MOTION.oneOpacity, activeMs / MOTION.enterMs);
-    packets.push(`<g opacity="${opacity}">${dot(left, top)}</g>`);
-  }
-  return packets.join('');
-}
-
-type EnterBoxParams = BoxParams & {
-  timeMs: number;
-  delayMs: number;
-};
-
-function enterBox({ timeMs, delayMs, ...params }: EnterBoxParams): string {
-  const progress = smooth((timeMs + MOTION.enterLeadMs - delayMs) / MOTION.enterMs);
-  if (progress === 0) {
+function packetOn({ fromX, fromY, toX, toY, timeMs, seed }: PacketOnParams): string {
+  const periodMs = MOTION.packetPeriodMs + ((seed * MOTION.packetPeriodStrideMs) % MOTION.packetPeriodSpreadMs);
+  const phaseMs = (timeMs + ((seed * MOTION.packetOffsetStrideMs) % periodMs)) % periodMs;
+  if (phaseMs >= MOTION.packetFlightMs) {
     return '';
   }
-  return `<g opacity="${progress}" transform="translate(0 ${(MOTION.lineProgress - progress) * MOTION.labelEnterDistance})">${box(params)}</g>`;
+  const progress = smooth(phaseMs / MOTION.packetFlightMs);
+  return packet(fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress);
 }
 
-type AgentIconParams = {
+function arrivalPulse(timeMs: number, seed: number): number {
+  const periodMs = MOTION.packetPeriodMs + ((seed * MOTION.packetPeriodStrideMs) % MOTION.packetPeriodSpreadMs);
+  const phaseMs = (timeMs + ((seed * MOTION.packetOffsetStrideMs) % periodMs)) % periodMs;
+  if (phaseMs < MOTION.packetFlightMs || phaseMs > MOTION.packetFlightMs + MOTION.pulseMs) {
+    return 0;
+  }
+  return MOTION.unit - (phaseMs - MOTION.packetFlightMs) / MOTION.pulseMs;
+}
+
+type BoxShapeParams = {
   left: number;
   top: number;
-  opacity?: number;
+  width: number;
+  height: number;
+  pulse: number;
 };
 
-function agentIcon({ left, top, opacity = 1 }: AgentIconParams): string {
-  return `<g fill="none" stroke="${BLUE}" stroke-width="2" opacity="${opacity}"><rect x="${left + MOTION.iconCapLeft}" y="${top}" width="${MOTION.iconCapWidth}" height="${MOTION.iconCapWidth}" rx="1"/><rect x="${left}" y="${top + MOTION.iconBodyTop}" width="${MOTION.iconBodyWidth}" height="${MOTION.iconCapWidth}" rx="1"/><rect x="${left + MOTION.iconRight}" y="${top + MOTION.iconBodyTop}" width="${MOTION.iconBodyWidth}" height="${MOTION.iconCapWidth}" rx="1"/></g>`;
+function boxShape({ left, top, width, height, pulse }: BoxShapeParams): string {
+  const stroke = pulse > 0 ? GREEN_BRIGHT : GREEN;
+  const strokeWidth = STYLE.boxStroke + pulse * MOTION.pulseExtraWidth;
+  return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="#122116" stroke="${stroke}" stroke-width="${strokeWidth}"/>
+    <rect x="${left + STYLE.boxInnerInset}" y="${top + STYLE.boxInnerInset}" width="${width - STYLE.boxInnerPair}" height="${height - STYLE.boxInnerPair}" fill="url(#hatch)" stroke="${stroke}" stroke-width="${STYLE.boxStroke}" stroke-dasharray="${STYLE.boxDash}"/>`;
 }
 
-function agentGrid(timeMs: number, opacity = 1): string {
-  const pieces: string[] = [];
-  for (let row = 0; row < GRID_ROWS; row += 1) {
-    for (let column = 0; column < GRID_COLUMNS; column += 1) {
-      const index = row * GRID_COLUMNS + column;
-      const rise = smooth((timeMs - index * MOTION.gridStaggerMs) / MOTION.gridEnterMs);
-      const drift = Math.sin(timeMs / MOTION.gridDriftPeriodMs + row / GRID_ROWS) * MOTION.gridDriftPx;
-      const left = GRID_START_X + column * GRID_GAP_X + drift;
-      const verticalDrift =
-        Math.sin(timeMs / MOTION.gridVerticalPeriodMs + column / GRID_COLUMNS) * MOTION.gridVerticalDriftPx;
-      const top = GRID_START_Y + row * GRID_GAP_Y + (MOTION.lineProgress - rise) * MOTION.iconRise + verticalDrift;
-      pieces.push(
-        `<circle cx="${left + MOTION.iconSize * MOTION.half}" cy="${GRID_START_Y + row * GRID_GAP_Y + MOTION.iconSize * MOTION.half}" r="${MOTION.iconDotRadius}" fill="${BLUE}" opacity="${opacity * (MOTION.lineProgress - rise)}"/>`
-      );
-      pieces.push(agentIcon({ left, top, opacity: opacity * rise }));
-    }
+type BusBoxParams = {
+  label: string;
+  value: string;
+  pulse: number;
+};
+
+function busBox({ label, value, pulse }: BusBoxParams): string {
+  const shape = boxShape({
+    left: WORLD.busLeft,
+    top: WORLD.busTop,
+    width: WORLD.busWidth,
+    height: WORLD.busHeight,
+    pulse
+  });
+  const centerY = WORLD.busTop + WORLD.busLabelY;
+  const valueMarkup =
+    value === ''
+      ? ''
+      : `<text x="${WORLD.busCountX}" y="${centerY}" text-anchor="end" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`;
+  return `<g>${shape}<text x="${WORLD.centerX}" y="${centerY}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${label}</text>${valueMarkup}</g>`;
+}
+
+type SlotBoxParams = {
+  slot: Slot;
+  worldTimeMs: number;
+  visual: string;
+};
+
+function slotBox({ slot, worldTimeMs, visual }: SlotBoxParams): string {
+  const left = slotLeft(slot.index);
+  let progress = MOTION.unit;
+  if (visual === 'fleet') {
+    progress = smooth((worldTimeMs - MOTION.boxesEnterMs - slot.index * MOTION.batchArrivalMs) / MOTION.enterMs);
+  } else if (visual === 'end') {
+    progress = MOTION.unit - smooth(worldTimeMs / MOTION.endClearMs);
   }
-  return pieces.join('');
-}
-
-function upperGrid(sequenceTimeMs: number, entryTimeMs?: number): string {
-  const progress = entryTimeMs === undefined ? MOTION.lineProgress : smooth(entryTimeMs / MOTION.enterMs);
-  const left = MOTION.gridUpperLeft * progress;
-  const top = MOTION.gridUpperTop * progress;
-  const scale = MOTION.lineProgress + (MOTION.gridUpperScale - MOTION.lineProgress) * progress;
-  return `<g transform="translate(${left} ${top}) scale(${scale})">${agentGrid(sequenceTimeMs, MOTION.gridUpperOpacity)}</g>`;
-}
-
-function brandGrid(sequenceTimeMs: number, timeMs: number): string {
-  const progress = smooth(timeMs / MOTION.enterMs);
-  const left = MOTION.gridUpperLeft * (MOTION.lineProgress - progress);
-  const top = MOTION.gridUpperTop * (MOTION.lineProgress - progress);
-  const scale = MOTION.gridUpperScale + (MOTION.lineProgress - MOTION.gridUpperScale) * progress;
-  const opacity = MOTION.gridUpperOpacity + (MOTION.brandGridOpacity - MOTION.gridUpperOpacity) * progress;
-  return `<g transform="translate(${left} ${top}) scale(${scale})">${agentGrid(sequenceTimeMs, opacity)}</g>`;
-}
-
-type OpeningArtParams = {
-  timeMs: number;
-  sequenceTimeMs: number;
-};
-
-const QUEUE_LAYOUT = {
-  trunk: { left: 1_500, top: 635, width: 270, height: 120, label: 'TRUNK' },
-  lineStartX: 520,
-  lineEndX: 1_500,
-  lineY: 695,
-  sourceX: 235,
-  sourceY: 510,
-  sourceColumns: 12,
-  sourceColumnGap: 65,
-  sourceRowGap: 48,
-  queueRight: 1_440,
-  queueTop: 695,
-  launchDistance: 210,
-  landingLabelY: 845,
-  landingLabelX: 960
-};
-
-function queueArt({ timeMs, sequenceTimeMs }: OpeningArtParams): string {
-  const pieces = [
-    upperGrid(sequenceTimeMs, timeMs),
-    box(QUEUE_LAYOUT.trunk),
-    line(`M${QUEUE_LAYOUT.lineStartX} ${QUEUE_LAYOUT.lineY}H${QUEUE_LAYOUT.lineEndX}`)
-  ];
-  const landed = Math.floor(timeMs / MOTION.landingIntervalMs);
-  const landingProgress = (timeMs % MOTION.landingIntervalMs) / MOTION.landingIntervalMs;
-  for (let index = 0; index < MOTION.queueCount; index += 1) {
-    const sourceColumn = index % QUEUE_LAYOUT.sourceColumns;
-    const sourceRow = Math.floor(index / QUEUE_LAYOUT.sourceColumns);
-    const sourceX = QUEUE_LAYOUT.sourceX + sourceColumn * QUEUE_LAYOUT.sourceColumnGap;
-    const sourceY = QUEUE_LAYOUT.sourceY + sourceRow * QUEUE_LAYOUT.sourceRowGap;
-    const targetX = QUEUE_LAYOUT.queueRight - index * MOTION.queueSpacing;
-    const enter = smooth((timeMs - index * MOTION.staggerMs) / MOTION.enterMs);
-    const queueX = targetX + (landed + landingProgress) * MOTION.queueSpacing;
-    const left = sourceX + (queueX - sourceX) * enter;
-    const top = sourceY + (QUEUE_LAYOUT.queueTop - sourceY) * enter;
-    pieces.push(dot(left, top));
+  let pulse = arrivalPulse(worldTimeMs, slot.index + MOTION.unit);
+  if (visual === 'checks') {
+    const elapsedMs = worldTimeMs - MOTION.checkPassMs;
+    pulse =
+      slot.index === 0 && elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
   }
-  pieces.push(dot(QUEUE_LAYOUT.queueRight + landingProgress * QUEUE_LAYOUT.launchDistance, QUEUE_LAYOUT.queueTop));
-  pieces.push(
-    `<text x="${QUEUE_LAYOUT.landingLabelX}" y="${QUEUE_LAYOUT.landingLabelY}" text-anchor="middle" fill="${WHITE}" font-size="35" font-family="Menlo,monospace">ONE AT A TIME · OTHERS WAIT</text>`
-  );
-  return pieces.join('');
-}
-
-const RERUN_LAYOUT = {
-  trunk: { left: 1_500, top: 570, width: 270, height: 115, label: 'TRUNK' },
-  lineY: 625,
-  lineStartX: 260,
-  lineEndX: 1_500,
-  checkCount: 10,
-  checkStartX: 295,
-  checkGap: 110,
-  checkTop: 745,
-  checkWidth: 90,
-  checkHeight: 65,
-  checkFontSize: 17,
-  progressTop: 680,
-  progressLength: 65
-};
-
-function rerunArt({ timeMs, sequenceTimeMs }: OpeningArtParams): string {
-  const pieces = [
-    upperGrid(sequenceTimeMs),
-    box(RERUN_LAYOUT.trunk),
-    line(`M${RERUN_LAYOUT.lineStartX} ${RERUN_LAYOUT.lineY}H${RERUN_LAYOUT.lineEndX}`),
-    flow({
-      fromX: RERUN_LAYOUT.lineStartX,
-      fromY: RERUN_LAYOUT.lineY,
-      toX: RERUN_LAYOUT.lineEndX,
-      toY: RERUN_LAYOUT.lineY,
-      timeMs,
-      count: MOTION.queueCount
+  if (visual === 'batch' && slot.index === APPROVAL_SLOT) {
+    const elapsedMs = worldTimeMs - MOTION.batchApproveMs;
+    pulse = elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
+  }
+  const shape = boxShape({ left, top: WORLD.boxTop, width: WORLD.boxWidth, height: WORLD.boxHeight, pulse });
+  const centerX = slotCenter(slot.index);
+  const hasDetails = slot.hasDetails === true || (slot.lines?.length ?? 0) > 0;
+  const labelY = WORLD.boxTop + (hasDetails ? WORLD.boxLabelY : WORLD.boxCenterLabelY);
+  const lines = (slot.lines ?? [])
+    .map((value, index) => {
+      const top = WORLD.boxTop + WORLD.boxLineStartY + index * WORLD.boxLineGap;
+      return `<text x="${centerX}" y="${top}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`;
     })
-  ];
-  const checkProgress = (timeMs % MOTION.landingIntervalMs) / MOTION.landingIntervalMs;
-  for (let index = 0; index < RERUN_LAYOUT.checkCount; index += 1) {
-    const left = RERUN_LAYOUT.checkStartX + index * RERUN_LAYOUT.checkGap;
-    const center = left + RERUN_LAYOUT.checkWidth * MOTION.half;
-    pieces.push(line(`M${center} ${RERUN_LAYOUT.progressTop}V${RERUN_LAYOUT.checkTop}`));
-    pieces.push(
-      enterBox({
-        left,
-        top: RERUN_LAYOUT.checkTop,
-        width: RERUN_LAYOUT.checkWidth,
-        height: RERUN_LAYOUT.checkHeight,
-        label: 'CHECK',
-        color: ORANGE,
-        fontSize: RERUN_LAYOUT.checkFontSize,
-        timeMs,
-        delayMs: index * MOTION.staggerMs
-      })
-    );
-    pieces.push(dot(center, RERUN_LAYOUT.progressTop + checkProgress * RERUN_LAYOUT.progressLength));
-  }
-  return pieces.join('');
+    .join('');
+  return `<g opacity="${progress.toFixed(OPACITY_DIGITS)}">${shape}<text x="${centerX}" y="${labelY}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(slot.label)}</text>${lines}</g>`;
 }
-
-const CONFLICT_LAYOUT = {
-  left: { left: 200, top: 500, width: 490, height: 115, label: 'c-3 · SEARCH' },
-  right: { left: 1_230, top: 500, width: 490, height: 115, label: 'c-5 · ORDERS' },
-  trunk: { left: 790, top: 425, width: 340, height: 100, label: 'TRUNK' },
-  file: { left: 710, top: 735, width: 500, height: 100, label: 'src/routes.mjs', color: BLUE },
-  leftStartX: 445,
-  rightStartX: 1_475,
-  startY: 615,
-  leftEndX: 850,
-  rightEndX: 1_070,
-  fileY: 735,
-  trunkLeftX: 790,
-  trunkRightX: 1_130,
-  trunkY: 475,
-  leftTrunkX: 690,
-  rightTrunkX: 1_230,
-  changeCenterY: 560,
-  labelX: 960,
-  labelY: 890
+type ConnectorsParams = {
+  slots: Slot[];
+  hasQueue: boolean;
+  timeMs: number;
+  visual: string;
 };
 
-function conflictArt({ timeMs, sequenceTimeMs }: OpeningArtParams): string {
-  return `${upperGrid(sequenceTimeMs)}${enterBox({ ...CONFLICT_LAYOUT.left, timeMs, delayMs: 0 })}
-    ${enterBox({ ...CONFLICT_LAYOUT.right, timeMs, delayMs: MOTION.enterMs })}
-    ${box({ ...CONFLICT_LAYOUT.trunk, label: timeMs >= MOTION.conflictLandingMs ? 'TRUNK · c-3 LANDED' : 'TRUNK', fontSize: 24 })}
-    ${box(CONFLICT_LAYOUT.file)}
-    ${line(`M${CONFLICT_LAYOUT.leftTrunkX} ${CONFLICT_LAYOUT.changeCenterY}L${CONFLICT_LAYOUT.trunkLeftX} ${CONFLICT_LAYOUT.trunkY}`)}
-    ${line(`M${CONFLICT_LAYOUT.rightTrunkX} ${CONFLICT_LAYOUT.changeCenterY}L${CONFLICT_LAYOUT.trunkRightX} ${CONFLICT_LAYOUT.trunkY}`)}
-    ${flow({ fromX: CONFLICT_LAYOUT.leftTrunkX, fromY: CONFLICT_LAYOUT.changeCenterY, toX: CONFLICT_LAYOUT.trunkLeftX, toY: CONFLICT_LAYOUT.trunkY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: CONFLICT_LAYOUT.rightTrunkX, fromY: CONFLICT_LAYOUT.changeCenterY, toX: CONFLICT_LAYOUT.trunkRightX, toY: CONFLICT_LAYOUT.trunkY, timeMs, count: MOTION.packetCount, delayMs: MOTION.conflictLandingMs })}
-    ${line(`M${CONFLICT_LAYOUT.leftStartX} ${CONFLICT_LAYOUT.startY}L${CONFLICT_LAYOUT.leftEndX} ${CONFLICT_LAYOUT.fileY}`)}
-    ${line(`M${CONFLICT_LAYOUT.rightStartX} ${CONFLICT_LAYOUT.startY}L${CONFLICT_LAYOUT.rightEndX} ${CONFLICT_LAYOUT.fileY}`)}
-    ${flow({ fromX: CONFLICT_LAYOUT.leftStartX, fromY: CONFLICT_LAYOUT.startY, toX: CONFLICT_LAYOUT.leftEndX, toY: CONFLICT_LAYOUT.fileY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: CONFLICT_LAYOUT.rightStartX, fromY: CONFLICT_LAYOUT.startY, toX: CONFLICT_LAYOUT.rightEndX, toY: CONFLICT_LAYOUT.fileY, timeMs, count: MOTION.packetCount, delayMs: MOTION.conflictLandingMs })}
-    ${timeMs >= MOTION.conflictDiscoveryMs ? `<text x="${CONFLICT_LAYOUT.labelX}" y="${CONFLICT_LAYOUT.labelY}" text-anchor="middle" fill="${ORANGE}" font-size="40" font-family="Menlo,monospace">CONFLICT FOUND · SAME LINE</text>` : ''}`;
-}
-
-type LanesArtParams = OpeningArtParams & {
-  hasDependency: boolean;
-};
-
-const LANES_LAYOUT = {
-  labels: ['src/routes.mjs', 'src/cart', 'src/catalog', 'src/search'],
-  top: 505,
-  gap: 100,
-  labelLeft: 175,
-  labelWidth: 390,
-  labelHeight: 76,
-  labelFontSize: 25,
-  lineStartX: 565,
-  lineEndX: 1_565,
-  trunk: { left: 1_565, top: 475, width: 220, height: 420, label: 'TRUNK', fontSize: 30 },
-  packetCountPerLane: 9,
-  packetCycleMs: 2_200,
-  sourceLeft: 280,
-  sourceGap: 105,
-  sourceTop: 385,
-  sourceRowGap: 18,
-  routeWaitingX: 1_070,
-  routeWaitingY: 505,
-  laneLabelY: 930
-};
-
-function lanesArt({ timeMs, sequenceTimeMs, hasDependency }: LanesArtParams): string {
-  const pieces = [upperGrid(sequenceTimeMs), box(LANES_LAYOUT.trunk)];
-  for (const [laneIndex, label] of LANES_LAYOUT.labels.entries()) {
-    const top = LANES_LAYOUT.top + laneIndex * LANES_LAYOUT.gap;
+function connectorLines({ slots, hasQueue, timeMs, visual }: ConnectorsParams): string {
+  const pieces: string[] = [];
+  const entry = visual === 'fleet' ? smooth((timeMs - MOTION.busEnterMs) / MOTION.enterMs) : MOTION.unit;
+  const topOpacity = visual === 'end' ? MOTION.unit - smooth(timeMs / MOTION.endClearMs) : MOTION.unit;
+  for (const slot of slots) {
+    const centerX = slotCenter(slot.index);
+    const endY = WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * entry;
     pieces.push(
-      box({
-        left: LANES_LAYOUT.labelLeft,
-        top: top - LANES_LAYOUT.labelHeight * MOTION.half,
-        width: LANES_LAYOUT.labelWidth,
-        height: LANES_LAYOUT.labelHeight,
-        label,
-        color: BLUE,
-        fontSize: LANES_LAYOUT.labelFontSize
-      })
-    );
-    pieces.push(line(`M${LANES_LAYOUT.lineStartX} ${top}H${LANES_LAYOUT.lineEndX}`));
-    for (let packetIndex = 0; packetIndex < LANES_LAYOUT.packetCountPerLane; packetIndex += 1) {
-      const progress =
-        (timeMs / LANES_LAYOUT.packetCycleMs +
-          packetIndex / LANES_LAYOUT.packetCountPerLane +
-          laneIndex * MOTION.half) %
-        MOTION.lineProgress;
-      let left = LANES_LAYOUT.lineStartX + progress * (LANES_LAYOUT.lineEndX - LANES_LAYOUT.lineStartX);
-      if (hasDependency && laneIndex === 0 && packetIndex === 1) {
-        left = Math.min(left, LANES_LAYOUT.routeWaitingX);
-      }
-      const enter = smooth((timeMs - packetIndex * MOTION.staggerMs) / MOTION.enterMs);
-      const sourceX = LANES_LAYOUT.sourceLeft + packetIndex * LANES_LAYOUT.sourceGap;
-      const sourceY = LANES_LAYOUT.sourceTop + laneIndex * LANES_LAYOUT.sourceRowGap;
-      const animatedX = sourceX + (left - sourceX) * enter;
-      const animatedY = sourceY + (top - sourceY) * enter;
-      pieces.push(`<g opacity="${enter}">${dot(animatedX, animatedY)}</g>`);
-    }
-  }
-  if (hasDependency) {
-    pieces.push(dot(LANES_LAYOUT.routeWaitingX, LANES_LAYOUT.routeWaitingY));
-    pieces.push(
-      `<text x="960" y="${LANES_LAYOUT.laneLabelY}" text-anchor="middle" fill="${WHITE}" font-size="30" font-family="Menlo,monospace">c-5 waits for c-3 · other lanes keep moving</text>`
+      `<g opacity="${topOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.connectorTop}V${endY}`)}</g>`
     );
   }
-  return pieces.join('');
-}
-
-const OVERLAP_LAYOUT = {
-  leftChange: { left: 165, top: 225, width: 420, height: 100, label: 'c-3 · SEARCH' },
-  rightChange: { left: 750, top: 225, width: 420, height: 100, label: 'c-5 · ORDERS' },
-  otherChange: { left: 1_335, top: 225, width: 420, height: 100, label: 'OTHER CHANGE' },
-  routeFile: { left: 415, top: 530, width: 510, height: 100, label: 'src/routes.mjs', color: BLUE },
-  otherFile: {
-    left: 1_235,
-    top: 530,
-    width: 510,
-    height: 100,
-    label: 'src/cart/pricing.mjs',
-    color: BLUE,
-    fontSize: 23
-  },
-  merge: { left: 350, top: 745, width: 650, height: 105, label: 'REAL MERGE CHECK', color: ORANGE },
-  routeTopX: 670,
-  routeTopY: 530,
-  otherTopX: 1_490,
-  otherTopY: 530,
-  changeBottomY: 325,
-  leftChangeX: 375,
-  rightChangeX: 960,
-  otherChangeX: 1_545,
-  mergeTopX: 675,
-  mergeTopY: 745,
-  mergeResultX: 675,
-  mergeResultY: 910,
-  parallelLabelX: 1_490,
-  parallelLabelY: 805
-};
-
-function overlapsArt(timeMs: number): string {
-  const pieces = [
-    enterBox({ ...OVERLAP_LAYOUT.leftChange, timeMs, delayMs: 0 }),
-    enterBox({ ...OVERLAP_LAYOUT.rightChange, timeMs, delayMs: MOTION.staggerMs }),
-    enterBox({ ...OVERLAP_LAYOUT.otherChange, timeMs, delayMs: MOTION.staggerMs * MOTION.overlapOtherDelaySteps })
-  ];
-  if (timeMs >= MOTION.overlapPathsMs) {
-    pieces.push(box(OVERLAP_LAYOUT.routeFile), box(OVERLAP_LAYOUT.otherFile));
+  let queueOpacity = MOTION.unit;
+  let laneOpacity = MOTION.unit;
+  if (visual === 'queue') {
+    queueOpacity = smooth(timeMs / MOTION.laneRevealMs);
+    laneOpacity = MOTION.unit - queueOpacity;
+  } else if (visual === 'lanes') {
+    laneOpacity = smooth(timeMs / MOTION.laneRevealMs);
+    queueOpacity = MOTION.unit - laneOpacity;
+  } else if (visual === 'fleet') {
+    laneOpacity = smooth((timeMs - MOTION.busEnterMs) / MOTION.enterMs);
+  }
+  const oldLaneCount = visual === 'queue' ? WORLD.lowerConnectorCount : 0;
+  for (let index = 0; index < oldLaneCount; index += MOTION.unit) {
+    const centerX = iconCenter(index * WORLD.lowerConnectorStride);
     pieces.push(
-      line(
-        `M${OVERLAP_LAYOUT.leftChangeX} ${OVERLAP_LAYOUT.changeBottomY}L${OVERLAP_LAYOUT.routeTopX} ${OVERLAP_LAYOUT.routeTopY}`
-      )
-    );
-    pieces.push(
-      line(
-        `M${OVERLAP_LAYOUT.rightChangeX} ${OVERLAP_LAYOUT.changeBottomY}L${OVERLAP_LAYOUT.routeTopX} ${OVERLAP_LAYOUT.routeTopY}`
-      )
-    );
-    pieces.push(
-      line(
-        `M${OVERLAP_LAYOUT.otherChangeX} ${OVERLAP_LAYOUT.changeBottomY}L${OVERLAP_LAYOUT.otherTopX} ${OVERLAP_LAYOUT.otherTopY}`
-      )
-    );
-    pieces.push(
-      flow({
-        fromX: OVERLAP_LAYOUT.leftChangeX,
-        fromY: OVERLAP_LAYOUT.changeBottomY,
-        toX: OVERLAP_LAYOUT.routeTopX,
-        toY: OVERLAP_LAYOUT.routeTopY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.overlapPathsMs
-      })
-    );
-    pieces.push(
-      flow({
-        fromX: OVERLAP_LAYOUT.rightChangeX,
-        fromY: OVERLAP_LAYOUT.changeBottomY,
-        toX: OVERLAP_LAYOUT.routeTopX,
-        toY: OVERLAP_LAYOUT.routeTopY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.overlapPathsMs
-      })
-    );
-    pieces.push(
-      flow({
-        fromX: OVERLAP_LAYOUT.otherChangeX,
-        fromY: OVERLAP_LAYOUT.changeBottomY,
-        toX: OVERLAP_LAYOUT.otherTopX,
-        toY: OVERLAP_LAYOUT.otherTopY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.overlapPathsMs
-      })
+      `<g opacity="${laneOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}</g>`
     );
   }
-  if (timeMs >= MOTION.overlapMergeMs) {
-    pieces.push(box(OVERLAP_LAYOUT.merge));
+  if (hasQueue) {
     pieces.push(
-      line(
-        `M${OVERLAP_LAYOUT.routeTopX} ${OVERLAP_LAYOUT.routeFile.top + OVERLAP_LAYOUT.routeFile.height}V${OVERLAP_LAYOUT.mergeTopY}`
-      )
+      `<g opacity="${queueOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${WORLD.centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}${line(`M${WORLD.queueStartX} ${WORLD.queueY}H${WORLD.queueEndX}`)}</g>`
     );
-    pieces.push(
-      flow({
-        fromX: OVERLAP_LAYOUT.routeTopX,
-        fromY: OVERLAP_LAYOUT.routeFile.top + OVERLAP_LAYOUT.routeFile.height,
-        toX: OVERLAP_LAYOUT.mergeTopX,
-        toY: OVERLAP_LAYOUT.mergeTopY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.overlapMergeMs
-      })
-    );
-  }
-  if (timeMs >= MOTION.overlapResultMs) {
-    pieces.push(
-      `<text x="${OVERLAP_LAYOUT.mergeResultX}" y="${OVERLAP_LAYOUT.mergeResultY}" text-anchor="middle" fill="${ORANGE}" font-size="34" font-family="Menlo,monospace">c-5 AFTER c-3</text>`
-    );
-    pieces.push(
-      `<text x="${OVERLAP_LAYOUT.parallelLabelX}" y="${OVERLAP_LAYOUT.parallelLabelY + OVERLAP_LAYOUT.routeFile.height * MOTION.half}" text-anchor="middle" fill="${WHITE}" font-size="28" font-family="Menlo,monospace">OTHER FILE · PARALLEL</text>`
-    );
-  }
-  return pieces.join('');
-}
-
-const RESOLUTION_LAYOUT = {
-  leftBox: { left: 145, top: 220, width: 600, height: 110, label: 'c-3 · SEARCH' },
-  rightBox: { left: 1_175, top: 220, width: 600, height: 110, label: 'c-5 · ORDERS' },
-  aiBox: { left: 620, top: 505, width: 680, height: 108, label: 'WORKERS AI · LINE IDS' },
-  resultBox: { left: 620, top: 730, width: 680, height: 185, label: '' },
-  leftTextX: 250,
-  rightTextX: 1_280,
-  firstTextY: 380,
-  textGapY: 43,
-  textFontSize: 29,
-  aiAnswerX: 960,
-  aiAnswerY: 680,
-  resultTextX: 730,
-  resultFirstY: 775,
-  resultGapY: 43,
-  resultStaggerMs: 400,
-  resultFlightMs: 350,
-  leftConnectorX: 445,
-  rightConnectorX: 1_475,
-  connectorStartY: 450,
-  aiLeftX: 790,
-  aiRightX: 1_130,
-  aiTopY: 505,
-  aiBottomX: 960,
-  aiBottomY: 613,
-  resultTopX: 960,
-  resultTopY: 730
-};
-
-const RESOLUTION_LINES = [
-  { id: '', value: "'home',", side: 'left', row: 0 },
-  { id: '', value: "'cart',", side: 'left', row: 1 },
-  { id: 't1', value: "'search',", side: 'left', row: 2 },
-  { id: 'o1', value: "'orders',", side: 'right', row: 2 }
-];
-
-function resolutionArt(timeMs: number): string {
-  const pieces = [box(RESOLUTION_LAYOUT.leftBox), box(RESOLUTION_LAYOUT.rightBox)];
-  for (const item of RESOLUTION_LINES) {
-    const sideX = item.side === 'left' ? RESOLUTION_LAYOUT.leftTextX : RESOLUTION_LAYOUT.rightTextX;
-    const sideY = RESOLUTION_LAYOUT.firstTextY + item.row * RESOLUTION_LAYOUT.textGapY;
-    const label = item.id === '' ? item.value : `${item.id}  ${item.value}`;
-    pieces.push(
-      `<text x="${sideX}" y="${sideY}" fill="${WHITE}" font-size="${RESOLUTION_LAYOUT.textFontSize}" font-family="Menlo,monospace">${label}</text>`
-    );
-    if (item.id === '') {
+  } else {
+    if (visual === 'lanes') {
       pieces.push(
-        `<text x="${RESOLUTION_LAYOUT.rightTextX}" y="${sideY}" fill="${WHITE}" font-size="${RESOLUTION_LAYOUT.textFontSize}" font-family="Menlo,monospace">${label}</text>`
+        `<g opacity="${queueOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${WORLD.centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}${line(`M${WORLD.queueStartX} ${WORLD.queueY}H${WORLD.queueEndX}`)}</g>`
       );
     }
-  }
-  if (timeMs >= MOTION.resolutionModelMs) {
-    pieces.push(box(RESOLUTION_LAYOUT.aiBox));
-    pieces.push(
-      line(
-        `M${RESOLUTION_LAYOUT.leftConnectorX} ${RESOLUTION_LAYOUT.connectorStartY}L${RESOLUTION_LAYOUT.aiLeftX} ${RESOLUTION_LAYOUT.aiTopY}`
-      )
-    );
-    pieces.push(
-      line(
-        `M${RESOLUTION_LAYOUT.rightConnectorX} ${RESOLUTION_LAYOUT.connectorStartY}L${RESOLUTION_LAYOUT.aiRightX} ${RESOLUTION_LAYOUT.aiTopY}`
-      )
-    );
-    pieces.push(
-      flow({
-        fromX: RESOLUTION_LAYOUT.leftConnectorX,
-        fromY: RESOLUTION_LAYOUT.connectorStartY,
-        toX: RESOLUTION_LAYOUT.aiLeftX,
-        toY: RESOLUTION_LAYOUT.aiTopY,
-        timeMs,
-        count: MOTION.packetCount
-      })
-    );
-    pieces.push(
-      flow({
-        fromX: RESOLUTION_LAYOUT.rightConnectorX,
-        fromY: RESOLUTION_LAYOUT.connectorStartY,
-        toX: RESOLUTION_LAYOUT.aiRightX,
-        toY: RESOLUTION_LAYOUT.aiTopY,
-        timeMs,
-        count: MOTION.packetCount
-      })
-    );
-  }
-  if (timeMs >= MOTION.resolutionAnswerMs) {
-    pieces.push(
-      `<text x="${RESOLUTION_LAYOUT.aiAnswerX}" y="${RESOLUTION_LAYOUT.aiAnswerY}" text-anchor="middle" fill="${ORANGE}" font-size="35" font-family="Menlo,monospace">[ t1, o1 ]</text>`
-    );
-    pieces.push(line(`M${RESOLUTION_LAYOUT.aiBottomX} ${RESOLUTION_LAYOUT.aiBottomY}V${RESOLUTION_LAYOUT.resultTopY}`));
-    pieces.push(
-      flow({
-        fromX: RESOLUTION_LAYOUT.aiBottomX,
-        fromY: RESOLUTION_LAYOUT.aiBottomY,
-        toX: RESOLUTION_LAYOUT.resultTopX,
-        toY: RESOLUTION_LAYOUT.resultTopY,
-        timeMs,
-        count: MOTION.packetCount
-      })
-    );
-  }
-  if (timeMs >= MOTION.resolutionApplyMs) {
-    pieces.push(box(RESOLUTION_LAYOUT.resultBox));
-    for (const [index, item] of RESOLUTION_LINES.entries()) {
-      const progress = smooth(
-        (timeMs - MOTION.resolutionApplyMs - index * RESOLUTION_LAYOUT.resultStaggerMs) /
-          RESOLUTION_LAYOUT.resultFlightMs
-      );
-      if (progress === 0) {
-        continue;
-      }
-      const sourceX = item.side === 'left' ? RESOLUTION_LAYOUT.leftTextX : RESOLUTION_LAYOUT.rightTextX;
-      const sourceY = RESOLUTION_LAYOUT.firstTextY + item.row * RESOLUTION_LAYOUT.textGapY;
-      const left = sourceX + (RESOLUTION_LAYOUT.resultTextX - sourceX) * progress;
-      const top =
-        sourceY + (RESOLUTION_LAYOUT.resultFirstY + index * RESOLUTION_LAYOUT.resultGapY - sourceY) * progress;
+    const connectorCount = visual === 'batch' ? WORLD.batchConnectorCount : WORLD.lowerConnectorCount;
+    const connectorStride = visual === 'batch' ? WORLD.batchConnectorStride : WORLD.lowerConnectorStride;
+    for (let index = 0; index < connectorCount; index += MOTION.unit) {
+      const centerX = iconCenter(index * connectorStride);
       pieces.push(
-        `<text x="${left}" y="${top}" fill="${WHITE}" font-size="${RESOLUTION_LAYOUT.textFontSize}" font-family="Menlo,monospace">${item.value}</text>`
+        `<g opacity="${laneOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}</g>`
       );
     }
   }
   return pieces.join('');
 }
 
-const BATCH_LAYOUT = {
-  batchBox: { left: 170, top: 240, width: 790, height: 110, label: 'BATCH 1 · 16 READY', fontSize: 34 },
-  approvalBox: { left: 740, top: 700, width: 440, height: 110, label: 'APPROVED', fontSize: 34 },
-  trunkBox: { left: 1_360, top: 300, width: 390, height: 520, label: '', fontSize: 34 },
-  gridLeft: 255,
-  gridTop: 420,
-  gridColumns: 4,
-  gridGapX: 165,
-  gridGapY: 75,
-  trunkLeft: 1_425,
-  trunkTop: 430,
-  trunkGapX: 72,
-  trunkGapY: 75,
-  lineStartX: 960,
-  lineEndX: 1_360,
-  lineY: 560,
-  flightDotRadius: 12,
-  floatAmplitude: 12,
-  floatPeriodMs: 1_600,
-  floatPhase: 0.9,
-  countX: 1_555,
-  countY: 750,
-  trunkLabelY: 365,
-  trunkLabelFontSize: 34
+type AgentBandParams = {
+  worldTimeMs: number;
+  isOpening: boolean;
 };
 
-const BATCH_ORDER = [
-  { rank: 6 },
-  { rank: 13 },
-  { rank: 1 },
-  { rank: 9 },
-  { rank: 4 },
-  { rank: 15 },
-  { rank: 2 },
-  { rank: 11 },
-  { rank: 0 },
-  { rank: 8 },
-  { rank: 14 },
-  { rank: 3 },
-  { rank: 12 },
-  { rank: 5 },
-  { rank: 10 },
-  { rank: 7 }
-];
+function agentBand({ worldTimeMs, isOpening }: AgentBandParams): string {
+  const pieces: string[] = [];
+  for (let row = 0; row < WORLD.bandRows; row += MOTION.unit) {
+    for (let column = 0; column < WORLD.bandColumns; column += MOTION.unit) {
+      const index = row * WORLD.bandColumns + column;
+      const progress = isOpening ? smooth((worldTimeMs - index * MOTION.agentStaggerMs) / MOTION.enterMs) : MOTION.unit;
+      const drift = Math.sin(worldTimeMs / MOTION.driftMs + row) * MOTION.driftPx;
+      const left = WORLD.bandLeft + column * WORLD.bandGapX + drift;
+      const top = WORLD.bandTop + row * WORLD.bandGapY + (MOTION.unit - progress) * MOTION.agentRisePx;
+      const centerX = WORLD.bandLeft + column * WORLD.bandGapX + WORLD.iconSize * MOTION.half;
+      const centerY = WORLD.bandTop + row * WORLD.bandGapY + WORLD.iconSize * MOTION.half;
+      pieces.push(
+        `<circle cx="${centerX}" cy="${centerY}" r="${STYLE.iconDotRadius}" fill="${BLUE}" opacity="${(MOTION.unit - progress).toFixed(OPACITY_DIGITS)}"/>`
+      );
+      pieces.push(`<g fill="none" stroke="${BLUE}" stroke-width="${STYLE.iconStroke}" opacity="${progress.toFixed(OPACITY_DIGITS)}">
+        <rect x="${left + STYLE.iconCapLeft}" y="${top}" width="${STYLE.iconCapWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
+        <rect x="${left}" y="${top + STYLE.iconBodyTop}" width="${STYLE.iconBodyWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
+        <rect x="${left + STYLE.iconRight}" y="${top + STYLE.iconBodyTop}" width="${STYLE.iconBodyWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
+      </g>`);
+    }
+  }
+  return pieces.join('');
+}
 
-function batchArt(timeMs: number): string {
-  const pieces = [box(BATCH_LAYOUT.batchBox), box(BATCH_LAYOUT.trunkBox)];
-  pieces.push(
-    `<text x="${BATCH_LAYOUT.countX}" y="${BATCH_LAYOUT.trunkLabelY}" text-anchor="middle" fill="${WHITE}" font-size="${BATCH_LAYOUT.trunkLabelFontSize}" font-family="Menlo,monospace">TRUNK</text>`
-  );
-  pieces.push(line(`M${BATCH_LAYOUT.lineStartX} ${BATCH_LAYOUT.lineY}H${BATCH_LAYOUT.lineEndX}`));
+type ConnectorPacketsParams = {
+  slots: Slot[];
+  hasQueue: boolean;
+  worldTimeMs: number;
+  visual: string;
+};
+
+function connectorPackets({ slots, hasQueue, worldTimeMs, visual }: ConnectorPacketsParams): string {
+  if (visual === 'fleet' && worldTimeMs < MOTION.packetsEnterMs) {
+    return '';
+  }
+  const pieces: string[] = [];
+  let activeSlots = slots;
+  if (visual === 'batch' || visual === 'end') {
+    activeSlots = [];
+  } else if (visual === 'checks') {
+    activeSlots = slots.slice(0, MOTION.unit);
+  }
+  for (const slot of activeSlots) {
+    if (visual === 'checks' && worldTimeMs < MOTION.checkRunMs) {
+      continue;
+    }
+    const centerX = slotCenter(slot.index);
+    pieces.push(
+      packetOn({
+        fromX: centerX,
+        fromY: WORLD.connectorTop,
+        toX: centerX,
+        toY: WORLD.connectorBottom,
+        timeMs: worldTimeMs,
+        seed: slot.index + MOTION.unit
+      })
+    );
+  }
+  if (hasQueue) {
+    pieces.push(queuePackets(worldTimeMs));
+  } else if (visual !== 'batch' && visual !== 'checks') {
+    for (let index = 0; index < WORLD.lowerConnectorCount; index += MOTION.unit) {
+      const centerX = iconCenter(index * WORLD.lowerConnectorStride);
+      pieces.push(
+        packetOn({
+          fromX: centerX,
+          fromY: WORLD.lowerConnectorBottom,
+          toX: centerX,
+          toY: WORLD.lowerConnectorTop,
+          timeMs: worldTimeMs,
+          seed: index + WORLD.boxCount
+        })
+      );
+    }
+  }
+  return pieces.join('');
+}
+
+function queuePackets(worldTimeMs: number): string {
+  const pieces: string[] = [];
+  const phaseMs = worldTimeMs % MOTION.queueLandMs;
+  const progress = smooth(phaseMs / MOTION.queueLaunchMs);
+  for (let index = MOTION.unit; index < WORLD.queueCount; index += MOTION.unit) {
+    const fromOffset = queueOffset(index);
+    const toOffset = queueOffset(index - MOTION.unit);
+    pieces.push(packet(WORLD.queueEndX - fromOffset + (fromOffset - toOffset) * progress, WORLD.queueY));
+  }
+  const rearX = WORLD.queueEndX - queueOffset(WORLD.queueCount - MOTION.unit);
+  pieces.push(packet(WORLD.queueStartX + (rearX - WORLD.queueStartX) * progress, WORLD.queueY));
+  if (progress < MOTION.unit) {
+    pieces.push(packet(WORLD.centerX, WORLD.queueY - (WORLD.queueY - WORLD.lowerConnectorTop) * progress));
+  }
+  return pieces.join('');
+}
+
+function queueOffset(index: number): number {
+  return index * WORLD.queueBaseGap + index * index * WORLD.queueGapGrowth;
+}
+type SlotsParams = {
+  visual: string;
+  timeMs: number;
+};
+
+function slotsForVisual({ visual, timeMs }: SlotsParams): Slot[] {
+  switch (visual) {
+    case 'fleet':
+    case 'queue':
+    case 'rerun':
+      return [
+        { index: 0, label: 'APP' },
+        { index: 1, label: 'APP' },
+        { index: 2, label: 'APP' },
+        { index: 3, label: 'APP' },
+        { index: 4, label: 'APP' }
+      ];
+    case 'late-conflict':
+      return [
+        { index: 0, label: 'APP' },
+        { index: 1, label: 'c-3' },
+        { index: 2, label: 'src/routes.mjs' },
+        { index: 3, label: 'c-5' },
+        { index: 4, label: 'APP' }
+      ];
+    case 'lanes':
+    case 'dependency':
+    case 'brand':
+      return [
+        { index: 0, label: 'src/routes.mjs' },
+        { index: 1, label: 'src/cart' },
+        { index: 2, label: 'src/catalog' },
+        { index: 3, label: 'src/search' },
+        { index: 4, label: 'docs' }
+      ];
+    case 'overlaps':
+      return [
+        { index: 0, label: 'c-3', hasDetails: true, lines: timeMs >= MOTION.overlapPathsMs ? ['src/routes.mjs'] : [] },
+        { index: 1, label: 'c-5', hasDetails: true, lines: timeMs >= MOTION.overlapPathsMs ? ['src/routes.mjs'] : [] },
+        ...(timeMs >= MOTION.overlapMergeMs
+          ? [
+              {
+                index: 2,
+                label: 'MERGE',
+                hasDetails: true,
+                lines: timeMs >= MOTION.overlapResultMs ? ['c-3 → c-5'] : []
+              }
+            ]
+          : []),
+        { index: 3, label: 'src/cart' },
+        { index: 4, label: 'LANE' }
+      ];
+    case 'resolution':
+      return [
+        { index: 0, label: 'c-3', lines: ["t1  'search',"] },
+        { index: 1, label: 'src/routes.mjs', lines: ["'home',", "'cart',"] },
+        ...(timeMs >= MOTION.resolutionModelMs
+          ? [
+              {
+                index: 2,
+                label: 'WORKERS AI',
+                hasDetails: true,
+                lines: timeMs >= MOTION.resolutionAnswerMs ? ['[ t1, o1 ]'] : []
+              }
+            ]
+          : []),
+        { index: 3, label: 'RESULT', hasDetails: true },
+        { index: 4, label: 'c-5', lines: ["o1  'orders',"] }
+      ];
+    case 'batch':
+      return [
+        { index: 0, label: 'LANE 1' },
+        { index: 1, label: 'LANE 2' },
+        { index: 2, label: 'APPROVAL' },
+        { index: 3, label: 'LANE 3' },
+        { index: 4, label: 'LANE 4' }
+      ];
+    case 'checks': {
+      const isChanged = timeMs >= MOTION.checkHashMs;
+      return [
+        { index: 0, label: 'src/routes.mjs', lines: [isChanged ? 'c51183' : '7c7959'] },
+        { index: 2, label: 'src/cart', lines: ['d7e7df'] },
+        { index: 4, label: 'src/catalog', lines: ['74c53e'] }
+      ];
+    }
+    case 'everything':
+      return [
+        { index: 0, label: 'BATCH 1' },
+        { index: 1, label: 'BATCH 2' },
+        { index: 2, label: 'BATCH 3' },
+        { index: 3, label: 'BATCH 4' }
+      ];
+    case 'agent':
+      return [
+        { index: 0, label: 'AGENT' },
+        { index: 1, label: 'COMMUTE START' },
+        { index: 2, label: 'GIT PUSH' },
+        { index: 3, label: 'COMMUTE WAIT' },
+        { index: 4, label: 'TRUNK' }
+      ];
+    case 'architecture':
+    case 'end':
+      return [
+        { index: 0, label: 'WORKERS' },
+        { index: 1, label: 'ARTIFACTS' },
+        { index: 2, label: 'DURABLE OBJECT' },
+        { index: 3, label: 'CONTAINERS' },
+        { index: 4, label: 'WORKERS AI' }
+      ];
+    default:
+      throw new Error(`UNKNOWN_SCENE: ${visual}`);
+  }
+}
+
+type BusValueParams = {
+  visual: string;
+  timeMs: number;
+};
+
+function busValueForVisual({ visual, timeMs }: BusValueParams): string {
+  switch (visual) {
+    case 'late-conflict':
+      return timeMs >= MOTION.conflictLandMs ? 'c-3' : '';
+    case 'batch':
+      return `${batchLanded(timeMs)} / 16`;
+    case 'everything':
+      return `${everythingLanded(timeMs)} / 20`;
+    default:
+      return '';
+  }
+}
+
+function busPulseForVisual({ visual, timeMs }: BusValueParams): number {
+  if (visual === 'queue' || visual === 'rerun') {
+    const phaseMs = (timeMs - MOTION.queueLaunchMs + MOTION.queueLandMs) % MOTION.queueLandMs;
+    return phaseMs < MOTION.pulseMs ? MOTION.unit - phaseMs / MOTION.pulseMs : 0;
+  }
+  if (visual === 'late-conflict') {
+    const elapsedMs = timeMs - MOTION.conflictLandMs;
+    return elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
+  }
+  if (visual === 'checks') {
+    const elapsedMs = timeMs - MOTION.checkLandingMs;
+    return elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
+  }
+  if (visual === 'batch') {
+    const landed = batchLanded(timeMs);
+    const elapsedMs = timeMs - MOTION.batchApproveMs - (landed - MOTION.unit) * MOTION.batchArrivalMs;
+    return landed > 0 && elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
+  }
+  return 0;
+}
+
+function batchLanded(timeMs: number): number {
+  if (timeMs < MOTION.batchApproveMs) {
+    return 0;
+  }
   let landed = 0;
-  for (let index = 0; index < MOTION.batchCount; index += 1) {
-    const column = index % BATCH_LAYOUT.gridColumns;
-    const row = Math.floor(index / BATCH_LAYOUT.gridColumns);
-    const order = BATCH_ORDER[index];
-    if (order === undefined) {
-      throw new Error('BATCH_ORDER_MISSING');
-    }
-    const progress = smooth(
-      (timeMs - MOTION.batchApprovalMs - order.rank * MOTION.batchStaggerMs) / MOTION.batchFlightMs
-    );
-    const fromX = BATCH_LAYOUT.gridLeft + column * BATCH_LAYOUT.gridGapX;
-    const fromY = BATCH_LAYOUT.gridTop + row * BATCH_LAYOUT.gridGapY;
-    const toX = BATCH_LAYOUT.trunkLeft + column * BATCH_LAYOUT.trunkGapX;
-    const toY = BATCH_LAYOUT.trunkTop + row * BATCH_LAYOUT.trunkGapY;
-    const float =
-      Math.sin(timeMs / BATCH_LAYOUT.floatPeriodMs + index * BATCH_LAYOUT.floatPhase) *
-      BATCH_LAYOUT.floatAmplitude *
-      (MOTION.lineProgress - progress);
-    const left = fromX + (toX - fromX) * progress + float;
-    const top = fromY + (toY - fromY) * progress - float * MOTION.half;
-    const enter = smooth((timeMs + MOTION.enterLeadMs - index * MOTION.staggerMs) / MOTION.enterMs);
-    pieces.push(
-      `<circle cx="${left}" cy="${top}" r="${BATCH_LAYOUT.flightDotRadius}" fill="${ORANGE}" opacity="${enter}"/>`
-    );
-    if (progress >= MOTION.lineProgress) {
-      landed += MOTION.lineProgress;
+  for (let index = 0; index < BATCH_TOTAL; index += MOTION.unit) {
+    const launchRank = (index * MOTION.batchShuffleStride) % BATCH_TOTAL;
+    const startMs = MOTION.batchApproveMs + launchRank * MOTION.batchLaunchSpacingMs;
+    if (timeMs >= startMs + MOTION.batchFlightMs) {
+      landed += MOTION.unit;
     }
   }
-  if (timeMs >= MOTION.batchApprovalMs) {
-    pieces.push(box(BATCH_LAYOUT.approvalBox));
-    pieces.push(
-      flow({
-        fromX: BATCH_LAYOUT.lineStartX,
-        fromY: BATCH_LAYOUT.lineY,
-        toX: BATCH_LAYOUT.lineEndX,
-        toY: BATCH_LAYOUT.lineY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.batchApprovalMs
-      })
-    );
-  }
-  pieces.push(
-    `<text x="${BATCH_LAYOUT.countX}" y="${BATCH_LAYOUT.countY}" text-anchor="middle" fill="${WHITE}" font-size="32" font-family="Menlo,monospace">${landed} / ${MOTION.batchCount} LANDED</text>`
-  );
-  return pieces.join('');
+  return landed;
 }
 
-const CHECKS_LAYOUT = {
-  folderX: 165,
-  folderTop: 315,
-  folderGap: 175,
-  folderWidth: 610,
-  folderHeight: 105,
-  folderFontSize: 27,
-  checkX: 1_125,
-  checkWidth: 630,
-  checkHeight: 105,
-  connectorStartX: 775,
-  connectorEndX: 1_125,
-  trunk: { left: 745, top: 175, width: 430, height: 90, label: 'TRUNK' },
-  landingX: 960,
-  landingStartY: 265,
-  landingEndY: 315,
-  statusX: 960,
-  statusY: 890,
-  folderNames: ['src/routes.mjs', 'src/cart', 'src/catalog'],
-  initialHashes: ['7c7959', 'd7e7df', '74c53e'],
-  changedRouteHash: 'c51183',
-  checkNames: ['ROUTES CHECK', 'CART CHECK', 'CATALOG CHECK']
-};
-
-function checksArt(timeMs: number): string {
-  const pieces = [box(CHECKS_LAYOUT.trunk)];
-  const hasChangedHash = timeMs >= MOTION.checkHashMs;
-  const hasRun = timeMs >= MOTION.checkRunMs;
-  const hasPassed = timeMs >= MOTION.checkPassMs;
-  if (timeMs >= MOTION.checkLandingMs) {
-    pieces.push(line(`M${CHECKS_LAYOUT.landingX} ${CHECKS_LAYOUT.landingStartY}V${CHECKS_LAYOUT.landingEndY}`));
-    pieces.push(
-      flow({
-        fromX: CHECKS_LAYOUT.landingX,
-        fromY: CHECKS_LAYOUT.landingStartY,
-        toX: CHECKS_LAYOUT.landingX,
-        toY: CHECKS_LAYOUT.landingEndY,
-        timeMs,
-        count: MOTION.packetCount,
-        delayMs: MOTION.checkLandingMs
-      })
-    );
-    pieces.push(
-      `<text x="${CHECKS_LAYOUT.statusX}" y="${CHECKS_LAYOUT.statusY}" text-anchor="middle" fill="${ORANGE}" font-size="33" font-family="Menlo,monospace">CHANGE LANDED · TRUNK MOVED</text>`
-    );
-  }
-  for (const [index, name] of CHECKS_LAYOUT.folderNames.entries()) {
-    const top = CHECKS_LAYOUT.folderTop + index * CHECKS_LAYOUT.folderGap;
-    const centerY = top + CHECKS_LAYOUT.folderHeight * MOTION.half;
-    const initialHash = CHECKS_LAYOUT.initialHashes[index];
-    const checkName = CHECKS_LAYOUT.checkNames[index];
-    if (initialHash === undefined || checkName === undefined) {
-      throw new Error('CHECK_LAYOUT_MISSING');
-    }
-    const hash = index === 0 && hasChangedHash ? CHECKS_LAYOUT.changedRouteHash : initialHash;
-    let status = 'SAVED';
-    if (hasRun && index > 0) {
-      status = 'KEPT';
-    } else if (hasPassed && index === 0) {
-      status = 'PASSED';
-    } else if (hasRun && index === 0) {
-      status = 'RUNS';
-    }
-    pieces.push(
-      enterBox({
-        left: CHECKS_LAYOUT.folderX,
-        top,
-        width: CHECKS_LAYOUT.folderWidth,
-        height: CHECKS_LAYOUT.folderHeight,
-        label: `${name} · ${hash}`,
-        color: BLUE,
-        fontSize: CHECKS_LAYOUT.folderFontSize,
-        timeMs,
-        delayMs: index * MOTION.staggerMs
-      })
-    );
-    pieces.push(line(`M${CHECKS_LAYOUT.connectorStartX} ${centerY}H${CHECKS_LAYOUT.connectorEndX}`));
-    pieces.push(
-      flow({
-        fromX: CHECKS_LAYOUT.connectorStartX,
-        fromY: centerY,
-        toX: CHECKS_LAYOUT.connectorEndX,
-        toY: centerY,
-        timeMs,
-        count: MOTION.packetCount
-      })
-    );
-    pieces.push(
-      enterBox({
-        left: CHECKS_LAYOUT.checkX,
-        top,
-        width: CHECKS_LAYOUT.checkWidth,
-        height: CHECKS_LAYOUT.checkHeight,
-        label: `${checkName} · ${status}`,
-        color: status === 'RUNS' ? ORANGE : GREEN,
-        timeMs,
-        delayMs: MOTION.checkSaveMs + index * MOTION.staggerMs
-      })
-    );
-  }
-  return pieces.join('');
-}
-
-const EVERYTHING_LAYOUT = {
-  count: 20,
-  columns: 10,
-  startX: 400,
-  startY: 230,
-  gapX: 115,
-  gapY: 120,
-  targetX: 585,
-  targetY: 660,
-  targetGapX: 78,
-  targetGapY: 44,
-  batchSize: 5,
-  batchGapMs: 650,
-  itemGapMs: 30,
-  flightMs: 600,
-  trunk: { left: 480, top: 585, width: 960, height: 220, label: '' },
-  countX: 960,
-  countY: 755,
-  batchLabelY: 880
-};
-
-function everythingArt(timeMs: number): string {
-  const pieces = [box(EVERYTHING_LAYOUT.trunk)];
+function everythingLanded(timeMs: number): number {
   let landed = 0;
-  for (let index = 0; index < EVERYTHING_LAYOUT.count; index += 1) {
-    const column = index % EVERYTHING_LAYOUT.columns;
-    const row = Math.floor(index / EVERYTHING_LAYOUT.columns);
-    const batch = Math.floor(index / EVERYTHING_LAYOUT.batchSize);
-    const progress = smooth(
-      (timeMs -
-        batch * EVERYTHING_LAYOUT.batchGapMs -
-        (index % EVERYTHING_LAYOUT.batchSize) * EVERYTHING_LAYOUT.itemGapMs) /
-        EVERYTHING_LAYOUT.flightMs
-    );
-    const fromX = EVERYTHING_LAYOUT.startX + column * EVERYTHING_LAYOUT.gapX;
-    const fromY = EVERYTHING_LAYOUT.startY + row * EVERYTHING_LAYOUT.gapY;
-    const toX = EVERYTHING_LAYOUT.targetX + column * EVERYTHING_LAYOUT.targetGapX;
-    const toY = EVERYTHING_LAYOUT.targetY + row * EVERYTHING_LAYOUT.targetGapY;
-    pieces.push(agentIcon({ left: fromX + (toX - fromX) * progress, top: fromY + (toY - fromY) * progress }));
-    if (progress >= MOTION.lineProgress) {
-      landed += MOTION.lineProgress;
+  for (let batch = 0; batch < BATCH_COUNT; batch += MOTION.unit) {
+    if (timeMs >= batch * MOTION.everythingBatchMs + MOTION.everythingFlightMs) {
+      landed += WORLD.boxCount;
     }
   }
-  pieces.push(
-    `<text x="${EVERYTHING_LAYOUT.countX}" y="${EVERYTHING_LAYOUT.countY}" text-anchor="middle" fill="${WHITE}" font-size="40" font-family="Menlo,monospace">TRUNK · ${landed} / ${EVERYTHING_LAYOUT.count}</text>`
-  );
-  pieces.push(
-    `<text x="${EVERYTHING_LAYOUT.countX}" y="${EVERYTHING_LAYOUT.batchLabelY}" text-anchor="middle" fill="${WHITE}" font-size="34" font-family="Menlo,monospace">FOUR LANDING BATCHES</text>`
-  );
+  return landed;
+}
+type VisualDetailParams = {
+  visual: string;
+  timeMs: number;
+};
+
+function detailForVisual({ visual, timeMs }: VisualDetailParams): string {
+  switch (visual) {
+    case 'rerun':
+      return checkResetBars(timeMs);
+    case 'late-conflict':
+      return timeMs >= MOTION.conflictStopMs
+        ? packet(
+            slotCenter(RESULT_SLOT),
+            WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * MOTION.half
+          )
+        : '';
+    case 'dependency':
+      return packet(slotCenter(0), WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * MOTION.half);
+    case 'resolution':
+      return resolutionResultLines(timeMs);
+    case 'batch':
+      return batchPackets(timeMs);
+    case 'everything':
+      return everythingPackets(timeMs);
+    case 'end':
+      return brandMark(timeMs);
+    default:
+      return '';
+  }
+}
+
+function checkResetBars(timeMs: number): string {
+  const progress = ((timeMs - MOTION.queueLaunchMs + MOTION.queueLandMs) % MOTION.queueLandMs) / MOTION.queueLandMs;
+  const pieces: string[] = [];
+  for (let index = 0; index < WORLD.boxCount; index += MOTION.unit) {
+    const left = slotLeft(index) + STYLE.boxInnerInset * MOTION.double;
+    const top = WORLD.boxTop + WORLD.boxHeight - STYLE.boxInnerInset * MOTION.double;
+    const width = (WORLD.boxWidth - STYLE.boxInnerInset * MOTION.double * MOTION.double) * progress;
+    pieces.push(`<path d="M${left} ${top}h${width}" stroke="${GREEN_BRIGHT}" stroke-width="${STYLE.boxStroke}"/>`);
+  }
   return pieces.join('');
 }
 
-const AGENT_LAYOUT = {
-  iconX: 245,
-  iconY: 385,
-  start: { left: 385, top: 335, width: 350, height: 120, label: 'commute start', fontSize: 27 },
-  push: { left: 795, top: 335, width: 350, height: 120, label: 'git push', fontSize: 27 },
-  wait: { left: 1_205, top: 335, width: 350, height: 120, label: 'commute wait', fontSize: 27 },
-  lineY: 395,
-  iconEndX: 385,
-  firstEndX: 795,
-  secondEndX: 1_205,
-  gridScale: 0.65,
-  gridLeft: 110,
-  gridTop: 390,
-  gridOpacity: 0.18
-};
+const RESOLUTION_LINES = ["'home',", "'cart',", "'search',", "'orders',"];
 
-function agentArt(timeMs: number): string {
-  return `<g transform="translate(${AGENT_LAYOUT.gridLeft} ${AGENT_LAYOUT.gridTop}) scale(${AGENT_LAYOUT.gridScale})">${agentGrid(timeMs, AGENT_LAYOUT.gridOpacity)}</g>
-    ${agentIcon({ left: AGENT_LAYOUT.iconX, top: AGENT_LAYOUT.iconY })}
-    ${box(AGENT_LAYOUT.start)}${box(AGENT_LAYOUT.push)}${box(AGENT_LAYOUT.wait)}
-    ${line(`M${AGENT_LAYOUT.iconX + MOTION.iconSize} ${AGENT_LAYOUT.lineY}H${AGENT_LAYOUT.iconEndX}`)}
-    ${line(`M${AGENT_LAYOUT.start.left + AGENT_LAYOUT.start.width} ${AGENT_LAYOUT.lineY}H${AGENT_LAYOUT.firstEndX}`)}
-    ${line(`M${AGENT_LAYOUT.push.left + AGENT_LAYOUT.push.width} ${AGENT_LAYOUT.lineY}H${AGENT_LAYOUT.secondEndX}`)}
-    ${flow({ fromX: AGENT_LAYOUT.iconX + MOTION.iconSize, fromY: AGENT_LAYOUT.lineY, toX: AGENT_LAYOUT.iconEndX, toY: AGENT_LAYOUT.lineY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: AGENT_LAYOUT.start.left + AGENT_LAYOUT.start.width, fromY: AGENT_LAYOUT.lineY, toX: AGENT_LAYOUT.firstEndX, toY: AGENT_LAYOUT.lineY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: AGENT_LAYOUT.push.left + AGENT_LAYOUT.push.width, fromY: AGENT_LAYOUT.lineY, toX: AGENT_LAYOUT.secondEndX, toY: AGENT_LAYOUT.lineY, timeMs, count: MOTION.packetCount })}`;
+function resolutionResultLines(timeMs: number): string {
+  const pieces: string[] = [];
+  const centerX = slotCenter(RESULT_SLOT);
+  for (const [index, value] of RESOLUTION_LINES.entries()) {
+    const startMs = MOTION.resolutionApplyMs + index * MOTION.resolutionLineStaggerMs;
+    const progress = smooth((timeMs - startMs) / MOTION.resolutionLineMs);
+    if (progress <= 0) {
+      continue;
+    }
+    const left = centerX + (MOTION.unit - progress) * WORLD.boxGap;
+    const top = WORLD.boxTop + WORLD.resultLineStartY + index * WORLD.resultLineGap;
+    pieces.push(
+      `<text x="${left}" y="${top}" text-anchor="middle" fill="${WHITE}" opacity="${progress.toFixed(OPACITY_DIGITS)}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`
+    );
+  }
+  return pieces.join('');
 }
 
-const ARCHITECTURE_LAYOUT = {
-  workers: { left: 750, top: 245, width: 420, height: 105, label: 'WORKERS' },
-  artifacts: { left: 160, top: 515, width: 400, height: 115, label: 'ARTIFACTS' },
-  coordinator: { left: 645, top: 515, width: 630, height: 115, label: 'DURABLE OBJECT' },
-  containers: { left: 1_360, top: 515, width: 400, height: 115, label: 'CONTAINERS' },
-  resolver: { left: 760, top: 760, width: 400, height: 95, label: 'WORKERS AI' },
-  centerX: 960,
-  workersBottomY: 350,
-  forkY: 440,
-  artifactsX: 360,
-  artifactsY: 515,
-  coordinatorY: 515,
-  containersStartX: 1_275,
-  containersEndX: 1_360,
-  containersY: 573,
-  coordinatorBottomY: 630,
-  resolverTopY: 760
-};
-
-function architectureArt(timeMs: number): string {
-  const layout = ARCHITECTURE_LAYOUT;
-  return `${enterBox({ ...layout.workers, timeMs, delayMs: 0 })}
-    ${enterBox({ ...layout.artifacts, timeMs, delayMs: MOTION.staggerMs })}
-    ${enterBox({ ...layout.coordinator, timeMs, delayMs: MOTION.staggerMs * MOTION.architectureCoordinatorDelaySteps })}
-    ${enterBox({ ...layout.containers, timeMs, delayMs: MOTION.staggerMs * MOTION.architectureContainersDelaySteps })}
-    ${enterBox({ ...layout.resolver, timeMs, delayMs: MOTION.staggerMs * MOTION.architectureResolverDelaySteps })}
-    ${line(`M${layout.centerX} ${layout.workersBottomY}V${layout.forkY}H${layout.artifactsX}V${layout.artifactsY}`)}
-    ${line(`M${layout.centerX} ${layout.workersBottomY}V${layout.coordinatorY}`)}
-    ${line(`M${layout.containersStartX} ${layout.containersY}H${layout.containersEndX}`)}
-    ${line(`M${layout.centerX} ${layout.coordinatorBottomY}V${layout.resolverTopY}`)}
-    ${flow({ fromX: layout.centerX, fromY: layout.workersBottomY, toX: layout.centerX, toY: layout.forkY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: layout.centerX, fromY: layout.forkY, toX: layout.artifactsX, toY: layout.forkY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: layout.artifactsX, fromY: layout.forkY, toX: layout.artifactsX, toY: layout.artifactsY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: layout.centerX, fromY: layout.workersBottomY, toX: layout.centerX, toY: layout.coordinatorY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: layout.containersStartX, fromY: layout.containersY, toX: layout.containersEndX, toY: layout.containersY, timeMs, count: MOTION.packetCount })}
-    ${flow({ fromX: layout.centerX, fromY: layout.coordinatorBottomY, toX: layout.centerX, toY: layout.resolverTopY, timeMs, count: MOTION.packetCount })}`;
+function batchPackets(timeMs: number): string {
+  const pieces: string[] = [];
+  for (let index = 0; index < BATCH_TOTAL; index += MOTION.unit) {
+    const launchRank = (index * MOTION.batchShuffleStride) % BATCH_TOTAL;
+    const centerX = iconCenter(index * WORLD.batchConnectorStride);
+    const startY = WORLD.lowerConnectorBottom - WORLD.packetRadius * MOTION.double;
+    const startMs = MOTION.batchApproveMs + launchRank * MOTION.batchLaunchSpacingMs;
+    if (index >= WORLD.lowerConnectorCount && timeMs < startMs) {
+      continue;
+    }
+    const progress = smooth((timeMs - startMs) / MOTION.batchFlightMs);
+    if (progress >= MOTION.unit) {
+      continue;
+    }
+    const top = startY + (WORLD.lowerConnectorTop - startY) * progress;
+    pieces.push(packet(centerX, top));
+  }
+  return pieces.join('');
 }
 
-const END_LAYOUT = {
-  enterMs: 900,
-  gridOpacity: 0.13,
-  enterDistance: 65,
-  centerX: 960,
-  nameY: 410,
-  nameFontSize: 158,
-  taglineY: 535,
-  taglineFontSize: 57,
-  urlY: 675,
-  urlFontSize: 39
-};
+function everythingPackets(timeMs: number): string {
+  const pieces: string[] = [];
+  for (let index = 0; index < CHANGE_TOTAL; index += MOTION.unit) {
+    const batch = Math.floor(index / WORLD.boxCount);
+    const connectorIndex = index % WORLD.boxCount;
+    const centerX = slotCenter(connectorIndex);
+    const startMs = batch * MOTION.everythingBatchMs;
+    const progress = smooth((timeMs - startMs) / MOTION.everythingFlightMs);
+    if (progress >= MOTION.unit) {
+      continue;
+    }
+    const top = WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * progress;
+    pieces.push(packet(centerX, top));
+  }
+  return pieces.join('');
+}
 
-function endArt(timeMs: number, sequenceTimeMs: number): string {
-  const enter = smooth(timeMs / END_LAYOUT.enterMs);
-  return `${agentGrid(sequenceTimeMs, END_LAYOUT.gridOpacity)}<g transform="translate(0 ${(MOTION.lineProgress - enter) * END_LAYOUT.enterDistance})" opacity="${enter}">
-    <text x="${END_LAYOUT.centerX}" y="${END_LAYOUT.nameY}" text-anchor="middle" fill="${WHITE}" font-size="${END_LAYOUT.nameFontSize}" font-weight="700" font-family="Arial,sans-serif">Commute</text>
-    <text x="${END_LAYOUT.centerX}" y="${END_LAYOUT.taglineY}" text-anchor="middle" fill="${WHITE}" font-size="${END_LAYOUT.taglineFontSize}" font-family="Arial,sans-serif">Changes that commute land in any order.</text>
-    <text x="${END_LAYOUT.centerX}" y="${END_LAYOUT.urlY}" text-anchor="middle" fill="${GREEN}" font-size="${END_LAYOUT.urlFontSize}" font-family="Menlo,monospace">github.com/lucrise-llc/commute</text></g>`;
+function brandMark(timeMs: number): string {
+  const opacity = smooth((timeMs - MOTION.endClearMs) / MOTION.brandEnterMs);
+  const tileX = STYLE.markLeft;
+  const tileY = STYLE.markTop;
+  const markScale = STYLE.markTileSize / MARK_VIEWBOX_SIZE;
+  const mark = `<g transform="translate(${tileX} ${tileY})">
+    <rect width="${STYLE.markTileSize}" height="${STYLE.markTileSize}" rx="${STYLE.markTileRadius}" fill="${BLUE}"/>
+    <path d="M2 5h5l4 6h3M2 11h5l4-6h3" transform="scale(${markScale})" fill="none" stroke="${WHITE}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>`;
+  return `<g opacity="${opacity.toFixed(OPACITY_DIGITS)}">${mark}
+    <text x="${STYLE.markNameX}" y="${STYLE.markNameY}" fill="${WHITE}" font-size="${STYLE.markNameSize}" font-weight="650" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">Commute</text>
+    <text x="${WORLD.centerX}" y="${STYLE.markUrlY}" text-anchor="middle" fill="${WHITE}" font-size="${STYLE.markUrlSize}" font-family="Menlo,Consolas,monospace">github.com/lucrise-llc/commute</text>
+  </g>`;
 }

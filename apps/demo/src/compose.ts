@@ -31,12 +31,18 @@ const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const TRANSCRIPTS_DIR = 'transcripts';
 const WORK_DIR = 'compose';
 const OUTPUT_FILE = 'commute-demo.mp4';
+const GITHUB_OUTPUT_FILE = 'commute-demo-github.mp4';
 // GitHub accepts video attachments of up to 10 MB on this organization's plan.
-const OUTPUT_BYTES_MAX = 10_000_000;
+const GITHUB_BYTES_MAX = 10_000_000;
+const UPLOAD_BYTES_MAX = 2_000_000_000;
 // x264 CRF of the final encode. 28 keeps the console text sharp; a take with long fast waits may need a higher one.
 const DEFAULT_CRF = '28';
+const UPLOAD_CRF = 18;
 const CRF_MIN = 18;
 const CRF_MAX = 40;
+const GITHUB_CRF_STEP = 2;
+const UPLOAD_FPS = 60;
+const GITHUB_FPS = 30;
 // The submission asks for a demo video of 5 to 10 minutes (PRD.md).
 const VIDEO_MS_MIN = 300_000;
 const VIDEO_MS_MAX = 600_000;
@@ -59,6 +65,7 @@ if (!Number.isInteger(crf) || crf < CRF_MIN || crf > CRF_MAX) {
 const recordingDir = RECORDING_DIR;
 const workDir = join(recordingDir, WORK_DIR);
 const output = join(recordingDir, OUTPUT_FILE);
+const githubOutput = join(recordingDir, GITHUB_OUTPUT_FILE);
 
 const timeline = timelineSchema.parse(JSON.parse(await readFile(join(recordingDir, TIMELINE_FILE), 'utf8')));
 const transcript = transcriptSchema.parse(
@@ -115,15 +122,50 @@ if (videoMs < VIDEO_MS_MIN || videoMs > VIDEO_MS_MAX) {
     `VIDEO_LENGTH_OUT_OF_RANGE: the video takes ${Math.round(videoMs)} ms; the submission asks for ${VIDEO_MS_MIN} to ${VIDEO_MS_MAX}.`
   );
 }
-await joinClips({ clips, listPath: join(workDir, 'clips.ffconcat'), output, crf });
-const { size } = await stat(output);
-const report = `${output}: ${(size / BYTES_PER_MB).toFixed(SIZE_DIGITS)} MB, ${(videoMs / MS_PER_SECOND).toFixed(1)} s, CRF ${crf}`;
-if (size > OUTPUT_BYTES_MAX) {
+const clipsListPath = join(workDir, 'clips.ffconcat');
+await joinClips({ clips, listPath: clipsListPath, output, crf: UPLOAD_CRF, durationMs: videoMs, isGithub: false });
+const uploadSize = (await stat(output)).size;
+const uploadReport = report({ path: output, size: uploadSize, videoMs, fps: UPLOAD_FPS, crf: UPLOAD_CRF });
+if (uploadSize > UPLOAD_BYTES_MAX) {
   throw new Error(
-    `VIDEO_TOO_LARGE: ${report}. GitHub accepts at most ${OUTPUT_BYTES_MAX / BYTES_PER_MB} MB; run compose again with a higher --crf.`
+    `VIDEO_TOO_LARGE: ${uploadReport}. The upload accepts at most ${UPLOAD_BYTES_MAX / BYTES_PER_MB} MB.`
   );
 }
-console.log(`video ${report}`);
+console.log(`video ${uploadReport}`);
+let githubCrf = crf;
+let githubSize = 0;
+while (true) {
+  await joinClips({
+    clips,
+    listPath: clipsListPath,
+    output: githubOutput,
+    crf: githubCrf,
+    durationMs: videoMs,
+    isGithub: true
+  });
+  githubSize = (await stat(githubOutput)).size;
+  if (githubSize <= GITHUB_BYTES_MAX || githubCrf === CRF_MAX) {
+    break;
+  }
+  githubCrf = Math.min(CRF_MAX, githubCrf + GITHUB_CRF_STEP);
+}
+const githubReport = report({ path: githubOutput, size: githubSize, videoMs, fps: GITHUB_FPS, crf: githubCrf });
+if (githubSize > GITHUB_BYTES_MAX) {
+  throw new Error(`VIDEO_TOO_LARGE: ${githubReport}. GitHub accepts at most ${GITHUB_BYTES_MAX / BYTES_PER_MB} MB.`);
+}
+console.log(`video ${githubReport}`);
+
+type ReportParams = {
+  path: string;
+  size: number;
+  videoMs: number;
+  fps: number;
+  crf: number;
+};
+
+function report({ path, size, videoMs: durationMs, fps, crf: encodeCrf }: ReportParams): string {
+  return `${path}: ${(size / BYTES_PER_MB).toFixed(SIZE_DIGITS)} MB, ${(durationMs / MS_PER_SECOND).toFixed(1)} s, ${fps} fps, CRF ${encodeCrf}`;
+}
 
 function nextClipPath(): string {
   return join(workDir, `clip-${String(clips.length).padStart(CLIP_NAME_DIGITS, '0')}`);

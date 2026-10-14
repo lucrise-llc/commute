@@ -6,8 +6,7 @@ export const VIDEO_HEIGHT = 1_080;
 export const STRIP_HEIGHT = 120;
 export const BADGE_WIDTH = 200;
 const CAPTION_SIDE_PADDING = 240;
-export const BACKGROUND = '#121417';
-export const STRIP_BACKGROUND = '#0c0d0f';
+export const BACKGROUND = '#101010';
 export const TEXT_COLOR = '#f1f2f4';
 export const MUTED_COLOR = '#9299a4';
 export const ACCENT_COLOR = '#f6821f';
@@ -26,7 +25,7 @@ const HYPHENATED_WORD = /[\w.]+(?:-[\w.]+)+/g;
 export function captionHtml(text: string): string {
   return htmlDocument({
     css: `* { box-sizing: border-box; margin: 0; }
-      body { width: ${VIDEO_WIDTH}px; height: ${STRIP_HEIGHT}px; background: ${STRIP_BACKGROUND};
+      body { width: ${VIDEO_WIDTH}px; height: ${STRIP_HEIGHT}px; background: ${BACKGROUND};
         display: flex; align-items: center; justify-content: center; padding: 0 ${CAPTION_SIDE_PADDING}px;
         -webkit-font-smoothing: antialiased; }
       ${CAPTION_CSS}`,

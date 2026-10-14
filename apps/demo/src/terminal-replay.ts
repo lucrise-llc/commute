@@ -20,6 +20,7 @@ import {
   FONT_FAMILY,
   htmlDocument,
   MUTED_COLOR,
+  STRIP_HEIGHT,
   TEXT_COLOR,
   VIDEO_HEIGHT,
   VIDEO_WIDTH
@@ -28,9 +29,9 @@ import {
 const XTERM_SCRIPT_PATH = fileURLToPath(import.meta.resolve('@xterm/xterm/lib/xterm.js'));
 const XTERM_CSS_PATH = fileURLToPath(import.meta.resolve('@xterm/xterm/css/xterm.css'));
 const TERMINAL_OPTIONS = {
-  cols: 104,
-  rows: 24,
-  fontSize: 24,
+  cols: 88,
+  rows: 18,
+  fontSize: 30,
   lineHeight: 1.2,
   fontFamily: `'SF Mono', Menlo, Consolas, monospace`,
   cursorBlink: false,
@@ -39,6 +40,11 @@ const TERMINAL_OPTIONS = {
   disableStdin: true,
   theme: { background: '#0a0b0d', foreground: TEXT_COLOR, cursor: ACCENT_COLOR, cursorAccent: '#0a0b0d' }
 };
+const TERMINAL_ROWS_MIN = 3;
+const TERMINAL_ROWS_PADDING = 1;
+const TERMINAL_COLUMNS_MIN = 24;
+const TERMINAL_COLUMNS_PADDING = 6;
+const SCREEN_PADDING = 24;
 const PROMPT_DIR = '~/storefront';
 const OUTPUT_COLOR = '#b4bac4';
 // Key delays vary from 34 to 74 ms in a fixed pattern, so that typing does not look mechanical.
@@ -196,6 +202,10 @@ function driverScript(): string {
     terminal.open(document.getElementById('terminal'));
     terminal.focus();
     const caption = document.getElementById('caption');
+    const screen = document.getElementById('screen');
+    const terminalCanvas = document.querySelector('#terminal .xterm-screen');
+    const rowHeight = terminalCanvas.getBoundingClientRect().height / ${TERMINAL_OPTIONS.rows};
+    const columnWidth = terminalCanvas.getBoundingClientRect().width / ${TERMINAL_OPTIONS.cols};
     window.replayStep = async (step) => {
       if (step.caption !== null) {
         caption.innerHTML = step.caption;
@@ -203,6 +213,18 @@ function driverScript(): string {
       if (step.write !== '') {
         await new Promise((resolve) => terminal.write(step.write, resolve));
       }
+      const visibleRows = Math.min(${TERMINAL_OPTIONS.rows}, Math.max(${TERMINAL_ROWS_MIN}, terminal.buffer.active.cursorY + ${TERMINAL_ROWS_PADDING}));
+      screen.style.height = Math.ceil(visibleRows * rowHeight + ${SCREEN_PADDING} * 2) + 'px';
+      let visibleColumns = ${TERMINAL_COLUMNS_MIN};
+      const lastVisibleRow = terminal.buffer.active.baseY + terminal.buffer.active.cursorY;
+      const firstVisibleRow = Math.max(0, lastVisibleRow - visibleRows + 1);
+      for (let row = firstVisibleRow; row <= lastVisibleRow; row += 1) {
+        const line = terminal.buffer.active.getLine(row);
+        visibleColumns = Math.max(visibleColumns, line?.translateToString(true).length ?? 0);
+      }
+      const columns = Math.min(${TERMINAL_OPTIONS.cols}, visibleColumns + ${TERMINAL_COLUMNS_PADDING});
+      const targetWidth = Math.ceil(columns * columnWidth + ${SCREEN_PADDING} * 2);
+      screen.style.width = Math.max(Number.parseFloat(screen.style.width) || 0, targetWidth) + 'px';
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       return caption.scrollHeight <= caption.clientHeight;
     };`;
@@ -213,19 +235,21 @@ function replayHtml(title: string): string {
     css: `* { box-sizing: border-box; margin: 0; }
       body { width: ${VIDEO_WIDTH}px; height: ${VIDEO_HEIGHT}px; background: ${BACKGROUND}; display: flex;
         flex-direction: column; align-items: center; -webkit-font-smoothing: antialiased; }
-      .window { margin-top: 64px; background: ${TERMINAL_OPTIONS.theme.background}; border: 1px solid #262a31;
+      .window { position: absolute; top: calc((100% - ${STRIP_HEIGHT}px) / 2); transform: translateY(-50%);
+        background: ${TERMINAL_OPTIONS.theme.background}; border: 1px solid #262a31;
         border-radius: 16px; overflow: hidden; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45); }
       .bar { position: relative; height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 20px;
         background: #17191d; border-bottom: 1px solid #23262c; }
       .bar i { width: 14px; height: 14px; border-radius: 50%; background: #3a3e46; }
       .bar span { position: absolute; left: 0; right: 0; text-align: center; color: ${MUTED_COLOR};
         font: 500 20px ${FONT_FAMILY}; }
-      .screen { padding: 24px 28px; }
-      .caption-area { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 240px; }
+      .screen { padding: ${SCREEN_PADDING}px 28px; overflow: hidden; }
+      .caption-area { position: absolute; left: 0; right: 0; bottom: 0; height: ${STRIP_HEIGHT}px; display: flex;
+        align-items: center; justify-content: center; padding: 0 240px; background: ${BACKGROUND}; }
       ${CAPTION_CSS}`,
     body: `<div class="window">
         <div class="bar"><i></i><i></i><i></i><span>${escapeHtml(title)}</span></div>
-        <div class="screen"><div id="terminal"></div></div>
+        <div class="screen" id="screen"><div id="terminal"></div></div>
       </div>
       <div class="caption-area"><div class="caption" id="caption"></div></div>`
   });
