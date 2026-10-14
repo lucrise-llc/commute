@@ -236,10 +236,10 @@ export const CHAPTER_SCENES: Record<string, Scene> = {
     visual: 'everything',
     cues: [{ text: 'Everything lands: 20 changes in four batches.', durationMs: 4_300 }]
   },
-  "What Bob's agent saw": {
+  'What the agents saw': {
     id: 'chapter-agent',
     visual: 'agent',
-    cues: [{ text: "What Bob's agent saw: Commute commands and plain git.", durationMs: 4_800 }]
+    cues: [{ text: 'What the agents saw: Commute commands and plain git.', durationMs: 4_800 }]
   }
 };
 
@@ -2223,11 +2223,13 @@ function everything(timeMs: number): string {
   ].join('');
 }
 
-// What Bob's agent saw: one agent steps forward, and its change passes through the three commands it runs.
+// What the agents saw: Alice's and Bob's agents step forward, and each change passes through the three commands its
+// agent runs.
 const AGENT_SCENE = {
-  cell: { column: 4, row: 7 },
   scale: 3,
   targetX: 600,
+  laneOffset: 150,
+  laneStaggerMs: 350,
   moveMs: 200,
   moveDurationMs: 800,
   firstBoxX: 880,
@@ -2239,59 +2241,70 @@ const AGENT_SCENE = {
   linesMs: 1_100,
   launchMs: 2_500,
   flightMs: 1_900,
-  iconGap: 16
+  iconGap: 16,
+  nameGap: 30
 };
 const AGENT_COMMANDS = ['commute start', 'git push', 'commute wait'];
+// Alice's agent takes the upper lane and Bob's agent the lower one, as in the side-by-side sessions that follow.
+const AGENT_LANES = [
+  { cell: { column: 2, row: 4 }, side: -1, name: "Alice's agent" },
+  { cell: { column: 6, row: 10 }, side: 1, name: "Bob's agent" }
+];
 
 function agentCommands(timeMs: number): string {
   const move = smooth(progressIn({ timeMs, startMs: AGENT_SCENE.moveMs, durationMs: AGENT_SCENE.moveDurationMs }));
-  const from = agentOrigin(AGENT_SCENE.cell);
   const bigSize = AGENTS.iconSize * AGENT_SCENE.scale;
-  const to = { left: AGENT_SCENE.targetX - bigSize * HALF, top: STAGE_CENTER.top - bigSize * HALF };
   const scale = mix({ from: 1, to: AGENT_SCENE.scale, progress: move });
-  const origin = {
-    left: mix({ from: from.left, to: to.left, progress: move }),
-    top: mix({ from: from.top, to: to.top, progress: move })
-  };
-  const route: Point[] = [{ left: AGENT_SCENE.targetX + bigSize * HALF + AGENT_SCENE.iconGap, top: STAGE_CENTER.top }];
-  const boxes: string[] = [];
-  for (const [index, command] of AGENT_COMMANDS.entries()) {
-    const center = { left: AGENT_SCENE.firstBoxX + index * AGENT_SCENE.boxGap, top: STAGE_CENTER.top };
-    route.push(center);
-    boxes.push(
-      box({
-        center,
-        width: AGENT_SCENE.boxWidth,
-        height: AGENT_SCENE.boxHeight,
-        label: command,
-        opacity: smooth(
-          progressIn({
-            timeMs,
-            startMs: AGENT_SCENE.boxesMs + index * AGENT_SCENE.boxStaggerMs,
-            durationMs: TIMING.enterMs
-          })
-        )
+  const appear = (startMs: number): number => smooth(progressIn({ timeMs, startMs, durationMs: TIMING.enterMs }));
+  const parts = [
+    agents({ timeMs, entryStartMs: null, opacity: mix({ from: 1, to: AGENTS.dimOpacity, progress: move }) })
+  ];
+  const arrivalsMs: number[] = [];
+  for (const [laneIndex, lane] of AGENT_LANES.entries()) {
+    const laneMs = laneIndex * AGENT_SCENE.laneStaggerMs;
+    const top = STAGE_CENTER.top + lane.side * AGENT_SCENE.laneOffset;
+    const from = agentOrigin(lane.cell);
+    const to = { left: AGENT_SCENE.targetX - bigSize * HALF, top: top - bigSize * HALF };
+    const origin = {
+      left: mix({ from: from.left, to: to.left, progress: move }),
+      top: mix({ from: from.top, to: to.top, progress: move })
+    };
+    const route: Point[] = [{ left: AGENT_SCENE.targetX + bigSize * HALF + AGENT_SCENE.iconGap, top }];
+    const boxes: string[] = [];
+    for (const [index, command] of AGENT_COMMANDS.entries()) {
+      const center = { left: AGENT_SCENE.firstBoxX + index * AGENT_SCENE.boxGap, top };
+      route.push(center);
+      boxes.push(
+        box({
+          center,
+          width: AGENT_SCENE.boxWidth,
+          height: AGENT_SCENE.boxHeight,
+          label: command,
+          opacity: appear(AGENT_SCENE.boxesMs + laneMs + index * AGENT_SCENE.boxStaggerMs)
+        })
+      );
+    }
+    route.push(intoTrunk(top));
+    const launchMs = AGENT_SCENE.launchMs + laneMs;
+    const flight: Flight = { points: route, launchMs, arriveMs: launchMs + AGENT_SCENE.flightMs, label: '' };
+    arrivalsMs.push(flight.arriveMs);
+    parts.push(
+      connector({
+        points: route,
+        progress: progressIn({ timeMs, startMs: AGENT_SCENE.linesMs + laneMs, durationMs: TIMING.drawMs })
+      }),
+      flightDot({ flight, timeMs }),
+      ...boxes,
+      agentIcon({ origin, opacity: 1, scale }),
+      text({
+        at: { left: AGENT_SCENE.targetX, top: top + bigSize * HALF + AGENT_SCENE.nameGap },
+        value: lane.name,
+        opacity: appear(AGENT_SCENE.moveMs + AGENT_SCENE.moveDurationMs)
       })
     );
   }
-  route.push(intoTrunk(STAGE_CENTER.top));
-  const flight: Flight = {
-    points: route,
-    launchMs: AGENT_SCENE.launchMs,
-    arriveMs: AGENT_SCENE.launchMs + AGENT_SCENE.flightMs,
-    label: ''
-  };
-  return [
-    agents({ timeMs, entryStartMs: null, opacity: mix({ from: 1, to: AGENTS.dimOpacity, progress: move }) }),
-    connector({
-      points: route,
-      progress: progressIn({ timeMs, startMs: AGENT_SCENE.linesMs, durationMs: TIMING.drawMs })
-    }),
-    flightDot({ flight, timeMs }),
-    ...boxes,
-    agentIcon({ origin, opacity: 1, scale }),
-    trunk({ pulse: pulseAfter({ timeMs, eventsMs: [flight.arriveMs] }) })
-  ].join('');
+  parts.push(trunk({ pulse: pulseAfter({ timeMs, eventsMs: arrivalsMs }) }));
+  return parts.join('');
 }
 
 // How Commute runs on Cloudflare. Trunk turns into Artifacts, which holds trunk and one repository per change.

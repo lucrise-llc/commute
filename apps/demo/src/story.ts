@@ -1,52 +1,82 @@
-// The captions over the agent's terminal. The console captions and chapter titles are in record.ts.
+// The captions over the agents' sessions. The console captions and chapter titles are in record.ts.
+import type { SessionCue } from './agent-sessions.ts';
 
-// The replay shows this agent's terminal, from its first command to the first command that matches the last cue.
-export const TERMINAL_AGENT = 'bob-2';
+// The replay shows these agents side by side: Alice's c-3 and Bob's c-5, which both add a page to src/routes.mjs.
+export const SESSION_AGENTS = ['alice-3', 'bob-2'];
 
-export const TERMINAL_INTRO = "An agent uses two Commute commands and plain git. This is Bob's agent.";
+export const SESSIONS_INTRO =
+  "Coding agents use Commute through its CLI and plain git. Alice's and Bob's agents each get a task.";
 
-export type TerminalCue = {
-  command: RegExp;
-  // The cue applies only to a command whose output matches, when set.
-  output?: RegExp;
-  text: string;
-};
-
-// In order: each cue shows when the agent starts to type the first matching command after the previous cue.
-export const TERMINAL_CUES: TerminalCue[] = [
+// In order of the harness clock: each cue shows when the output of the first matching command appears.
+export const SESSIONS_CUES: SessionCue[] = [
   {
+    agent: 'alice-3',
+    command: /^commute start /,
+    text: "commute start opens a change, c-3, and declares the files that Alice's agent will touch."
+  },
+  {
+    agent: 'alice-3',
+    command: /^git push/,
+    text: 'The agent edits the file and pushes with plain git, to the repository of its change.'
+  },
+  {
+    agent: 'bob-2',
     command: /^commute start /,
     output: /^overlap\s+c-3 /m,
-    text: "commute start declares the files the change will touch. Commute already sees that Alice's c-3 touches the same file."
+    text: "Bob's agent declares the same file, so Commute reports the overlap with c-3 at once."
   },
   {
-    command: /^git push/,
-    text: 'The agent pushes with plain git. Commute merges the change with every change it overlaps.'
+    agent: 'alice-3',
+    command: /^commute wait/,
+    output: /^checks\s/,
+    text: 'commute wait returns when there is news. The checks of c-3 ran in containers and passed.'
   },
   {
+    agent: 'bob-2',
+    command: /^commute wait/,
+    output: /^plan\s/,
+    text: 'Commute merged the two changes and found a conflict. c-3 lands first, then c-5.'
+  },
+  {
+    agent: 'bob-2',
     command: /^commute wait/,
     output: /^resolve\s/,
-    text: 'commute wait reports what happens. Here, Commute already resolved the conflict.'
+    text: 'Workers AI resolved the conflict with lines from both changes. It applies when c-3 lands.'
   }
 ];
 
-export const AGENT_OUTRO_INTRO = "The rest of Bob's terminal. The agent only waited and pulled.";
+export const SESSIONS_OUTRO_INTRO = 'Back in the two sessions. From here on, the agents only wait and pull.';
 
-// The cues of the rest of the transcript, after the command of the last cue above.
-export const AGENT_OUTRO_CUES: TerminalCue[] = [
+// The cues of the rest of the sessions, after the last cue above.
+export const SESSIONS_OUTRO_CUES: SessionCue[] = [
   {
+    agent: 'bob-2',
     command: /^commute wait/,
-    output: /^restack\s+onto trunk \S+: /,
-    text: "When Bob's first batch lands, Commute asks the agent to pull the new trunk."
+    output: /^checks\s/,
+    text: 'Checks keep the results of folders that did not change. Only the routes check ran.'
   },
   {
+    agent: 'alice-3',
     command: /^commute wait/,
-    output: /^restack .+with Commute's resolution/,
-    text: "When Alice's change lands, the agent pulls Commute's resolution. It never edits the conflict itself."
+    output: /^restack\s/,
+    text: 'The first batch landed. commute wait tells each agent to pull the new trunk.'
   },
   {
+    agent: 'alice-3',
     command: /^commute wait/,
     output: /^landed\s/,
-    text: "Bob's change lands in the batch Bob approved. The agent never stopped to fix a conflict."
+    text: 'Alice approved her batch, and c-3 lands.'
+  },
+  {
+    agent: 'bob-2',
+    command: /^commute wait/,
+    output: /^restack .+with Commute's resolution/,
+    text: "Bob's agent pulls Commute's resolution. It never edits the conflict itself."
+  },
+  {
+    agent: 'bob-2',
+    command: /^commute wait/,
+    output: /^landed\s/,
+    text: 'c-5 lands in the batch Bob approved. Neither agent stopped to coordinate.'
   }
 ];

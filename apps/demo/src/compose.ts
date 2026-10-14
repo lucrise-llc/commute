@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Composes the walkthrough video from a recorded take, animated explanation, and terminal replay.
+// Composes the walkthrough video from a recorded take, animated explanation, and the agents' sessions.
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from 'node:util';
@@ -7,16 +7,18 @@ import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 
 import type { Scene } from './animated-scenes.ts';
+import type { Session } from './agent-sessions.ts';
 import type { ConsoleSegment } from './segments.ts';
 import type { FrameEntry, Overlay } from './clips.ts';
 
+import { AGENTS } from './agents.ts';
 import { transcriptSchema } from './transcript.ts';
 import { FAST_SPEED, planSegments } from './segments.ts';
 import { TIMELINE_FILE, timelineSchema } from './capture.ts';
-import { planReplay, renderReplay } from './terminal-replay.ts';
+import { planSessions, renderSessions } from './agent-sessions.ts';
 import { CONSOLE_BAR, encodeFramesClip, joinClips } from './clips.ts';
 import { CHAPTER_SCENES, CLOSING_SCENES, OPENING_SCENES, renderScenes } from './animated-scenes.ts';
-import { AGENT_OUTRO_CUES, AGENT_OUTRO_INTRO, TERMINAL_AGENT, TERMINAL_CUES, TERMINAL_INTRO } from './story.ts';
+import { SESSION_AGENTS, SESSIONS_CUES, SESSIONS_INTRO, SESSIONS_OUTRO_CUES, SESSIONS_OUTRO_INTRO } from './story.ts';
 import {
   BADGE_WIDTH,
   badgeHtml,
@@ -69,21 +71,29 @@ const output = join(recordingDir, OUTPUT_FILE);
 const githubOutput = join(recordingDir, GITHUB_OUTPUT_FILE);
 
 const timeline = timelineSchema.parse(JSON.parse(await readFile(join(recordingDir, TIMELINE_FILE), 'utf8')));
-const transcript = transcriptSchema.parse(
-  JSON.parse(await readFile(join(recordingDir, TRANSCRIPTS_DIR, `${TERMINAL_AGENT}.json`), 'utf8'))
-);
+const sessions: Session[] = [];
+for (const name of SESSION_AGENTS) {
+  const agent = AGENTS.find((candidate) => candidate.name === name);
+  if (agent === undefined) {
+    throw new Error(`UNKNOWN_AGENT: ${name} is not a demo agent.`);
+  }
+  const transcript = transcriptSchema.parse(
+    JSON.parse(await readFile(join(recordingDir, TRANSCRIPTS_DIR, `${name}.json`), 'utf8'))
+  );
+  sessions.push({ owner: agent.owner, intent: agent.intent, edit: agent.edit, transcript });
+}
 const segments = planSegments({ timeline, recordingDir });
-const replay = planReplay({ transcript, intro: TERMINAL_INTRO, cues: TERMINAL_CUES });
-const outroReplay = planReplay({
-  transcript,
-  intro: AGENT_OUTRO_INTRO,
-  cues: AGENT_OUTRO_CUES,
-  fromCommand: replay.lastCommand + 1
+const sessionsPlan = planSessions({ sessions, intro: SESSIONS_INTRO, cues: SESSIONS_CUES });
+const sessionsOutroPlan = planSessions({
+  sessions,
+  intro: SESSIONS_OUTRO_INTRO,
+  cues: SESSIONS_OUTRO_CUES,
+  fromHarnessMs: sessionsPlan.endHarnessMs
 });
 
 await rm(workDir, { recursive: true, force: true });
-await mkdir(join(workDir, 'terminal'), { recursive: true });
-await mkdir(join(workDir, 'terminal-outro'), { recursive: true });
+await mkdir(join(workDir, 'sessions'), { recursive: true });
+await mkdir(join(workDir, 'sessions-outro'), { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const clips: string[] = [];
@@ -91,7 +101,7 @@ let videoMs = 0;
 
 await addAnimated({ scenes: OPENING_SCENES });
 await addFrames({
-  frames: await renderReplay({ browser, plan: replay, title: transcript.agent, framesDir: join(workDir, 'terminal') }),
+  frames: await renderSessions({ browser, plan: sessionsPlan, framesDir: join(workDir, 'sessions') }),
   overlays: []
 });
 const badge = join(workDir, 'badge.png');
@@ -112,14 +122,9 @@ await renderGraphic({
 for (const segment of segments) {
   await addConsoleSegment({ segment });
 }
-await addAnimated({ scenes: [chapterScene("What Bob's agent saw")] });
+await addAnimated({ scenes: [chapterScene('What the agents saw')] });
 await addFrames({
-  frames: await renderReplay({
-    browser,
-    plan: outroReplay,
-    title: transcript.agent,
-    framesDir: join(workDir, 'terminal-outro')
-  }),
+  frames: await renderSessions({ browser, plan: sessionsOutroPlan, framesDir: join(workDir, 'sessions-outro') }),
   overlays: []
 });
 await addAnimated({ scenes: CLOSING_SCENES });
