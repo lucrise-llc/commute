@@ -10,7 +10,8 @@ const runFile = promisify(execFile);
 const VIDEO_FPS = 30;
 const MS_PER_SECOND = 1_000;
 export const FRAME_MS = MS_PER_SECOND / VIDEO_FPS;
-const FADE_SECONDS = 0.3;
+export const FADE_MS = 300;
+const FADE_SECONDS = FADE_MS / MS_PER_SECOND;
 const KEYFRAME_SECONDS = 10;
 const DURATION_DIGITS = 6;
 const FFMPEG_OUTPUT_BYTES_MAX = 10_000_000;
@@ -83,29 +84,6 @@ export async function encodeFramesClip({ frames, overlays, listPath, output }: F
     [base, ...layers, finish].join(';'),
     '-map',
     '[out]',
-    '-t',
-    seconds(durationMs),
-    ...CLIP_CODEC,
-    output
-  ]);
-}
-
-type StillClipParams = {
-  image: string;
-  durationMs: number;
-  output: string;
-};
-
-export async function encodeStillClip({ image, durationMs, output }: StillClipParams): Promise<void> {
-  await ffmpeg([
-    '-loop',
-    '1',
-    '-framerate',
-    String(VIDEO_FPS),
-    '-i',
-    image,
-    '-vf',
-    `format=rgb24,${fades(durationMs)},${TO_VIDEO_COLOR}`,
     '-t',
     seconds(durationMs),
     ...CLIP_CODEC,

@@ -1,41 +1,31 @@
 #!/usr/bin/env node
-// Composes the walkthrough video from a recorded take: the title and why cards, a replay of one agent's terminal, the
-// console segments with a chapter card before each, the rest of that agent's terminal, and the outro cards. Run it
-// after `npm run record`.
+// Composes the walkthrough video from a recorded take, animated explanation, and terminal replay.
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 
-import type { Card } from './graphics.ts';
+import type { Scene } from './animated-scenes.ts';
 import type { ConsoleSegment } from './segments.ts';
 import type { FrameEntry, Overlay } from './clips.ts';
 
 import { transcriptSchema } from './transcript.ts';
 import { FAST_SPEED, planSegments } from './segments.ts';
+import { encodeFramesClip, joinClips } from './clips.ts';
 import { TIMELINE_FILE, timelineSchema } from './capture.ts';
 import { planReplay, renderReplay } from './terminal-replay.ts';
-import { encodeFramesClip, encodeStillClip, joinClips } from './clips.ts';
+import { CHAPTER_SCENES, CLOSING_SCENES, OPENING_SCENES, renderScenes } from './animated-scenes.ts';
+import { AGENT_OUTRO_CUES, AGENT_OUTRO_INTRO, TERMINAL_AGENT, TERMINAL_CUES, TERMINAL_INTRO } from './story.ts';
 import {
   BADGE_WIDTH,
   badgeHtml,
   captionHtml,
-  cardHtml,
   renderGraphic,
   STRIP_HEIGHT,
   VIDEO_HEIGHT,
   VIDEO_WIDTH
 } from './graphics.ts';
-import {
-  AGENT_CHAPTER,
-  AGENT_OUTRO_CUES,
-  AGENT_OUTRO_INTRO,
-  TERMINAL_AGENT,
-  TERMINAL_CUES,
-  TERMINAL_INTRO,
-  WHY_CARDS
-} from './story.ts';
 
 const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
 const TRANSCRIPTS_DIR = 'transcripts';
@@ -50,18 +40,10 @@ const CRF_MAX = 40;
 // The submission asks for a demo video of 5 to 10 minutes (PRD.md).
 const VIDEO_MS_MIN = 300_000;
 const VIDEO_MS_MAX = 600_000;
-const TITLE_MS = 5_000;
-const WHY_MS_MIN = 6_000;
-const WHY_MS_LEAD = 1_000;
-const WHY_MS_PER_WORD = 250;
-const CHAPTER_MS = 3_000;
-const ARCHITECTURE_MS = 8_000;
-const CLOSING_MS = 5_000;
 const CLIP_NAME_DIGITS = 3;
 const MS_PER_SECOND = 1_000;
 const BYTES_PER_MB = 1_000_000;
 const SIZE_DIGITS = 2;
-const VIDEO_SIZE = { width: VIDEO_WIDTH, height: VIDEO_HEIGHT };
 const STRIP_SIZE = { width: VIDEO_WIDTH, height: STRIP_HEIGHT };
 const STRIP_TOP = VIDEO_HEIGHT - STRIP_HEIGHT;
 
@@ -99,13 +81,7 @@ const page = await browser.newPage();
 const clips: string[] = [];
 let videoMs = 0;
 
-await addCard({ card: { kind: 'title' }, durationMs: TITLE_MS });
-for (const [index, text] of WHY_CARDS.entries()) {
-  await addCard({
-    card: { kind: 'why', text, position: `${index + 1} / ${WHY_CARDS.length}` },
-    durationMs: Math.max(WHY_MS_MIN, WHY_MS_LEAD + text.split(/\s+/).length * WHY_MS_PER_WORD)
-  });
-}
+await addAnimated({ scenes: OPENING_SCENES });
 await addFrames({
   frames: await renderReplay({ browser, plan: replay, title: transcript.agent, framesDir: join(workDir, 'terminal') }),
   overlays: []
@@ -118,11 +94,10 @@ await renderGraphic({
   size: { width: BADGE_WIDTH, height: STRIP_HEIGHT },
   isTransparent: true
 });
-// The segment before the first chapter mark has no chapter, so each chapter's number is its segment's index.
-for (const [index, segment] of segments.entries()) {
-  await addConsoleSegment({ segment, number: index });
+for (const segment of segments) {
+  await addConsoleSegment({ segment });
 }
-await addCard({ card: { kind: 'chapter', number: segments.length, title: AGENT_CHAPTER }, durationMs: CHAPTER_MS });
+await addAnimated({ scenes: [chapterScene("What Bob's agent saw")] });
 await addFrames({
   frames: await renderReplay({
     browser,
@@ -132,8 +107,7 @@ await addFrames({
   }),
   overlays: []
 });
-await addCard({ card: { kind: 'architecture' }, durationMs: ARCHITECTURE_MS });
-await addCard({ card: { kind: 'closing' }, durationMs: CLOSING_MS });
+await addAnimated({ scenes: CLOSING_SCENES });
 await browser.close();
 
 if (videoMs < VIDEO_MS_MIN || videoMs > VIDEO_MS_MAX) {
@@ -155,17 +129,27 @@ function nextClipPath(): string {
   return join(workDir, `clip-${String(clips.length).padStart(CLIP_NAME_DIGITS, '0')}`);
 }
 
-type AddCardParams = {
-  card: Card;
-  durationMs: number;
+type AddAnimatedParams = {
+  scenes: Scene[];
 };
 
-async function addCard({ card, durationMs }: AddCardParams): Promise<void> {
+async function addAnimated({ scenes }: AddAnimatedParams): Promise<void> {
   const path = nextClipPath();
-  await renderGraphic({ page, html: cardHtml(card), path: `${path}.png`, size: VIDEO_SIZE });
-  await encodeStillClip({ image: `${path}.png`, durationMs, output: `${path}.mp4` });
-  clips.push(`${path}.mp4`);
-  videoMs += durationMs;
+  const frames = await renderScenes({
+    page,
+    scenes,
+    framesDir: `${path}-frames`,
+    reviewDir: join(recordingDir, 'review')
+  });
+  await addFrames({ frames, overlays: [] });
+}
+
+function chapterScene(title: string): Scene {
+  const scene = CHAPTER_SCENES[title];
+  if (scene === undefined) {
+    throw new Error(`UNKNOWN_CHAPTER: ${title}`);
+  }
+  return scene;
 }
 
 type AddFramesParams = {
@@ -182,15 +166,14 @@ async function addFrames({ frames, overlays }: AddFramesParams): Promise<void> {
   }
 }
 
-// The chapter card, then the console over the caption strip. The speed badge shows at the right end of the strip.
+// An animated chapter precedes the console segment. The speed badge shows at the right end of the strip.
 type AddConsoleSegmentParams = {
   segment: ConsoleSegment;
-  number: number;
 };
 
-async function addConsoleSegment({ segment, number }: AddConsoleSegmentParams): Promise<void> {
+async function addConsoleSegment({ segment }: AddConsoleSegmentParams): Promise<void> {
   if (segment.chapter !== null) {
-    await addCard({ card: { kind: 'chapter', number, title: segment.chapter }, durationMs: CHAPTER_MS });
+    await addAnimated({ scenes: [chapterScene(segment.chapter)] });
   }
   if (segment.frames.length === 0) {
     return;

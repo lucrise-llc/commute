@@ -1,9 +1,5 @@
-// The video's own graphics, drawn as HTML and screenshot with Playwright: the cards, the caption strip under the
-// console, and the speed badge. They are video cards, not product UI: the system font, plenty of space, a dark neutral
-// background, and one accent color.
+// The caption strip, speed badge, and terminal colors for the composed video.
 import type { Page } from 'playwright';
-
-import { ARCHITECTURE_ROWS, CLOSING_CARD, TITLE_CARD } from './story.ts';
 
 export const VIDEO_WIDTH = 1_920;
 export const VIDEO_HEIGHT = 1_080;
@@ -25,88 +21,6 @@ export const CAPTION_CSS = `
 `;
 // Words with a hyphen, such as a change ID, stay on one line.
 const HYPHENATED_WORD = /[\w.]+(?:-[\w.]+)+/g;
-
-export type Card =
-  | {
-      kind: 'title';
-    }
-  | {
-      kind: 'why';
-      text: string;
-      position: string;
-    }
-  | {
-      kind: 'chapter';
-      number: number;
-      title: string;
-    }
-  | {
-      kind: 'architecture';
-    }
-  | {
-      kind: 'closing';
-    };
-
-const CARD_CSS = `
-* { box-sizing: border-box; margin: 0; }
-html, body { width: ${VIDEO_WIDTH}px; height: ${VIDEO_HEIGHT}px; }
-body { background: ${BACKGROUND}; color: ${TEXT_COLOR}; font-family: ${FONT_FAMILY}; -webkit-font-smoothing: antialiased;
-  display: flex; flex-direction: column; justify-content: center; padding: 0 220px; text-wrap: balance; }
-.rule { width: 96px; height: 8px; border-radius: 4px; background: ${ACCENT_COLOR}; margin-bottom: 56px; }
-.name { font-size: 168px; font-weight: 700; line-height: 1; letter-spacing: -0.035em; }
-.tagline { margin-top: 36px; font-size: 64px; font-weight: 500; letter-spacing: -0.015em; }
-.platform { margin-top: 80px; font-size: 32px; color: ${MUTED_COLOR}; }
-.position { margin-bottom: 40px; font-size: 30px; font-weight: 600; color: ${ACCENT_COLOR};
-  font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
-.statement { max-width: 1400px; font-size: 66px; font-weight: 500; line-height: 1.28; letter-spacing: -0.015em; }
-.chapter-number { font-size: 200px; font-weight: 700; line-height: 1; color: ${ACCENT_COLOR}; letter-spacing: -0.04em; }
-.chapter-title { margin-top: 32px; font-size: 80px; font-weight: 600; letter-spacing: -0.02em; }
-.rows { display: grid; grid-template-columns: 440px 1fr; }
-.rows > div { padding: 30px 0; border-top: 1px solid #2a2e35; font-size: 46px; }
-.rows > div:nth-last-child(-n + 2) { border-bottom: 1px solid #2a2e35; }
-.product { font-weight: 600; }
-.role { color: ${MUTED_COLOR}; }
-.closing { max-width: 1480px; font-size: 92px; font-weight: 600; line-height: 1.15; letter-spacing: -0.025em; }
-.accent { color: ${ACCENT_COLOR}; }
-`;
-
-export function cardHtml(card: Card): string {
-  return htmlDocument({ css: CARD_CSS, body: cardBody(card) });
-}
-
-function cardBody(card: Card): string {
-  switch (card.kind) {
-    case 'title': {
-      return `<div class="rule"></div>
-        <div class="name">${escapeHtml(TITLE_CARD.name)}</div>
-        <div class="tagline">${escapeHtml(TITLE_CARD.tagline)}</div>
-        <div class="platform">${escapeHtml(TITLE_CARD.platform)}</div>`;
-    }
-    case 'why': {
-      return `<div class="position">${escapeHtml(card.position)}</div>
-        <div class="statement">${escapeHtml(card.text)}</div>`;
-    }
-    case 'chapter': {
-      return `<div class="chapter-number">${card.number}</div>
-        <div class="chapter-title">${escapeHtml(card.title)}</div>`;
-    }
-    case 'architecture': {
-      const rows = ARCHITECTURE_ROWS.map(
-        ({ product, role }) =>
-          `<div class="product">${escapeHtml(product)}</div><div class="role">${escapeHtml(role)}</div>`
-      );
-      return `<div class="rows">${rows.join('')}</div>`;
-    }
-    case 'closing': {
-      return `<div class="rule"></div>
-        <div class="closing"><span class="accent">${escapeHtml(CLOSING_CARD.name)}:</span> ${escapeHtml(CLOSING_CARD.line)}</div>`;
-    }
-    default: {
-      const unknown: never = card;
-      throw new Error(`UNKNOWN_CARD: ${JSON.stringify(unknown)}`);
-    }
-  }
-}
 
 // One caption in the strip under the console. The strip leaves room on the right for the speed badge.
 export function captionHtml(text: string): string {

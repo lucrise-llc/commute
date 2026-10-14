@@ -1,31 +1,4 @@
-// The words of the walkthrough outside the console: the cards, and the captions over the agent's terminal. The console
-// captions and the chapter titles are in record.ts, next to the steps they describe.
-
-export const TITLE_CARD = {
-  name: 'Commute',
-  tagline: 'Many coding agents, one repository.',
-  platform: 'Built on Cloudflare Workers, Durable Objects, Containers, Artifacts, and Workers AI.'
-};
-
-export const WHY_CARDS = [
-  'One person can run ten coding agents at the same time.',
-  'On a pull request host, two open changes learn that they conflict only after one of them merges. Then someone has to stop and fix it.',
-  'When main moves, every open change updates and runs its checks again, even when the files it depends on did not change.',
-  'Commute coordinates the agents. It knows the files of each change at the start, lands changes that commute in any order, keeps check results that still hold, and resolves conflicts at the first push.'
-];
-
-export const ARCHITECTURE_ROWS = [
-  { product: 'Workers', role: 'the API, the console, and the git remote.' },
-  { product: 'Artifacts', role: 'trunk and one repository per change.' },
-  { product: 'Durable Objects', role: 'one coordinator per project.' },
-  { product: 'Containers', role: 'merges and checks, with git.' },
-  { product: 'Workers AI', role: 'the resolver, which picks lines.' }
-];
-
-export const CLOSING_CARD = {
-  name: 'Commute',
-  line: 'changes that commute land in any order.'
-};
+// The captions over the agent's terminal. The console captions and chapter titles are in record.ts.
 
 // The replay shows this agent's terminal, from its first command to the first command that matches the last cue.
 export const TERMINAL_AGENT = 'bob-2';
@@ -56,8 +29,6 @@ export const TERMINAL_CUES: TerminalCue[] = [
     text: 'commute wait reports what happens. Here, Commute already resolved the conflict.'
   }
 ];
-
-export const AGENT_CHAPTER = "What Bob's agent saw";
 
 export const AGENT_OUTRO_INTRO = "The rest of Bob's terminal. The agent only waited and pulled.";
 
