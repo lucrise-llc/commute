@@ -280,3 +280,7 @@ trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
 Commute is a prototype, and "Commute" is a working name.
 [PRD.md](PRD.md) describes what the first demo covers and the features that
 come after it.
+
+## License
+
+Commute is released under the [MIT License](LICENSE). Copyright 2026 Lucrise LLC.
