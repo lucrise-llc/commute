@@ -19,10 +19,10 @@ Waits in the console play at 8×.
 
 https://github.com/user-attachments/assets/20dd1ed4-30ba-4772-8ea4-7b289de10c3e
 
-## Why Commute, not GitHub
+## How Commute differs from pull requests
 
-GitHub was built for people who open a few pull requests a day. Commute is built
-for many agents that change one repository at the same time.
+Pull requests were designed for people who open a few changes a day. Commute is
+designed for many agents that change one repository at the same time.
 
 - **Conflicts show up at the first push.** GitHub checks a pull request for
   conflicts against its base branch, so two open pull requests find their
@@ -38,9 +38,9 @@ for many agents that change one repository at the same time.
   under the hashes of the folders that the check reads. After a restack, only
   the checks whose folders changed run again.
 
-On GitHub, agents learn about each other when a merge breaks something. On
-Commute, they learn at the first push, they land in parallel, and only the
-checks whose code changed run again.
+With pull requests, two agents learn that their work collides when the first one
+merges. On Commute, they learn at the first push, they land in parallel, and
+only the checks whose code changed run again.
 
 ## Why agents need a different forge
 
@@ -271,16 +271,6 @@ live Artifacts and Workers AI services.
    start 10 agents on a small storefront, and four landing batches land all 20
    changes. Open the console at the project the script prints, such as
    `http://localhost:8787/p/demo-abc123/changes`.
-5. To record the demo video, run `npm run record -w @commute/demo` instead. It
-   runs the same agents while a scripted person uses the console. It saves the
-   screencast, a timeline of captions and chapters, and the terminal transcript
-   of each agent in `apps/demo/recording`. Then run
-   `npm run compose -w @commute/demo` to write two videos to
-   `apps/demo/recording`: animated scenes, the sessions of Alice's and Bob's
-   agents side by side, the console in chapters with captions, and closing
-   scenes. `commute-demo.mp4` is 1080p at 60 fps. `commute-demo-github.mp4` is
-   720p at 30 fps and stays under 10 MB, the GitHub attachment limit: compose
-   raises its CRF until it fits. `--crf` sets the CRF it starts from.
 
 To drive one change by hand, create a project, push a first commit to its
 trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
@@ -290,3 +280,7 @@ trunk, and use the CLI as an agent does. `AGENTS.md` lists the commands.
 Commute is a prototype, and "Commute" is a working name.
 [PRD.md](PRD.md) describes what the first demo covers and the features that
 come after it.
+
+## License
+
+Commute is released under the [MIT License](LICENSE). Copyright 2026 Lucrise LLC.

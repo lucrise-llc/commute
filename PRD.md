@@ -517,6 +517,7 @@ The demo is our entry in Cloudflare's "Build the next GitHub" competition.
 - The submission needs a demo video of 5 to 10 minutes, the source code in a
   public repository, and instructions to run it.
 - The code must use the MIT, Apache 2.0, or BSD license, with a LICENSE file.
+  Commute uses the MIT License, and Lucrise LLC holds the copyright.
 - The work must be original. It must not include third-party copyrighted
   material without permission.
 - The submission must not attack any person or any other product.
@@ -530,6 +531,5 @@ The demo is our entry in Cloudflare's "Build the next GitHub" competition.
 
 - Eligibility: each team member must be a legal resident of the United States or
   Canada and 18 or older.
-- License and ownership of the code.
 - Whether the demo video can show numbers from our internal analysis.
 - The team, and the two people who present on October 21 if we are a finalist.
