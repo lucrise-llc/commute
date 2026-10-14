@@ -10,11 +10,17 @@ import { captionMarkup, escapeHtml, htmlDocument, VIDEO_HEIGHT, VIDEO_WIDTH } fr
 
 const BACKGROUND = '#101010';
 const BLUE = '#1868bc';
+// The console's brand color, the Kumo token `--color-kumo-brand`.
+const BRAND_BLUE = 'oklch(57.72% 0.2324 260)';
 const GREEN = '#2dc242';
 const GREEN_BRIGHT = '#75e980';
+const BOX_FILL = '#122116';
+const HATCH_COLOR = '#1c4a27';
 const ORANGE = '#df3d17';
 const WHITE = '#f4fcf3';
 const GREY = '#5e5e5e';
+const MONO = 'Menlo,Consolas,monospace';
+const SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif";
 const CAPTION_HEIGHT = 120;
 const ART_HEIGHT = VIDEO_HEIGHT - CAPTION_HEIGHT;
 const FRAME_DIGITS = 6;
@@ -23,133 +29,101 @@ const SHEET_SAMPLE_COUNT = 6;
 const READING_CHARS_PER_SECOND = 15;
 const READING_LEAD_MS = 300;
 const MS_PER_SECOND = 1_000;
-const COORD_DIGITS = 2;
+const COORD_DIGITS = 1;
 const OPACITY_DIGITS = 3;
-const BATCH_TOTAL = 16;
-const CHANGE_TOTAL = 20;
-const BATCH_COUNT = 4;
-const MARK_VIEWBOX_SIZE = 16;
-const RESULT_SLOT = 3;
-const APPROVAL_SLOT = 2;
-const WORLD = {
-  boxLeft: 180,
-  boxTop: 122,
-  boxWidth: 280,
-  boxHeight: 170,
-  boxGap: 40,
-  boxCount: 5,
-  boxLabelY: 43,
-  boxCenterLabelY: 96,
-  boxLineStartY: 77,
-  boxLineGap: 29,
-  resultLineStartY: 76,
-  resultLineGap: 24,
-  busLeft: 180,
-  busTop: 430,
-  busWidth: 1_560,
-  busHeight: 90,
-  busLabelY: 55,
-  busCountX: 1_605,
-  connectorTop: 292,
-  connectorBottom: 430,
-  lowerConnectorTop: 520,
-  lowerConnectorBottom: 635,
-  bandLeft: 180,
-  bandTop: 635,
-  bandColumns: 33,
-  bandRows: 6,
-  bandGapX: 48,
-  bandGapY: 43,
-  iconSize: 24,
-  lowerConnectorStride: 4,
-  lowerConnectorCount: 9,
-  centerX: 960,
-  queueY: 580,
-  queueStartX: 610,
-  queueEndX: 960,
-  queueCount: 4,
-  queueBaseGap: 68,
-  queueGapGrowth: 12,
-  batchConnectorStride: 2,
-  batchConnectorCount: 16,
-  labelSize: 25,
-  packetRadius: 7
-};
-const MOTION = {
-  enterMs: 900,
-  busEnterMs: 1_000,
-  boxesEnterMs: 1_450,
-  packetsEnterMs: 2_300,
-  agentStaggerMs: 5,
-  agentRisePx: 65,
-  packetFlightMs: 1_120,
-  packetPeriodMs: 2_100,
-  packetPeriodSpreadMs: 660,
-  packetOffsetStrideMs: 613,
-  packetPeriodStrideMs: 371,
-  pulseMs: 260,
-  pulseExtraWidth: 3,
-  queueLandMs: 1_600,
-  queueLaunchMs: 900,
-  conflictLandMs: 1_950,
-  conflictStopMs: 3_300,
-  laneRevealMs: 750,
-  overlapPathsMs: 1_300,
-  overlapMergeMs: 3_000,
-  overlapResultMs: 7_200,
-  resolutionModelMs: 4_700,
-  resolutionAnswerMs: 8_000,
-  resolutionApplyMs: 11_000,
-  resolutionLineMs: 300,
-  resolutionLineStaggerMs: 300,
-  batchApproveMs: 4_200,
-  batchFlightMs: 1_150,
-  batchLaunchSpacingMs: 95,
-  batchShuffleStride: 7,
-  batchArrivalMs: 180,
-  checkLandingMs: 6_700,
-  checkHashMs: 7_350,
-  checkRunMs: 8_200,
-  checkPassMs: 9_800,
-  everythingBatchMs: 710,
-  everythingFlightMs: 520,
-  brandEnterMs: 850,
-  endClearMs: 800,
-  driftMs: 2_700,
-  driftPx: 3,
-  unit: 1,
-  half: 0.5,
-  double: 2,
-  cubic: 3
-};
+const HALF = 0.5;
+const CUBIC = 3;
+const DOUBLE = 2;
+const SEED = { multiplier: 12.9898, salt: 78.233, scale: 43_758.5453 };
 const STYLE = {
   boxStroke: 3,
-  boxInnerInset: 9,
-  boxInnerPair: 18,
-  boxDash: '10 9',
-  hatchWidth: 12,
+  pulseStroke: 3,
+  boxInset: 8,
+  boxDash: '10 8',
+  hatchSize: 12,
   hatchStroke: 2,
+  hatchAngle: 35,
   connectorStroke: 2,
   connectorDash: '8 10',
-  fontBaseline: 8,
-  iconStroke: 2,
-  iconCapLeft: 7,
-  iconCapWidth: 10,
-  iconBodyTop: 13,
-  iconBodyWidth: 11,
-  iconRight: 13,
-  iconDotRadius: 3,
-  markTileSize: 94,
-  markTileRadius: 18,
-  markNameSize: 86,
-  markUrlSize: 38,
-  markLeft: 660,
-  markTop: 166,
-  markNameX: 782,
-  markNameY: 232,
-  markUrlY: 342
+  packetRadius: 8,
+  hollowStroke: 3,
+  labelSize: 24,
+  valueSize: 22,
+  lineOffset: 16,
+  codeSize: 26,
+  ringRadius: 16,
+  ringStroke: 3,
+  ringStartDegrees: -90,
+  barHeight: 6,
+  tagSize: 20,
+  packetLabelLift: 30
 };
-const OPENING_VISUALS = new Set(['fleet', 'queue', 'rerun', 'late-conflict', 'lanes', 'dependency', 'brand']);
+const TIMING = {
+  pulseMs: 320,
+  fadeMs: 450,
+  enterMs: 550,
+  drawMs: 700,
+  landMs: 300
+};
+// The stage every explainer scene shares: the agents on the left, trunk on the right, and the flow between them.
+const AGENTS = {
+  left: 120,
+  top: 160,
+  columns: 9,
+  rows: 15,
+  gapX: 40,
+  gapY: 44,
+  iconSize: 24,
+  edgeX: 480,
+  waveStaggerMs: 22,
+  dotMs: 300,
+  morphDelayMs: 350,
+  morphMs: 600,
+  risePx: 10,
+  driftPx: 2,
+  driftPeriodMs: 2_400,
+  driftRowPhase: 0.7,
+  dotRadius: 3,
+  iconStroke: 2,
+  capLeft: 7,
+  capWidth: 10,
+  bodyTop: 13,
+  bodyWidth: 11,
+  bodyRight: 13,
+  dimOpacity: 0.35
+};
+const TRUNK = {
+  left: 1_624,
+  top: 160,
+  width: 176,
+  height: 640,
+  lineOffset: 24,
+  landingDepth: 14
+};
+const TRUNK_CENTER = { left: TRUNK.left + TRUNK.width * HALF, top: TRUNK.top + TRUNK.height * HALF };
+const LANE_LABELS = ['src/routes.mjs', 'src/cart', 'src/catalog', 'src/search', 'docs'];
+const LANES = {
+  boxCenterX: 700,
+  boxWidth: 270,
+  boxHeight: 72
+};
+const LANE_BOX_LEFT = LANES.boxCenterX - LANES.boxWidth * HALF;
+const LANE_BOX_RIGHT = LANES.boxCenterX + LANES.boxWidth * HALF;
+const LOGO = {
+  radiusShare: 0.2,
+  markInsetShare: 0.2,
+  markShare: 0.6
+};
+const CHECK_TICK = {
+  short: 0.35,
+  long: 0.75
+};
+const MARK = {
+  viewBox: 16,
+  stroke: 1.5,
+  path: 'M2 5h5l4 6h3M2 11h5l4-6h3'
+};
+
 const STAGE_HTML = htmlDocument({
   css: `*{box-sizing:border-box}html,body{margin:0;width:${VIDEO_WIDTH}px;height:${VIDEO_HEIGHT}px;background:${BACKGROUND}}
     #art{width:${VIDEO_WIDTH}px;height:${ART_HEIGHT}px;overflow:hidden}svg{display:block}
@@ -306,7 +280,7 @@ export async function renderScenes({ page, scenes, framesDir, reviewDir }: Rende
   const frames: FrameEntry[] = [];
   let sequenceStartMs = 0;
   for (const [sceneIndex, scene] of scenes.entries()) {
-    const durationMs = scene.cues.reduce((sum, cue) => sum + cue.durationMs, 0);
+    const durationMs = sceneDurationMs(scene);
     for (const [cueIndex, cue] of scene.cues.entries()) {
       const hasOpeningFade = sceneIndex === 0 && cueIndex === 0;
       const hasClosingFade = sceneIndex === scenes.length - 1 && cueIndex === scene.cues.length - 1;
@@ -396,620 +370,2110 @@ async function contactSheet({ page, samples, path }: ContactSheetParams): Promis
   await page.setContent(STAGE_HTML);
 }
 
+type Point = {
+  left: number;
+  top: number;
+};
+
 type SceneArtParams = {
   visual: string;
   timeMs: number;
   sequenceTimeMs: number;
 };
 
-type Slot = {
-  index: number;
-  label: string;
-  lines?: string[];
-  hasDetails?: boolean;
-};
+const SVG_DEFS = `<defs><pattern id="hatch" width="${STYLE.hatchSize}" height="${STYLE.hatchSize}" patternUnits="userSpaceOnUse" patternTransform="rotate(${STYLE.hatchAngle})"><path d="M0 0V${STYLE.hatchSize}" stroke="${HATCH_COLOR}" stroke-width="${STYLE.hatchStroke}"/></pattern></defs>`;
 
 function sceneArt({ visual, timeMs, sequenceTimeMs }: SceneArtParams): string {
-  const isOpening = OPENING_VISUALS.has(visual);
-  const worldTimeMs = isOpening ? sequenceTimeMs : timeMs;
-  const slots = slotsForVisual({ visual, timeMs });
-  const hasQueue = visual === 'queue' || visual === 'rerun' || visual === 'late-conflict';
-  const busLabel = visual === 'brand' ? 'COMMUTE' : 'TRUNK';
-  const busValue = busValueForVisual({ visual, timeMs });
-  const queueTimeMs = visual === 'queue' || visual === 'rerun' ? worldTimeMs : timeMs;
-  const busPulse = busPulseForVisual({ visual, timeMs: queueTimeMs });
-  const busOpacity = visual === 'fleet' ? smooth((worldTimeMs - MOTION.busEnterMs) / MOTION.enterMs) : MOTION.unit;
-  const pieces = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${ART_HEIGHT}"><defs>
-      <pattern id="hatch" width="${STYLE.hatchWidth}" height="${STYLE.hatchWidth}" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-        <path d="M0 0V${STYLE.hatchWidth}" stroke="#1c4a27" stroke-width="${STYLE.hatchStroke}"/>
-      </pattern></defs><rect width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" fill="${BACKGROUND}"/>`,
-    connectorLines({ slots, hasQueue, timeMs, visual }),
-    `<g opacity="${busOpacity.toFixed(OPACITY_DIGITS)}">${busBox({ label: busLabel, value: busValue, pulse: busPulse })}</g>`,
-    ...slots.map((slot) => slotBox({ slot, worldTimeMs, visual })),
-    agentBand({ worldTimeMs, isOpening }),
-    connectorPackets({ slots, hasQueue, worldTimeMs, visual }),
-    detailForVisual({ visual, timeMs: visual === 'rerun' ? worldTimeMs : timeMs }),
-    '</svg>'
-  ];
-  return pieces.join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${ART_HEIGHT}">${SVG_DEFS}<rect width="${VIDEO_WIDTH}" height="${ART_HEIGHT}" fill="${BACKGROUND}"/>${sceneBody({ visual, timeMs, sequenceTimeMs })}</svg>`;
 }
 
-function smooth(progress: number): number {
-  const clamped = Math.max(0, Math.min(MOTION.unit, progress));
-  return clamped * clamped * (MOTION.cubic - MOTION.double * clamped);
-}
-
-function slotLeft(index: number): number {
-  return WORLD.boxLeft + index * (WORLD.boxWidth + WORLD.boxGap);
-}
-
-function slotCenter(index: number): number {
-  return slotLeft(index) + WORLD.boxWidth * MOTION.half;
-}
-
-function iconCenter(column: number): number {
-  return WORLD.bandLeft + column * WORLD.bandGapX + WORLD.iconSize * MOTION.half;
-}
-
-function line(path: string): string {
-  return `<path d="${path}" fill="none" stroke="${GREY}" stroke-width="${STYLE.connectorStroke}" stroke-dasharray="${STYLE.connectorDash}"/>`;
-}
-
-function packet(left: number, top: number): string {
-  return `<circle cx="${left.toFixed(COORD_DIGITS)}" cy="${top.toFixed(COORD_DIGITS)}" r="${WORLD.packetRadius}" fill="${ORANGE}"/>`;
-}
-
-type PacketOnParams = {
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  timeMs: number;
-  seed: number;
-};
-
-function packetOn({ fromX, fromY, toX, toY, timeMs, seed }: PacketOnParams): string {
-  const periodMs = MOTION.packetPeriodMs + ((seed * MOTION.packetPeriodStrideMs) % MOTION.packetPeriodSpreadMs);
-  const phaseMs = (timeMs + ((seed * MOTION.packetOffsetStrideMs) % periodMs)) % periodMs;
-  if (phaseMs >= MOTION.packetFlightMs) {
-    return '';
-  }
-  const progress = smooth(phaseMs / MOTION.packetFlightMs);
-  return packet(fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress);
-}
-
-function arrivalPulse(timeMs: number, seed: number): number {
-  const periodMs = MOTION.packetPeriodMs + ((seed * MOTION.packetPeriodStrideMs) % MOTION.packetPeriodSpreadMs);
-  const phaseMs = (timeMs + ((seed * MOTION.packetOffsetStrideMs) % periodMs)) % periodMs;
-  if (phaseMs < MOTION.packetFlightMs || phaseMs > MOTION.packetFlightMs + MOTION.pulseMs) {
-    return 0;
-  }
-  return MOTION.unit - (phaseMs - MOTION.packetFlightMs) / MOTION.pulseMs;
-}
-
-type BoxShapeParams = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  pulse: number;
-};
-
-function boxShape({ left, top, width, height, pulse }: BoxShapeParams): string {
-  const stroke = pulse > 0 ? GREEN_BRIGHT : GREEN;
-  const strokeWidth = STYLE.boxStroke + pulse * MOTION.pulseExtraWidth;
-  return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="#122116" stroke="${stroke}" stroke-width="${strokeWidth}"/>
-    <rect x="${left + STYLE.boxInnerInset}" y="${top + STYLE.boxInnerInset}" width="${width - STYLE.boxInnerPair}" height="${height - STYLE.boxInnerPair}" fill="url(#hatch)" stroke="${stroke}" stroke-width="${STYLE.boxStroke}" stroke-dasharray="${STYLE.boxDash}"/>`;
-}
-
-type BusBoxParams = {
-  label: string;
-  value: string;
-  pulse: number;
-};
-
-function busBox({ label, value, pulse }: BusBoxParams): string {
-  const shape = boxShape({
-    left: WORLD.busLeft,
-    top: WORLD.busTop,
-    width: WORLD.busWidth,
-    height: WORLD.busHeight,
-    pulse
-  });
-  const centerY = WORLD.busTop + WORLD.busLabelY;
-  const valueMarkup =
-    value === ''
-      ? ''
-      : `<text x="${WORLD.busCountX}" y="${centerY}" text-anchor="end" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`;
-  return `<g>${shape}<text x="${WORLD.centerX}" y="${centerY}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${label}</text>${valueMarkup}</g>`;
-}
-
-type SlotBoxParams = {
-  slot: Slot;
-  worldTimeMs: number;
-  visual: string;
-};
-
-function slotBox({ slot, worldTimeMs, visual }: SlotBoxParams): string {
-  const left = slotLeft(slot.index);
-  let progress = MOTION.unit;
-  if (visual === 'fleet') {
-    progress = smooth((worldTimeMs - MOTION.boxesEnterMs - slot.index * MOTION.batchArrivalMs) / MOTION.enterMs);
-  } else if (visual === 'end') {
-    progress = MOTION.unit - smooth(worldTimeMs / MOTION.endClearMs);
-  }
-  let pulse = arrivalPulse(worldTimeMs, slot.index + MOTION.unit);
-  if (visual === 'checks') {
-    const elapsedMs = worldTimeMs - MOTION.checkPassMs;
-    pulse =
-      slot.index === 0 && elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
-  }
-  if (visual === 'batch' && slot.index === APPROVAL_SLOT) {
-    const elapsedMs = worldTimeMs - MOTION.batchApproveMs;
-    pulse = elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
-  }
-  const shape = boxShape({ left, top: WORLD.boxTop, width: WORLD.boxWidth, height: WORLD.boxHeight, pulse });
-  const centerX = slotCenter(slot.index);
-  const hasDetails = slot.hasDetails === true || (slot.lines?.length ?? 0) > 0;
-  const labelY = WORLD.boxTop + (hasDetails ? WORLD.boxLabelY : WORLD.boxCenterLabelY);
-  const lines = (slot.lines ?? [])
-    .map((value, index) => {
-      const top = WORLD.boxTop + WORLD.boxLineStartY + index * WORLD.boxLineGap;
-      return `<text x="${centerX}" y="${top}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`;
-    })
-    .join('');
-  return `<g opacity="${progress.toFixed(OPACITY_DIGITS)}">${shape}<text x="${centerX}" y="${labelY}" text-anchor="middle" fill="${WHITE}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(slot.label)}</text>${lines}</g>`;
-}
-type ConnectorsParams = {
-  slots: Slot[];
-  hasQueue: boolean;
-  timeMs: number;
-  visual: string;
-};
-
-function connectorLines({ slots, hasQueue, timeMs, visual }: ConnectorsParams): string {
-  const pieces: string[] = [];
-  const entry = visual === 'fleet' ? smooth((timeMs - MOTION.busEnterMs) / MOTION.enterMs) : MOTION.unit;
-  const topOpacity = visual === 'end' ? MOTION.unit - smooth(timeMs / MOTION.endClearMs) : MOTION.unit;
-  for (const slot of slots) {
-    const centerX = slotCenter(slot.index);
-    const endY = WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * entry;
-    pieces.push(
-      `<g opacity="${topOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.connectorTop}V${endY}`)}</g>`
-    );
-  }
-  let queueOpacity = MOTION.unit;
-  let laneOpacity = MOTION.unit;
-  if (visual === 'queue') {
-    queueOpacity = smooth(timeMs / MOTION.laneRevealMs);
-    laneOpacity = MOTION.unit - queueOpacity;
-  } else if (visual === 'lanes') {
-    laneOpacity = smooth(timeMs / MOTION.laneRevealMs);
-    queueOpacity = MOTION.unit - laneOpacity;
-  } else if (visual === 'fleet') {
-    laneOpacity = smooth((timeMs - MOTION.busEnterMs) / MOTION.enterMs);
-  }
-  const oldLaneCount = visual === 'queue' ? WORLD.lowerConnectorCount : 0;
-  for (let index = 0; index < oldLaneCount; index += MOTION.unit) {
-    const centerX = iconCenter(index * WORLD.lowerConnectorStride);
-    pieces.push(
-      `<g opacity="${laneOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}</g>`
-    );
-  }
-  if (hasQueue) {
-    pieces.push(
-      `<g opacity="${queueOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${WORLD.centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}${line(`M${WORLD.queueStartX} ${WORLD.queueY}H${WORLD.queueEndX}`)}</g>`
-    );
-  } else {
-    if (visual === 'lanes') {
-      pieces.push(
-        `<g opacity="${queueOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${WORLD.centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}${line(`M${WORLD.queueStartX} ${WORLD.queueY}H${WORLD.queueEndX}`)}</g>`
-      );
-    }
-    const connectorCount = visual === 'batch' ? WORLD.batchConnectorCount : WORLD.lowerConnectorCount;
-    const connectorStride = visual === 'batch' ? WORLD.batchConnectorStride : WORLD.lowerConnectorStride;
-    for (let index = 0; index < connectorCount; index += MOTION.unit) {
-      const centerX = iconCenter(index * connectorStride);
-      pieces.push(
-        `<g opacity="${laneOpacity.toFixed(OPACITY_DIGITS)}">${line(`M${centerX} ${WORLD.lowerConnectorTop}V${WORLD.lowerConnectorBottom}`)}</g>`
-      );
-    }
-  }
-  return pieces.join('');
-}
-
-type AgentBandParams = {
-  worldTimeMs: number;
-  isOpening: boolean;
-};
-
-function agentBand({ worldTimeMs, isOpening }: AgentBandParams): string {
-  const pieces: string[] = [];
-  for (let row = 0; row < WORLD.bandRows; row += MOTION.unit) {
-    for (let column = 0; column < WORLD.bandColumns; column += MOTION.unit) {
-      const index = row * WORLD.bandColumns + column;
-      const progress = isOpening ? smooth((worldTimeMs - index * MOTION.agentStaggerMs) / MOTION.enterMs) : MOTION.unit;
-      const drift = Math.sin(worldTimeMs / MOTION.driftMs + row) * MOTION.driftPx;
-      const left = WORLD.bandLeft + column * WORLD.bandGapX + drift;
-      const top = WORLD.bandTop + row * WORLD.bandGapY + (MOTION.unit - progress) * MOTION.agentRisePx;
-      const centerX = WORLD.bandLeft + column * WORLD.bandGapX + WORLD.iconSize * MOTION.half;
-      const centerY = WORLD.bandTop + row * WORLD.bandGapY + WORLD.iconSize * MOTION.half;
-      pieces.push(
-        `<circle cx="${centerX}" cy="${centerY}" r="${STYLE.iconDotRadius}" fill="${BLUE}" opacity="${(MOTION.unit - progress).toFixed(OPACITY_DIGITS)}"/>`
-      );
-      pieces.push(`<g fill="none" stroke="${BLUE}" stroke-width="${STYLE.iconStroke}" opacity="${progress.toFixed(OPACITY_DIGITS)}">
-        <rect x="${left + STYLE.iconCapLeft}" y="${top}" width="${STYLE.iconCapWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
-        <rect x="${left}" y="${top + STYLE.iconBodyTop}" width="${STYLE.iconBodyWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
-        <rect x="${left + STYLE.iconRight}" y="${top + STYLE.iconBodyTop}" width="${STYLE.iconBodyWidth}" height="${STYLE.iconCapWidth}" rx="1"/>
-      </g>`);
-    }
-  }
-  return pieces.join('');
-}
-
-type ConnectorPacketsParams = {
-  slots: Slot[];
-  hasQueue: boolean;
-  worldTimeMs: number;
-  visual: string;
-};
-
-function connectorPackets({ slots, hasQueue, worldTimeMs, visual }: ConnectorPacketsParams): string {
-  if (visual === 'fleet' && worldTimeMs < MOTION.packetsEnterMs) {
-    return '';
-  }
-  const pieces: string[] = [];
-  let activeSlots = slots;
-  if (visual === 'batch' || visual === 'end') {
-    activeSlots = [];
-  } else if (visual === 'checks') {
-    activeSlots = slots.slice(0, MOTION.unit);
-  }
-  for (const slot of activeSlots) {
-    if (visual === 'checks' && worldTimeMs < MOTION.checkRunMs) {
-      continue;
-    }
-    const centerX = slotCenter(slot.index);
-    pieces.push(
-      packetOn({
-        fromX: centerX,
-        fromY: WORLD.connectorTop,
-        toX: centerX,
-        toY: WORLD.connectorBottom,
-        timeMs: worldTimeMs,
-        seed: slot.index + MOTION.unit
-      })
-    );
-  }
-  if (hasQueue) {
-    pieces.push(queuePackets(worldTimeMs));
-  } else if (visual !== 'batch' && visual !== 'checks') {
-    for (let index = 0; index < WORLD.lowerConnectorCount; index += MOTION.unit) {
-      const centerX = iconCenter(index * WORLD.lowerConnectorStride);
-      pieces.push(
-        packetOn({
-          fromX: centerX,
-          fromY: WORLD.lowerConnectorBottom,
-          toX: centerX,
-          toY: WORLD.lowerConnectorTop,
-          timeMs: worldTimeMs,
-          seed: index + WORLD.boxCount
-        })
-      );
-    }
-  }
-  return pieces.join('');
-}
-
-function queuePackets(worldTimeMs: number): string {
-  const pieces: string[] = [];
-  const phaseMs = worldTimeMs % MOTION.queueLandMs;
-  const progress = smooth(phaseMs / MOTION.queueLaunchMs);
-  for (let index = MOTION.unit; index < WORLD.queueCount; index += MOTION.unit) {
-    const fromOffset = queueOffset(index);
-    const toOffset = queueOffset(index - MOTION.unit);
-    pieces.push(packet(WORLD.queueEndX - fromOffset + (fromOffset - toOffset) * progress, WORLD.queueY));
-  }
-  const rearX = WORLD.queueEndX - queueOffset(WORLD.queueCount - MOTION.unit);
-  pieces.push(packet(WORLD.queueStartX + (rearX - WORLD.queueStartX) * progress, WORLD.queueY));
-  if (progress < MOTION.unit) {
-    pieces.push(packet(WORLD.centerX, WORLD.queueY - (WORLD.queueY - WORLD.lowerConnectorTop) * progress));
-  }
-  return pieces.join('');
-}
-
-function queueOffset(index: number): number {
-  return index * WORLD.queueBaseGap + index * index * WORLD.queueGapGrowth;
-}
-type SlotsParams = {
-  visual: string;
-  timeMs: number;
-};
-
-function slotsForVisual({ visual, timeMs }: SlotsParams): Slot[] {
+function sceneBody({ visual, timeMs, sequenceTimeMs }: SceneArtParams): string {
   switch (visual) {
     case 'fleet':
     case 'queue':
     case 'rerun':
-      return [
-        { index: 0, label: 'APP' },
-        { index: 1, label: 'APP' },
-        { index: 2, label: 'APP' },
-        { index: 3, label: 'APP' },
-        { index: 4, label: 'APP' }
-      ];
     case 'late-conflict':
-      return [
-        { index: 0, label: 'APP' },
-        { index: 1, label: 'c-3' },
-        { index: 2, label: 'src/routes.mjs' },
-        { index: 3, label: 'c-5' },
-        { index: 4, label: 'APP' }
-      ];
     case 'lanes':
     case 'dependency':
     case 'brand':
-      return [
-        { index: 0, label: 'src/routes.mjs' },
-        { index: 1, label: 'src/cart' },
-        { index: 2, label: 'src/catalog' },
-        { index: 3, label: 'src/search' },
-        { index: 4, label: 'docs' }
-      ];
+      return opening(sequenceTimeMs);
     case 'overlaps':
-      return [
-        { index: 0, label: 'c-3', hasDetails: true, lines: timeMs >= MOTION.overlapPathsMs ? ['src/routes.mjs'] : [] },
-        { index: 1, label: 'c-5', hasDetails: true, lines: timeMs >= MOTION.overlapPathsMs ? ['src/routes.mjs'] : [] },
-        ...(timeMs >= MOTION.overlapMergeMs
-          ? [
-              {
-                index: 2,
-                label: 'MERGE',
-                hasDetails: true,
-                lines: timeMs >= MOTION.overlapResultMs ? ['c-3 → c-5'] : []
-              }
-            ]
-          : []),
-        { index: 3, label: 'src/cart' },
-        { index: 4, label: 'LANE' }
-      ];
+      return overlaps(timeMs);
     case 'resolution':
-      return [
-        { index: 0, label: 'c-3', lines: ["t1  'search',"] },
-        { index: 1, label: 'src/routes.mjs', lines: ["'home',", "'cart',"] },
-        ...(timeMs >= MOTION.resolutionModelMs
-          ? [
-              {
-                index: 2,
-                label: 'WORKERS AI',
-                hasDetails: true,
-                lines: timeMs >= MOTION.resolutionAnswerMs ? ['[ t1, o1 ]'] : []
-              }
-            ]
-          : []),
-        { index: 3, label: 'RESULT', hasDetails: true },
-        { index: 4, label: 'c-5', lines: ["o1  'orders',"] }
-      ];
+      return resolution(timeMs);
     case 'batch':
-      return [
-        { index: 0, label: 'LANE 1' },
-        { index: 1, label: 'LANE 2' },
-        { index: 2, label: 'APPROVAL' },
-        { index: 3, label: 'LANE 3' },
-        { index: 4, label: 'LANE 4' }
-      ];
-    case 'checks': {
-      const isChanged = timeMs >= MOTION.checkHashMs;
-      return [
-        { index: 0, label: 'src/routes.mjs', lines: [isChanged ? 'c51183' : '7c7959'] },
-        { index: 2, label: 'src/cart', lines: ['d7e7df'] },
-        { index: 4, label: 'src/catalog', lines: ['74c53e'] }
-      ];
-    }
+      return batch(timeMs);
+    case 'checks':
+      return checks(timeMs);
     case 'everything':
-      return [
-        { index: 0, label: 'BATCH 1' },
-        { index: 1, label: 'BATCH 2' },
-        { index: 2, label: 'BATCH 3' },
-        { index: 3, label: 'BATCH 4' }
-      ];
+      return everything(timeMs);
     case 'agent':
-      return [
-        { index: 0, label: 'AGENT' },
-        { index: 1, label: 'COMMUTE START' },
-        { index: 2, label: 'GIT PUSH' },
-        { index: 3, label: 'COMMUTE WAIT' },
-        { index: 4, label: 'TRUNK' }
-      ];
+      return agentCommands(timeMs);
     case 'architecture':
+      return architecture(timeMs);
     case 'end':
-      return [
-        { index: 0, label: 'WORKERS' },
-        { index: 1, label: 'ARTIFACTS' },
-        { index: 2, label: 'DURABLE OBJECT' },
-        { index: 3, label: 'CONTAINERS' },
-        { index: 4, label: 'WORKERS AI' }
-      ];
+      return endCard(timeMs);
     default:
       throw new Error(`UNKNOWN_SCENE: ${visual}`);
   }
 }
 
-type BusValueParams = {
+function sceneDurationMs(scene: Scene): number {
+  let durationMs = 0;
+  for (const cue of scene.cues) {
+    durationMs += cue.durationMs;
+  }
+  return durationMs;
+}
+
+type SceneStartParams = {
+  scenes: Scene[];
   visual: string;
-  timeMs: number;
 };
 
-function busValueForVisual({ visual, timeMs }: BusValueParams): string {
-  switch (visual) {
-    case 'late-conflict':
-      return timeMs >= MOTION.conflictLandMs ? 'c-3' : '';
-    case 'batch':
-      return `${batchLanded(timeMs)} / 16`;
-    case 'everything':
-      return `${everythingLanded(timeMs)} / 20`;
-    default:
-      return '';
-  }
-}
-
-function busPulseForVisual({ visual, timeMs }: BusValueParams): number {
-  if (visual === 'queue' || visual === 'rerun') {
-    const phaseMs = (timeMs - MOTION.queueLaunchMs + MOTION.queueLandMs) % MOTION.queueLandMs;
-    return phaseMs < MOTION.pulseMs ? MOTION.unit - phaseMs / MOTION.pulseMs : 0;
-  }
-  if (visual === 'late-conflict') {
-    const elapsedMs = timeMs - MOTION.conflictLandMs;
-    return elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
-  }
-  if (visual === 'checks') {
-    const elapsedMs = timeMs - MOTION.checkLandingMs;
-    return elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
-  }
-  if (visual === 'batch') {
-    const landed = batchLanded(timeMs);
-    const elapsedMs = timeMs - MOTION.batchApproveMs - (landed - MOTION.unit) * MOTION.batchArrivalMs;
-    return landed > 0 && elapsedMs >= 0 && elapsedMs < MOTION.pulseMs ? MOTION.unit - elapsedMs / MOTION.pulseMs : 0;
-  }
-  return 0;
-}
-
-function batchLanded(timeMs: number): number {
-  if (timeMs < MOTION.batchApproveMs) {
-    return 0;
-  }
-  let landed = 0;
-  for (let index = 0; index < BATCH_TOTAL; index += MOTION.unit) {
-    const launchRank = (index * MOTION.batchShuffleStride) % BATCH_TOTAL;
-    const startMs = MOTION.batchApproveMs + launchRank * MOTION.batchLaunchSpacingMs;
-    if (timeMs >= startMs + MOTION.batchFlightMs) {
-      landed += MOTION.unit;
+function sceneStartMs({ scenes, visual }: SceneStartParams): number {
+  let startMs = 0;
+  for (const scene of scenes) {
+    if (scene.visual === visual) {
+      return startMs;
     }
+    startMs += sceneDurationMs(scene);
   }
-  return landed;
+  throw new Error(`UNKNOWN_SCENE: ${visual}`);
 }
 
-function everythingLanded(timeMs: number): number {
-  let landed = 0;
-  for (let batch = 0; batch < BATCH_COUNT; batch += MOTION.unit) {
-    if (timeMs >= batch * MOTION.everythingBatchMs + MOTION.everythingFlightMs) {
-      landed += WORLD.boxCount;
-    }
-  }
-  return landed;
+// Motion: pure functions of time.
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
-type VisualDetailParams = {
-  visual: string;
+
+type WindowParams = {
   timeMs: number;
+  startMs: number;
+  durationMs: number;
 };
 
-function detailForVisual({ visual, timeMs }: VisualDetailParams): string {
-  switch (visual) {
-    case 'rerun':
-      return checkResetBars(timeMs);
-    case 'late-conflict':
-      return timeMs >= MOTION.conflictStopMs
-        ? packet(
-            slotCenter(RESULT_SLOT),
-            WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * MOTION.half
-          )
-        : '';
-    case 'dependency':
-      return packet(slotCenter(0), WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * MOTION.half);
-    case 'resolution':
-      return resolutionResultLines(timeMs);
-    case 'batch':
-      return batchPackets(timeMs);
-    case 'everything':
-      return everythingPackets(timeMs);
-    case 'end':
-      return brandMark(timeMs);
-    default:
-      return '';
-  }
+function progressIn({ timeMs, startMs, durationMs }: WindowParams): number {
+  return clamp01((timeMs - startMs) / durationMs);
 }
 
-function checkResetBars(timeMs: number): string {
-  const progress = ((timeMs - MOTION.queueLaunchMs + MOTION.queueLandMs) % MOTION.queueLandMs) / MOTION.queueLandMs;
-  const pieces: string[] = [];
-  for (let index = 0; index < WORLD.boxCount; index += MOTION.unit) {
-    const left = slotLeft(index) + STYLE.boxInnerInset * MOTION.double;
-    const top = WORLD.boxTop + WORLD.boxHeight - STYLE.boxInnerInset * MOTION.double;
-    const width = (WORLD.boxWidth - STYLE.boxInnerInset * MOTION.double * MOTION.double) * progress;
-    pieces.push(`<path d="M${left} ${top}h${width}" stroke="${GREEN_BRIGHT}" stroke-width="${STYLE.boxStroke}"/>`);
-  }
-  return pieces.join('');
+function smooth(progress: number): number {
+  const clamped = clamp01(progress);
+  return clamped * clamped * (CUBIC - DOUBLE * clamped);
 }
 
-const RESOLUTION_LINES = ["'home',", "'cart',", "'search',", "'orders',"];
+function easeOut(progress: number): number {
+  return 1 - (1 - clamp01(progress)) ** CUBIC;
+}
 
-function resolutionResultLines(timeMs: number): string {
-  const pieces: string[] = [];
-  const centerX = slotCenter(RESULT_SLOT);
-  for (const [index, value] of RESOLUTION_LINES.entries()) {
-    const startMs = MOTION.resolutionApplyMs + index * MOTION.resolutionLineStaggerMs;
-    const progress = smooth((timeMs - startMs) / MOTION.resolutionLineMs);
-    if (progress <= 0) {
+type MixParams = {
+  from: number;
+  to: number;
+  progress: number;
+};
+
+function mix({ from, to, progress }: MixParams): number {
+  return from + (to - from) * progress;
+}
+
+type PulseParams = {
+  timeMs: number;
+  eventsMs: number[];
+};
+
+// A box brightens for a moment after each event, such as a packet that arrives.
+function pulseAfter({ timeMs, eventsMs }: PulseParams): number {
+  let pulse = 0;
+  for (const eventMs of eventsMs) {
+    const elapsedMs = timeMs - eventMs;
+    if (elapsedMs >= 0 && elapsedMs < TIMING.pulseMs) {
+      pulse = Math.max(pulse, 1 - elapsedMs / TIMING.pulseMs);
+    }
+  }
+  return pulse;
+}
+
+type SeededParams = {
+  index: number;
+  salt: number;
+};
+
+function seeded({ index, salt }: SeededParams): number {
+  const value = Math.sin(index * SEED.multiplier + salt * SEED.salt) * SEED.scale;
+  return value - Math.floor(value);
+}
+
+// Paths.
+
+function distance(points: [Point, Point]): number {
+  const [from, to] = points;
+  return Math.hypot(to.left - from.left, to.top - from.top);
+}
+
+type PathProgressParams = {
+  points: Point[];
+  progress: number;
+};
+
+function pathLength(points: Point[]): number {
+  let length = 0;
+  let previous: Point | null = null;
+  for (const current of points) {
+    if (previous !== null) {
+      length += distance([previous, current]);
+    }
+    previous = current;
+  }
+  return length;
+}
+
+// The points of a path up to the given share of its length, with the last one cut to that share.
+function partialPoints({ points, progress }: PathProgressParams): Point[] {
+  let remaining = pathLength(points) * clamp01(progress);
+  const visible: Point[] = [];
+  let previous: Point | null = null;
+  for (const current of points) {
+    if (previous === null) {
+      visible.push(current);
+      previous = current;
       continue;
     }
-    const left = centerX + (MOTION.unit - progress) * WORLD.boxGap;
-    const top = WORLD.boxTop + WORLD.resultLineStartY + index * WORLD.resultLineGap;
+    const length = distance([previous, current]);
+    if (remaining <= length) {
+      const share = length === 0 ? 0 : remaining / length;
+      visible.push({
+        left: mix({ from: previous.left, to: current.left, progress: share }),
+        top: mix({ from: previous.top, to: current.top, progress: share })
+      });
+      return visible;
+    }
+    remaining -= length;
+    visible.push(current);
+    previous = current;
+  }
+  return visible;
+}
+
+function pointAlong({ points, progress }: PathProgressParams): Point {
+  const visible = partialPoints({ points, progress });
+  const last = visible.at(-1);
+  if (last === undefined) {
+    throw new Error('EMPTY_PATH');
+  }
+  return last;
+}
+
+// Drawing.
+
+function fmt(value: number): string {
+  return value.toFixed(COORD_DIGITS);
+}
+
+function alpha(value: number): string {
+  return clamp01(value).toFixed(OPACITY_DIGITS);
+}
+
+function pathData(points: Point[]): string {
+  return points.map((current, index) => `${index === 0 ? 'M' : 'L'}${fmt(current.left)} ${fmt(current.top)}`).join('');
+}
+
+type TextParams = {
+  at: Point;
+  value: string;
+  size?: number;
+  color?: string;
+  opacity?: number;
+  anchor?: 'start' | 'middle' | 'end';
+  family?: string;
+  weight?: number;
+};
+
+function text({
+  at,
+  value,
+  size = STYLE.labelSize,
+  color = WHITE,
+  opacity = 1,
+  anchor = 'middle',
+  family = MONO,
+  weight = 400
+}: TextParams): string {
+  if (opacity <= 0 || value === '') {
+    return '';
+  }
+  return `<text x="${fmt(at.left)}" y="${fmt(at.top)}" text-anchor="${anchor}" dominant-baseline="central" fill="${color}" opacity="${alpha(opacity)}" font-size="${size}" font-weight="${weight}" font-family="${family}">${escapeHtml(value)}</text>`;
+}
+
+type ConnectorParams = {
+  points: Point[];
+  progress?: number;
+  opacity?: number;
+};
+
+function connector({ points, progress = 1, opacity = 1 }: ConnectorParams): string {
+  if (progress <= 0 || opacity <= 0) {
+    return '';
+  }
+  return `<path d="${pathData(partialPoints({ points, progress }))}" fill="none" stroke="${GREY}" stroke-width="${STYLE.connectorStroke}" stroke-dasharray="${STYLE.connectorDash}" opacity="${alpha(opacity)}"/>`;
+}
+
+type DotParams = {
+  at: Point;
+  opacity?: number;
+  isHollow?: boolean;
+};
+
+function dot({ at, opacity = 1, isHollow = false }: DotParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  if (isHollow) {
+    return `<circle cx="${fmt(at.left)}" cy="${fmt(at.top)}" r="${STYLE.packetRadius}" fill="${BACKGROUND}" stroke="${ORANGE}" stroke-width="${STYLE.hollowStroke}" opacity="${alpha(opacity)}"/>`;
+  }
+  return `<circle cx="${fmt(at.left)}" cy="${fmt(at.top)}" r="${STYLE.packetRadius}" fill="${ORANGE}" opacity="${alpha(opacity)}"/>`;
+}
+
+type LabeledDotParams = {
+  at: Point;
+  label: string;
+  opacity: number;
+};
+
+function labeledDot({ at, label, opacity }: LabeledDotParams): string {
+  return (
+    dot({ at, opacity }) +
+    text({ at: { left: at.left, top: at.top - STYLE.packetLabelLift }, value: label, size: STYLE.valueSize, opacity })
+  );
+}
+
+type RingParams = {
+  at: Point;
+  progress: number;
+  color: string;
+  opacity: number;
+};
+
+// The progress of a check, drawn as an arc around its change.
+function ring({ at, progress, color, opacity }: RingParams): string {
+  if (opacity <= 0 || progress <= 0) {
+    return '';
+  }
+  const circumference = DOUBLE * Math.PI * STYLE.ringRadius;
+  return `<circle cx="${fmt(at.left)}" cy="${fmt(at.top)}" r="${STYLE.ringRadius}" fill="none" stroke="${color}" stroke-width="${STYLE.ringStroke}" stroke-dasharray="${fmt(circumference * clamp01(progress))} ${fmt(circumference)}" transform="rotate(${STYLE.ringStartDegrees} ${fmt(at.left)} ${fmt(at.top)})" opacity="${alpha(opacity)}"/>`;
+}
+
+type BoxParams = {
+  center: Point;
+  width: number;
+  height: number;
+  label?: string;
+  value?: string;
+  pulse?: number;
+  alarm?: number;
+  opacity?: number;
+  lineOffset?: number;
+};
+
+function box({
+  center,
+  width,
+  height,
+  label = '',
+  value = '',
+  pulse = 0,
+  alarm = 0,
+  opacity = 1,
+  lineOffset = STYLE.lineOffset
+}: BoxParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  return `<g opacity="${alpha(opacity)}">${boxFrame({ center, width, height, pulse, alarm })}${boxText({ center, label, value, lineOffset })}</g>`;
+}
+
+type BoxFrameParams = {
+  center: Point;
+  width: number;
+  height: number;
+  pulse: number;
+  alarm: number;
+};
+
+function boxFrame({ center, width, height, pulse, alarm }: BoxFrameParams): string {
+  const left = center.left - width * HALF;
+  const top = center.top - height * HALF;
+  let stroke = GREEN;
+  if (alarm > 0) {
+    stroke = ORANGE;
+  } else if (pulse > 0) {
+    stroke = GREEN_BRIGHT;
+  }
+  const strokeWidth = STYLE.boxStroke + Math.max(pulse, alarm) * STYLE.pulseStroke;
+  const inset = STYLE.boxInset;
+  return `<rect x="${fmt(left)}" y="${fmt(top)}" width="${fmt(width)}" height="${fmt(height)}" fill="${BOX_FILL}" stroke="${stroke}" stroke-width="${fmt(strokeWidth)}"/><rect x="${fmt(left + inset)}" y="${fmt(top + inset)}" width="${fmt(width - inset * DOUBLE)}" height="${fmt(height - inset * DOUBLE)}" fill="url(#hatch)" stroke="${stroke}" stroke-width="${STYLE.boxStroke}" stroke-dasharray="${STYLE.boxDash}"/>`;
+}
+
+type BoxTextParams = {
+  center: Point;
+  label: string;
+  value: string;
+  lineOffset: number;
+};
+
+function boxText({ center, label, value, lineOffset }: BoxTextParams): string {
+  if (value === '') {
+    return text({ at: center, value: label });
+  }
+  return (
+    text({ at: { left: center.left, top: center.top - lineOffset }, value: label }) +
+    text({ at: { left: center.left, top: center.top + lineOffset }, value, size: STYLE.valueSize })
+  );
+}
+
+function laneY(index: number): number {
+  return TRUNK.top + ((index + HALF) * TRUNK.height) / LANE_LABELS.length;
+}
+
+type TrunkParams = {
+  label?: string;
+  value?: string;
+  pulse?: number;
+  opacity?: number;
+};
+
+function trunk({ label = 'TRUNK', value = '', pulse = 0, opacity = 1 }: TrunkParams): string {
+  return box({
+    center: TRUNK_CENTER,
+    width: TRUNK.width,
+    height: TRUNK.height,
+    label,
+    value,
+    pulse,
+    opacity,
+    lineOffset: TRUNK.lineOffset
+  });
+}
+
+type GridCell = {
+  column: number;
+  row: number;
+};
+
+function agentOrigin({ column, row }: GridCell): Point {
+  return { left: AGENTS.left + column * AGENTS.gapX, top: AGENTS.top + row * AGENTS.gapY };
+}
+
+function agentCenter(cell: GridCell): Point {
+  const origin = agentOrigin(cell);
+  return { left: origin.left + AGENTS.iconSize * HALF, top: origin.top + AGENTS.iconSize * HALF };
+}
+
+type AgentIconParams = {
+  origin: Point;
+  opacity: number;
+  scale?: number;
+};
+
+function agentIcon({ origin, opacity, scale = 1 }: AgentIconParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  return `<g transform="translate(${fmt(origin.left)} ${fmt(origin.top)}) scale(${fmt(scale)})" fill="none" stroke="${BLUE}" stroke-width="${AGENTS.iconStroke}" opacity="${alpha(opacity)}"><rect x="${AGENTS.capLeft}" width="${AGENTS.capWidth}" height="${AGENTS.capWidth}" rx="1" vector-effect="non-scaling-stroke"/><rect y="${AGENTS.bodyTop}" width="${AGENTS.bodyWidth}" height="${AGENTS.capWidth}" rx="1" vector-effect="non-scaling-stroke"/><rect x="${AGENTS.bodyRight}" y="${AGENTS.bodyTop}" width="${AGENTS.bodyWidth}" height="${AGENTS.capWidth}" rx="1" vector-effect="non-scaling-stroke"/></g>`;
+}
+
+type AgentsParams = {
+  timeMs: number;
+  entryStartMs: number | null;
+  opacity: number;
+};
+
+// The agents, a grid of icons. On entry each one shows as a dot first, then turns into an icon, in a diagonal wave.
+function agents({ timeMs, entryStartMs, opacity }: AgentsParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  const pieces: string[] = [];
+  for (let row = 0; row < AGENTS.rows; row += 1) {
+    const drift = Math.sin(timeMs / AGENTS.driftPeriodMs + row * AGENTS.driftRowPhase) * AGENTS.driftPx;
+    for (let column = 0; column < AGENTS.columns; column += 1) {
+      const origin = agentOrigin({ column, row });
+      let dotOpacity = 0;
+      let iconOpacity = 1;
+      let rise = 0;
+      if (entryStartMs !== null) {
+        const waveMs = entryStartMs + (column + row) * AGENTS.waveStaggerMs;
+        const appear = progressIn({ timeMs, startMs: waveMs, durationMs: AGENTS.dotMs });
+        const morph = smooth(progressIn({ timeMs, startMs: waveMs + AGENTS.morphDelayMs, durationMs: AGENTS.morphMs }));
+        dotOpacity = appear * (1 - morph);
+        iconOpacity = morph;
+        rise = (1 - morph) * AGENTS.risePx;
+      }
+      if (dotOpacity > 0) {
+        const center = agentCenter({ column, row });
+        pieces.push(
+          `<circle cx="${fmt(center.left)}" cy="${fmt(center.top)}" r="${AGENTS.dotRadius}" fill="${BLUE}" opacity="${alpha(dotOpacity)}"/>`
+        );
+      }
+      pieces.push(agentIcon({ origin: { left: origin.left + drift, top: origin.top + rise }, opacity: iconOpacity }));
+    }
+  }
+  return `<g opacity="${alpha(opacity)}">${pieces.join('')}</g>`;
+}
+
+type LogoParams = {
+  center: Point;
+  size: number;
+  opacity: number;
+};
+
+// The console's mark on the brand tile.
+function logo({ center, size, opacity }: LogoParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  const left = center.left - size * HALF;
+  const top = center.top - size * HALF;
+  const radius = size * LOGO.radiusShare;
+  return `<g transform="translate(${fmt(left)} ${fmt(top)})" opacity="${alpha(opacity)}"><rect width="${size}" height="${size}" rx="${fmt(radius)}" fill="${BRAND_BLUE}"/><g transform="translate(${fmt(size * LOGO.markInsetShare)} ${fmt(size * LOGO.markInsetShare)}) scale(${fmt((size * LOGO.markShare) / MARK.viewBox)})"><path d="${MARK.path}" fill="none" stroke="${WHITE}" stroke-width="${MARK.stroke}" stroke-linecap="round" stroke-linejoin="round"/></g></g>`;
+}
+
+type Flight = {
+  points: Point[];
+  launchMs: number;
+  arriveMs: number;
+  label: string;
+};
+
+// A change in flight along its path. It ends inside the box it flies to, which hides it.
+type FlightDotParams = {
+  flight: Flight;
+  timeMs: number;
+};
+
+function flightDot({ flight, timeMs }: FlightDotParams): string {
+  if (timeMs < flight.launchMs || timeMs > flight.arriveMs + TIMING.landMs) {
+    return '';
+  }
+  const progress = smooth(
+    progressIn({ timeMs, startMs: flight.launchMs, durationMs: flight.arriveMs - flight.launchMs })
+  );
+  const at = pointAlong({ points: flight.points, progress });
+  const opacity = 1 - progressIn({ timeMs, startMs: flight.arriveMs, durationMs: TIMING.landMs });
+  if (flight.label === '') {
+    return dot({ at, opacity });
+  }
+  return labeledDot({ at, label: flight.label, opacity });
+}
+
+function arrivals(flights: Flight[]): number[] {
+  return flights.map((flight) => flight.arriveMs);
+}
+
+type LandedCountParams = {
+  flights: Flight[];
+  timeMs: number;
+};
+
+function landedCount({ flights, timeMs }: LandedCountParams): number {
+  let landed = 0;
+  for (const flight of flights) {
+    if (flight.arriveMs <= timeMs) {
+      landed += 1;
+    }
+  }
+  return landed;
+}
+
+function intoTrunk(top: number): Point {
+  return { left: TRUNK.left + TRUNK.landingDepth, top };
+}
+
+// The opening is one scene on world time: a merge queue forms, its checks reset at each landing, a conflict shows
+// late, and then the queue splits into one lane per area of code.
+const OPENING = {
+  trunkEnterMs: 700,
+  fleetFirstLaunchMs: 1_500,
+  fleetLaunchEveryMs: 110,
+  fleetFlightMs: 1_600,
+  fleetJitterMs: 120,
+  fleetTrunkMarginPx: 40,
+  queueBoxDelayMs: 100,
+  firstArrivalMs: 900,
+  arrivalEveryMs: 430,
+  arrivalJitterMs: 120,
+  feedMs: 600,
+  enterMs: 650,
+  firstLandingMs: 1_700,
+  landEveryMs: 1_400,
+  shiftMs: 380,
+  headX: 1_580,
+  slotGap: 56,
+  capacity: 14,
+  changesMax: 64,
+  checkMs: 1_250,
+  conflictLeadMs: 1_200,
+  conflictAfterLandingMs: 1_000,
+  conflictBehind: 2,
+  dropMs: 450,
+  dropPx: 76,
+  labelDelayMs: 300,
+  splitMs: 800,
+  releaseDelayMs: 150,
+  releaseLaunchMs: 1_000,
+  releaseStaggerMs: 110,
+  releaseRanks: 5,
+  releasePxPerMs: 0.8,
+  laneFlowDelayMs: 900,
+  laneFlightMs: 1_900,
+  lanePeriodMinMs: 650,
+  lanePeriodSpreadMs: 500,
+  laneFlightsMax: 32,
+  dependencyC3LaunchMs: 400,
+  dependencyC3FlightMs: 1_700,
+  dependencyC5AppearMs: 200,
+  dependencyC5WaitX: 900,
+  dependencyC5DelayMs: 200,
+  dependencyC5FlightMs: 1_400,
+  brandFadeMs: 600,
+  brandEnterDelayMs: 450,
+  tileSize: 112,
+  tileOffsetY: -84,
+  nameOffsetY: 64,
+  nameSize: 96,
+  nameWeight: 650
+};
+const OPENING_AT = {
+  queue: sceneStartMs({ scenes: OPENING_SCENES, visual: 'queue' }),
+  rerun: sceneStartMs({ scenes: OPENING_SCENES, visual: 'rerun' }),
+  conflict: sceneStartMs({ scenes: OPENING_SCENES, visual: 'late-conflict' }),
+  lanes: sceneStartMs({ scenes: OPENING_SCENES, visual: 'lanes' }),
+  dependency: sceneStartMs({ scenes: OPENING_SCENES, visual: 'dependency' }),
+  brand: sceneStartMs({ scenes: OPENING_SCENES, visual: 'brand' })
+};
+const STAGE_CENTER = { left: (AGENTS.edgeX + TRUNK.left) * HALF, top: TRUNK_CENTER.top };
+const NEVER = Number.POSITIVE_INFINITY;
+const NO_DROP = -1;
+const FLEET_SALT = { row: 1, target: 2, jitter: 3 };
+const QUEUE_SALT = { arrival: 4, release: 5 };
+const LANE_SALT = { period: 6, offset: 7 };
+
+type QueuedChange = {
+  lane: number;
+  arriveMs: number;
+  landMs: number;
+  dropMs: number;
+};
+
+function departureMs(change: QueuedChange): number {
+  return Math.min(change.landMs, change.dropMs);
+}
+
+// The merge queue: changes join at the tail, one lands from the head at a time, and a full line makes the next wait.
+function planQueue(dropIndex: number): QueuedChange[] {
+  const changes: QueuedChange[] = [];
+  let previousLandMs = OPENING_AT.queue + OPENING.firstLandingMs - OPENING.landEveryMs;
+  for (let index = 0; index < OPENING.changesMax; index += 1) {
+    const jitterMs = (seeded({ index, salt: QUEUE_SALT.arrival }) - HALF) * OPENING.arrivalJitterMs;
+    let arriveMs = OPENING_AT.queue + OPENING.firstArrivalMs + index * OPENING.arrivalEveryMs + jitterMs;
+    if (index >= OPENING.capacity) {
+      const blocker = changes[index - OPENING.capacity];
+      if (blocker === undefined) {
+        throw new Error('QUEUE_BLOCKER_MISSING');
+      }
+      arriveMs = Math.max(arriveMs, departureMs(blocker));
+    }
+    if (arriveMs >= OPENING_AT.lanes) {
+      return changes;
+    }
+    let landMs = NEVER;
+    let dropMs = NEVER;
+    if (index === dropIndex) {
+      const conflicting = changes[index - OPENING.conflictBehind];
+      if (conflicting === undefined) {
+        throw new Error('QUEUE_CONFLICT_MISSING');
+      }
+      dropMs = conflicting.landMs + OPENING.conflictAfterLandingMs;
+    } else {
+      landMs = Math.max(previousLandMs + OPENING.landEveryMs, arriveMs + OPENING.enterMs);
+      if (landMs >= OPENING_AT.lanes) {
+        landMs = NEVER;
+      } else {
+        previousLandMs = landMs;
+      }
+    }
+    changes.push({ lane: index % LANE_LABELS.length, arriveMs, landMs, dropMs });
+  }
+  throw new Error('QUEUE_PLAN_UNBOUNDED');
+}
+
+type FirstLandingParams = {
+  changes: QueuedChange[];
+  timeMs: number;
+};
+
+function firstLandingAfter({ changes, timeMs }: FirstLandingParams): number {
+  for (const [index, change] of changes.entries()) {
+    if (change.landMs >= timeMs && change.landMs !== NEVER) {
+      return index;
+    }
+  }
+  throw new Error('QUEUE_CONFLICT_NOT_PLANNED');
+}
+
+// c-3 is the first change to land once the conflict scene has started; c-5 waits two places behind it.
+const C3_INDEX = firstLandingAfter({
+  changes: planQueue(NO_DROP),
+  timeMs: OPENING_AT.conflict + OPENING.conflictLeadMs
+});
+const C5_INDEX = C3_INDEX + OPENING.conflictBehind;
+const QUEUE = planQueue(C5_INDEX);
+
+function queueLabel(index: number): string {
+  if (index === C3_INDEX) {
+    return 'c-3';
+  }
+  if (index === C5_INDEX) {
+    return 'c-5';
+  }
+  return '';
+}
+
+function slotLeft(slot: number): number {
+  return OPENING.headX - slot * OPENING.slotGap;
+}
+
+// Where a waiting change sits on the line. It slides forward one place each time a change ahead of it leaves.
+type LineLeftParams = {
+  index: number;
+  timeMs: number;
+};
+
+function lineLeft({ index, timeMs }: LineLeftParams): number {
+  const change = QUEUE[index];
+  if (change === undefined) {
+    throw new Error('QUEUE_CHANGE_MISSING');
+  }
+  let ahead = 0;
+  let lastLeaveMs = -NEVER;
+  for (const other of QUEUE.slice(0, index)) {
+    const leaveMs = departureMs(other);
+    if (leaveMs > timeMs) {
+      ahead += 1;
+    } else {
+      lastLeaveMs = Math.max(lastLeaveMs, leaveMs);
+    }
+  }
+  let left = slotLeft(ahead);
+  const shift = progressIn({ timeMs, startMs: lastLeaveMs, durationMs: OPENING.shiftMs });
+  if (shift < 1) {
+    left = mix({ from: slotLeft(ahead + 1), to: left, progress: smooth(shift) });
+  }
+  const entry = progressIn({ timeMs, startMs: change.arriveMs, durationMs: OPENING.enterMs });
+  if (entry < 1) {
+    left = mix({ from: LANE_BOX_RIGHT, to: left, progress: easeOut(entry) });
+  }
+  return left;
+}
+
+function planFleet(): Flight[] {
+  const flights: Flight[] = [];
+  for (let index = 0; index < OPENING.changesMax; index += 1) {
+    const jitterMs = (seeded({ index, salt: FLEET_SALT.jitter }) - HALF) * OPENING.fleetJitterMs;
+    const launchMs = OPENING.fleetFirstLaunchMs + index * OPENING.fleetLaunchEveryMs + jitterMs;
+    if (launchMs + OPENING.fleetFlightMs > OPENING_AT.queue) {
+      return flights;
+    }
+    const row = Math.floor(seeded({ index, salt: FLEET_SALT.row }) * AGENTS.rows);
+    const targetSpan = TRUNK.height - OPENING.fleetTrunkMarginPx * DOUBLE;
+    const targetY = TRUNK.top + OPENING.fleetTrunkMarginPx + seeded({ index, salt: FLEET_SALT.target }) * targetSpan;
+    const startY = agentCenter({ column: 0, row }).top;
+    flights.push({
+      points: [{ left: AGENTS.edgeX, top: startY }, intoTrunk(targetY)],
+      launchMs,
+      arriveMs: launchMs + OPENING.fleetFlightMs,
+      label: ''
+    });
+  }
+  throw new Error('FLEET_PLAN_UNBOUNDED');
+}
+
+function lanePath(lane: number): Point[] {
+  return [{ left: AGENTS.edgeX, top: laneY(lane) }, intoTrunk(laneY(lane))];
+}
+
+// After the split each lane lands its changes on its own rhythm, so they land in any order.
+function planLaneFlow(): Flight[] {
+  const flights: Flight[] = [];
+  const firstLaunchMs = OPENING_AT.lanes + OPENING.laneFlowDelayMs;
+  for (const lane of LANE_LABELS.keys()) {
+    const periodMs =
+      OPENING.lanePeriodMinMs + seeded({ index: lane, salt: LANE_SALT.period }) * OPENING.lanePeriodSpreadMs;
+    const offsetMs = seeded({ index: lane, salt: LANE_SALT.offset }) * periodMs;
+    for (let index = 0; index < OPENING.laneFlightsMax; index += 1) {
+      const launchMs = firstLaunchMs + offsetMs + index * periodMs;
+      if (launchMs >= OPENING_AT.brand) {
+        break;
+      }
+      const isRoutesLane = lane === 0;
+      const crossesDependency = launchMs + OPENING.laneFlightMs > OPENING_AT.dependency && launchMs < OPENING_AT.brand;
+      if (isRoutesLane && crossesDependency) {
+        continue;
+      }
+      flights.push({ points: lanePath(lane), launchMs, arriveMs: launchMs + OPENING.laneFlightMs, label: '' });
+    }
+  }
+  return flights;
+}
+
+type Release = {
+  index: number;
+  fromX: number;
+  lane: number;
+  launchMs: number;
+  arriveMs: number;
+};
+
+// The changes still waiting when the queue splits move to their lanes and land in parallel.
+function planRelease(): Release[] {
+  const releases: Release[] = [];
+  for (const [index, change] of QUEUE.entries()) {
+    if (departureMs(change) <= OPENING_AT.lanes) {
+      continue;
+    }
+    const fromX = lineLeft({ index, timeMs: OPENING_AT.lanes });
+    const rank = Math.floor(seeded({ index, salt: QUEUE_SALT.release }) * OPENING.releaseRanks);
+    const launchMs = OPENING_AT.lanes + OPENING.releaseLaunchMs + rank * OPENING.releaseStaggerMs;
+    const flightMs = (TRUNK.left - fromX) / OPENING.releasePxPerMs;
+    releases.push({ index, fromX, lane: change.lane, launchMs, arriveMs: launchMs + flightMs });
+  }
+  return releases;
+}
+
+const FLEET = planFleet();
+const LANE_FLOW = planLaneFlow();
+const RELEASE = planRelease();
+const DEPENDENCY_C3: Flight = {
+  points: lanePath(0),
+  launchMs: OPENING_AT.dependency + OPENING.dependencyC3LaunchMs,
+  arriveMs: OPENING_AT.dependency + OPENING.dependencyC3LaunchMs + OPENING.dependencyC3FlightMs,
+  label: 'c-3'
+};
+const DEPENDENCY_C5: Flight = {
+  points: [{ left: OPENING.dependencyC5WaitX, top: laneY(0) }, intoTrunk(laneY(0))],
+  launchMs: DEPENDENCY_C3.arriveMs + OPENING.dependencyC5DelayMs,
+  arriveMs: DEPENDENCY_C3.arriveMs + OPENING.dependencyC5DelayMs + OPENING.dependencyC5FlightMs,
+  label: 'c-5'
+};
+const OPENING_ARRIVALS = [
+  ...arrivals(FLEET),
+  ...QUEUE.map((change) => change.landMs).filter((landMs) => landMs !== NEVER),
+  ...RELEASE.map((release) => release.arriveMs),
+  ...arrivals(LANE_FLOW),
+  DEPENDENCY_C3.arriveMs,
+  DEPENDENCY_C5.arriveMs
+];
+
+function opening(timeMs: number): string {
+  const brandFade = 1 - smooth(progressIn({ timeMs, startMs: OPENING_AT.brand, durationMs: OPENING.brandFadeMs }));
+  const flow = [
+    queueStructure({ timeMs, layer: 'lines' }),
+    ...FLEET.map((flight) => flightDot({ flight, timeMs })),
+    queuePackets(timeMs),
+    releasePackets(timeMs),
+    ...LANE_FLOW.map((flight) => flightDot({ flight, timeMs })),
+    dependencyPackets(timeMs),
+    queueStructure({ timeMs, layer: 'boxes' })
+  ];
+  const trunkOpacity = smooth(progressIn({ timeMs, startMs: OPENING.trunkEnterMs, durationMs: TIMING.drawMs }));
+  return [
+    `<g opacity="${alpha(brandFade)}">${flow.join('')}</g>`,
+    trunk({ pulse: pulseAfter({ timeMs, eventsMs: OPENING_ARRIVALS }), opacity: trunkOpacity }),
+    agents({ timeMs, entryStartMs: 0, opacity: 1 }),
+    openingBrand(timeMs)
+  ].join('');
+}
+
+// The merge queue box and its lines. When the lanes start, the one box splits into five lane boxes.
+type QueueStructureParams = {
+  timeMs: number;
+  layer: 'lines' | 'boxes';
+};
+
+function queueStructure({ timeMs, layer }: QueueStructureParams): string {
+  const startMs = OPENING_AT.queue + OPENING.queueBoxDelayMs;
+  const appear = smooth(progressIn({ timeMs, startMs, durationMs: TIMING.enterMs }));
+  if (appear <= 0) {
+    return '';
+  }
+  const split = smooth(progressIn({ timeMs, startMs: OPENING_AT.lanes, durationMs: OPENING.splitMs }));
+  const pieces: string[] = [];
+  for (const [lane, label] of LANE_LABELS.entries()) {
+    const top = mix({ from: STAGE_CENTER.top, to: laneY(lane), progress: split });
+    if (layer === 'lines') {
+      const draw = progressIn({ timeMs, startMs, durationMs: TIMING.drawMs });
+      pieces.push(
+        connector({
+          points: [
+            { left: AGENTS.edgeX, top: laneY(lane) },
+            { left: LANE_BOX_LEFT, top }
+          ],
+          progress: draw
+        }),
+        connector({
+          points: [
+            { left: LANE_BOX_RIGHT, top },
+            { left: TRUNK.left, top }
+          ],
+          progress: draw
+        })
+      );
+      continue;
+    }
+    if (split <= 0 && lane > 0) {
+      continue;
+    }
+    const center = { left: LANES.boxCenterX, top };
+    const crossfade = progressIn({ timeMs, startMs: OPENING_AT.lanes, durationMs: OPENING.splitMs });
     pieces.push(
-      `<text x="${left}" y="${top}" text-anchor="middle" fill="${WHITE}" opacity="${progress.toFixed(OPACITY_DIGITS)}" font-size="${WORLD.labelSize}" font-family="Menlo,Consolas,monospace">${escapeHtml(value)}</text>`
+      `<g opacity="${alpha(appear)}">${boxFrame({ center, width: LANES.boxWidth, height: LANES.boxHeight, pulse: 0, alarm: 0 })}${text({ at: center, value: 'MERGE QUEUE', opacity: 1 - crossfade * DOUBLE })}${text({ at: center, value: label, opacity: crossfade * DOUBLE - 1 })}</g>`
     );
   }
   return pieces.join('');
 }
 
-function batchPackets(timeMs: number): string {
+function queuePackets(timeMs: number): string {
+  if (timeMs >= OPENING_AT.lanes + TIMING.fadeMs) {
+    return '';
+  }
+  let lastLandingMs = -NEVER;
+  for (const change of QUEUE) {
+    if (change.landMs <= timeMs) {
+      lastLandingMs = Math.max(lastLandingMs, change.landMs);
+    }
+  }
+  const ringOpacity =
+    progressIn({ timeMs, startMs: OPENING_AT.rerun, durationMs: TIMING.fadeMs }) *
+    (1 - progressIn({ timeMs, startMs: OPENING_AT.lanes, durationMs: TIMING.landMs }));
+  const labelOpacity = progressIn({
+    timeMs,
+    startMs: OPENING_AT.conflict + OPENING.labelDelayMs,
+    durationMs: TIMING.fadeMs
+  });
   const pieces: string[] = [];
-  for (let index = 0; index < BATCH_TOTAL; index += MOTION.unit) {
-    const launchRank = (index * MOTION.batchShuffleStride) % BATCH_TOTAL;
-    const centerX = iconCenter(index * WORLD.batchConnectorStride);
-    const startY = WORLD.lowerConnectorBottom - WORLD.packetRadius * MOTION.double;
-    const startMs = MOTION.batchApproveMs + launchRank * MOTION.batchLaunchSpacingMs;
-    if (index >= WORLD.lowerConnectorCount && timeMs < startMs) {
+  for (const [index, change] of QUEUE.entries()) {
+    const feedStartMs = change.arriveMs - OPENING.feedMs;
+    if (timeMs < feedStartMs) {
       continue;
     }
-    const progress = smooth((timeMs - startMs) / MOTION.batchFlightMs);
-    if (progress >= MOTION.unit) {
+    const label = queueLabel(index);
+    if (timeMs < change.arriveMs) {
+      const progress = smooth(progressIn({ timeMs, startMs: feedStartMs, durationMs: OPENING.feedMs }));
+      const feed = [
+        { left: AGENTS.edgeX, top: laneY(change.lane) },
+        { left: LANE_BOX_LEFT, top: STAGE_CENTER.top }
+      ];
+      pieces.push(dot({ at: pointAlong({ points: feed, progress }) }));
       continue;
     }
-    const top = startY + (WORLD.lowerConnectorTop - startY) * progress;
-    pieces.push(packet(centerX, top));
+    if (timeMs >= change.dropMs) {
+      const dropped = {
+        left: lineLeft({ index, timeMs: change.dropMs }),
+        top:
+          STAGE_CENTER.top +
+          OPENING.dropPx * easeOut(progressIn({ timeMs, startMs: change.dropMs, durationMs: OPENING.dropMs }))
+      };
+      const opacity = 1 - progressIn({ timeMs, startMs: OPENING_AT.lanes, durationMs: TIMING.fadeMs });
+      pieces.push(
+        dot({ at: dropped, opacity, isHollow: true }),
+        ring({ at: dropped, progress: 1, color: ORANGE, opacity }),
+        text({
+          at: { left: dropped.left, top: dropped.top + OPENING.slotGap * HALF + STYLE.packetLabelLift * HALF },
+          value: label,
+          size: STYLE.valueSize,
+          opacity: Math.min(opacity, labelOpacity)
+        })
+      );
+      continue;
+    }
+    if (timeMs >= OPENING_AT.lanes && departureMs(change) > OPENING_AT.lanes) {
+      continue;
+    }
+    if (timeMs >= change.landMs) {
+      const landing = progressIn({ timeMs, startMs: change.landMs, durationMs: TIMING.landMs });
+      const at = {
+        left: mix({ from: OPENING.headX, to: TRUNK.left + TRUNK.landingDepth, progress: landing }),
+        top: STAGE_CENTER.top
+      };
+      pieces.push(labeledDot({ at, label: labelOpacity > 0 ? label : '', opacity: 1 - landing }));
+      continue;
+    }
+    const at = { left: lineLeft({ index, timeMs }), top: STAGE_CENTER.top };
+    const checkStartMs = Math.max(lastLandingMs, change.arriveMs + OPENING.enterMs);
+    pieces.push(
+      dot({ at }),
+      ring({ at, progress: (timeMs - checkStartMs) / OPENING.checkMs, color: GREEN_BRIGHT, opacity: ringOpacity }),
+      text({
+        at: { left: at.left, top: at.top - STYLE.packetLabelLift },
+        value: label,
+        size: STYLE.valueSize,
+        opacity: labelOpacity
+      })
+    );
   }
   return pieces.join('');
 }
 
-function everythingPackets(timeMs: number): string {
+function releasePackets(timeMs: number): string {
+  if (timeMs < OPENING_AT.lanes) {
+    return '';
+  }
+  const move = smooth(
+    progressIn({ timeMs, startMs: OPENING_AT.lanes + OPENING.releaseDelayMs, durationMs: OPENING.splitMs })
+  );
   const pieces: string[] = [];
-  for (let index = 0; index < CHANGE_TOTAL; index += MOTION.unit) {
-    const batch = Math.floor(index / WORLD.boxCount);
-    const connectorIndex = index % WORLD.boxCount;
-    const centerX = slotCenter(connectorIndex);
-    const startMs = batch * MOTION.everythingBatchMs;
-    const progress = smooth((timeMs - startMs) / MOTION.everythingFlightMs);
-    if (progress >= MOTION.unit) {
+  for (const release of RELEASE) {
+    if (timeMs > release.arriveMs + TIMING.landMs) {
       continue;
     }
-    const top = WORLD.connectorTop + (WORLD.connectorBottom - WORLD.connectorTop) * progress;
-    pieces.push(packet(centerX, top));
+    const top = mix({ from: STAGE_CENTER.top, to: laneY(release.lane), progress: move });
+    const flight = smooth(
+      progressIn({ timeMs, startMs: release.launchMs, durationMs: release.arriveMs - release.launchMs })
+    );
+    const left = mix({ from: release.fromX, to: TRUNK.left + TRUNK.landingDepth, progress: flight });
+    const opacity = 1 - progressIn({ timeMs, startMs: release.arriveMs, durationMs: TIMING.landMs });
+    pieces.push(dot({ at: { left, top }, opacity }));
   }
   return pieces.join('');
 }
 
-function brandMark(timeMs: number): string {
-  const opacity = smooth((timeMs - MOTION.endClearMs) / MOTION.brandEnterMs);
-  const tileX = STYLE.markLeft;
-  const tileY = STYLE.markTop;
-  const markScale = STYLE.markTileSize / MARK_VIEWBOX_SIZE;
-  const mark = `<g transform="translate(${tileX} ${tileY})">
-    <rect width="${STYLE.markTileSize}" height="${STYLE.markTileSize}" rx="${STYLE.markTileRadius}" fill="${BLUE}"/>
-    <path d="M2 5h5l4 6h3M2 11h5l4-6h3" transform="scale(${markScale})" fill="none" stroke="${WHITE}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>`;
-  return `<g opacity="${opacity.toFixed(OPACITY_DIGITS)}">${mark}
-    <text x="${STYLE.markNameX}" y="${STYLE.markNameY}" fill="${WHITE}" font-size="${STYLE.markNameSize}" font-weight="650" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">Commute</text>
-    <text x="${WORLD.centerX}" y="${STYLE.markUrlY}" text-anchor="middle" fill="${WHITE}" font-size="${STYLE.markUrlSize}" font-family="Menlo,Consolas,monospace">github.com/lucrise-llc/commute</text>
-  </g>`;
+// c-5 shares src/routes.mjs with c-3, so it waits for c-3 alone. The other lanes keep landing.
+function dependencyPackets(timeMs: number): string {
+  if (timeMs < OPENING_AT.dependency) {
+    return '';
+  }
+  const pieces = [flightDot({ flight: DEPENDENCY_C3, timeMs })];
+  const appearMs = OPENING_AT.dependency + OPENING.dependencyC5AppearMs;
+  if (timeMs >= appearMs && timeMs < DEPENDENCY_C5.launchMs) {
+    const entry = easeOut(progressIn({ timeMs, startMs: appearMs, durationMs: OPENING.enterMs }));
+    const waiting = {
+      left: mix({ from: LANE_BOX_RIGHT, to: OPENING.dependencyC5WaitX, progress: entry }),
+      top: laneY(0)
+    };
+    const c3 = pointAlong({
+      points: DEPENDENCY_C3.points,
+      progress: smooth(
+        progressIn({ timeMs, startMs: DEPENDENCY_C3.launchMs, durationMs: OPENING.dependencyC3FlightMs })
+      )
+    });
+    if (timeMs < DEPENDENCY_C3.arriveMs && c3.left > waiting.left) {
+      pieces.push(connector({ points: [waiting, c3], opacity: entry }));
+    }
+    pieces.push(labeledDot({ at: waiting, label: 'c-5', opacity: entry }));
+  }
+  pieces.push(flightDot({ flight: DEPENDENCY_C5, timeMs }));
+  return pieces.join('');
+}
+
+function openingBrand(timeMs: number): string {
+  const opacity = smooth(
+    progressIn({ timeMs, startMs: OPENING_AT.brand + OPENING.brandEnterDelayMs, durationMs: TIMING.drawMs })
+  );
+  if (opacity <= 0) {
+    return '';
+  }
+  return (
+    logo({
+      center: { left: STAGE_CENTER.left, top: STAGE_CENTER.top + OPENING.tileOffsetY },
+      size: OPENING.tileSize,
+      opacity
+    }) +
+    text({
+      at: { left: STAGE_CENTER.left, top: STAGE_CENTER.top + OPENING.nameOffsetY },
+      value: 'Commute',
+      size: OPENING.nameSize,
+      family: SANS,
+      weight: OPENING.nameWeight,
+      opacity
+    })
+  );
+}
+
+// Overlaps: changes declare their files, only a shared file gets a merge check, and its result sets the order.
+const OVERLAPS = {
+  changeWidth: 200,
+  changeHeight: 64,
+  fileX: 1_180,
+  fileWidth: 380,
+  fileHeight: 84,
+  changesMs: 200,
+  staggerMs: 140,
+  declareMs: 900,
+  filesMs: 1_000,
+  checkPacketMs: 2_600,
+  checkFlightMs: 900,
+  checkMs: 3_500,
+  checkDurationMs: 2_400,
+  orderedDelayMs: 300,
+  launchMs: 7_200,
+  flightMs: 1_300,
+  secondLaunchDelayMs: 200,
+  parallelSpreadPx: 22,
+  aloneDelayMs: 150
+};
+const OVERLAP_FILES = [
+  { path: 'src/routes.mjs', outcome: 'ordered' },
+  { path: 'src/i18n/en.json', outcome: 'parallel' },
+  { path: 'src/catalog/hoodie.mjs', outcome: 'alone' }
+] as const;
+// Real changes of the run. Each one sits on its own row, in this order.
+const OVERLAP_CHANGES = [
+  { id: 'c-3', path: 'src/routes.mjs' },
+  { id: 'c-5', path: 'src/routes.mjs' },
+  { id: 'c-9', path: 'src/i18n/en.json' },
+  { id: 'c-12', path: 'src/i18n/en.json' },
+  { id: 'c-7', path: 'src/catalog/hoodie.mjs' }
+] as const;
+
+type OverlapFile = (typeof OVERLAP_FILES)[number];
+type OverlapChange = (typeof OVERLAP_CHANGES)[number];
+
+// A file sits level with the middle of the changes that declare it.
+function overlapFileY(file: OverlapFile): number {
+  let sum = 0;
+  let count = 0;
+  for (const [row, change] of OVERLAP_CHANGES.entries()) {
+    if (change.path === file.path) {
+      sum += laneY(row);
+      count += 1;
+    }
+  }
+  return sum / count;
+}
+
+function overlapFileOf(change: OverlapChange): OverlapFile {
+  for (const file of OVERLAP_FILES) {
+    if (file.path === change.path) {
+      return file;
+    }
+  }
+  throw new Error(`OVERLAP_FILE_MISSING: ${change.path}`);
+}
+
+function overlapResultMs(file: OverlapFile): number {
+  const doneMs = OVERLAPS.checkMs + OVERLAPS.checkDurationMs;
+  if (file.outcome === 'ordered') {
+    return doneMs + OVERLAPS.orderedDelayMs;
+  }
+  return doneMs;
+}
+
+function overlapValue({ file, timeMs }: OverlapValueParams): string {
+  if (file.outcome === 'alone' || timeMs < OVERLAPS.checkMs) {
+    return '';
+  }
+  if (timeMs < overlapResultMs(file)) {
+    return 'merge check';
+  }
+  if (file.outcome === 'ordered') {
+    return 'c-3 → c-5';
+  }
+  return 'clean';
+}
+
+type OverlapValueParams = {
+  file: OverlapFile;
+  timeMs: number;
+};
+
+// After the checks, the clean pair lands side by side, c-5 lands after c-3, and c-7 needed no check at all.
+function planOverlapFlights(): Flight[] {
+  const flights: Flight[] = [];
+  const fileRight = OVERLAPS.fileX + OVERLAPS.fileWidth * HALF;
+  let orderedArriveMs = 0;
+  for (const change of OVERLAP_CHANGES) {
+    const file = overlapFileOf(change);
+    let launchMs = OVERLAPS.launchMs;
+    let top = overlapFileY(file);
+    if (file.outcome === 'ordered' && orderedArriveMs > 0) {
+      launchMs = orderedArriveMs + OVERLAPS.secondLaunchDelayMs;
+    }
+    if (file.outcome === 'parallel' && change.id === 'c-9') {
+      top -= OVERLAPS.parallelSpreadPx;
+    } else if (file.outcome === 'parallel') {
+      top += OVERLAPS.parallelSpreadPx;
+    }
+    if (file.outcome === 'alone') {
+      launchMs += OVERLAPS.aloneDelayMs;
+    }
+    const flight = {
+      points: [{ left: fileRight, top }, intoTrunk(top)],
+      launchMs,
+      arriveMs: launchMs + OVERLAPS.flightMs,
+      label: change.id
+    };
+    if (file.outcome === 'ordered' && orderedArriveMs === 0) {
+      orderedArriveMs = flight.arriveMs;
+    }
+    flights.push(flight);
+  }
+  return flights;
+}
+
+const OVERLAP_FLIGHTS = planOverlapFlights();
+
+function overlaps(timeMs: number): string {
+  const lines: string[] = [];
+  const packets: string[] = [];
+  const boxes: string[] = [];
+  const changeRight = LANES.boxCenterX + OVERLAPS.changeWidth * HALF;
+  const fileLeft = OVERLAPS.fileX - OVERLAPS.fileWidth * HALF;
+  for (const [row, change] of OVERLAP_CHANGES.entries()) {
+    const file = overlapFileOf(change);
+    const top = laneY(row);
+    const declared = [
+      { left: changeRight, top },
+      { left: fileLeft, top: overlapFileY(file) }
+    ];
+    boxes.push(
+      box({
+        center: { left: LANES.boxCenterX, top },
+        width: OVERLAPS.changeWidth,
+        height: OVERLAPS.changeHeight,
+        label: change.id,
+        opacity: smooth(
+          progressIn({ timeMs, startMs: OVERLAPS.changesMs + row * OVERLAPS.staggerMs, durationMs: TIMING.enterMs })
+        )
+      })
+    );
+    lines.push(
+      connector({
+        points: declared,
+        progress: progressIn({
+          timeMs,
+          startMs: OVERLAPS.declareMs + row * OVERLAPS.staggerMs,
+          durationMs: TIMING.drawMs
+        })
+      })
+    );
+    if (file.outcome !== 'alone') {
+      packets.push(
+        flightDot({
+          flight: {
+            points: declared,
+            launchMs: OVERLAPS.checkPacketMs,
+            arriveMs: OVERLAPS.checkPacketMs + OVERLAPS.checkFlightMs,
+            label: ''
+          },
+          timeMs
+        })
+      );
+    }
+    const flight = OVERLAP_FLIGHTS[row];
+    if (flight === undefined) {
+      throw new Error('OVERLAP_FLIGHT_MISSING');
+    }
+    lines.push(
+      connector({
+        points: flight.points,
+        progress: progressIn({ timeMs, startMs: overlapResultMs(file), durationMs: TIMING.drawMs })
+      })
+    );
+    packets.push(flightDot({ flight, timeMs }));
+  }
+  for (const [index, file] of OVERLAP_FILES.entries()) {
+    const center = { left: OVERLAPS.fileX, top: overlapFileY(file) };
+    const resultMs = overlapResultMs(file);
+    let alarm = 0;
+    let pulse = 0;
+    if (file.outcome === 'ordered') {
+      alarm = pulseAfter({ timeMs, eventsMs: [resultMs] });
+    } else if (file.outcome === 'parallel') {
+      pulse = pulseAfter({ timeMs, eventsMs: [resultMs] });
+    }
+    boxes.push(
+      box({
+        center,
+        width: OVERLAPS.fileWidth,
+        height: OVERLAPS.fileHeight,
+        label: file.path,
+        value: overlapValue({ file, timeMs }),
+        pulse,
+        alarm,
+        opacity: smooth(
+          progressIn({ timeMs, startMs: OVERLAPS.filesMs + index * OVERLAPS.staggerMs, durationMs: TIMING.enterMs })
+        )
+      })
+    );
+    if (file.outcome !== 'alone' && timeMs >= OVERLAPS.checkMs && timeMs < resultMs) {
+      const progress = progressIn({ timeMs, startMs: OVERLAPS.checkMs, durationMs: resultMs - OVERLAPS.checkMs });
+      boxes.push(checkBar({ center, width: OVERLAPS.fileWidth, height: OVERLAPS.fileHeight, progress }));
+    }
+  }
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: AGENTS.dimOpacity }),
+    ...lines,
+    ...packets,
+    ...boxes,
+    trunk({ pulse: pulseAfter({ timeMs, eventsMs: arrivals(OVERLAP_FLIGHTS) }) })
+  ].join('');
+}
+
+type CheckBarParams = {
+  center: Point;
+  width: number;
+  height: number;
+  progress: number;
+};
+
+// A check that runs, drawn as the bottom edge of its box filling from left to right.
+function checkBar({ center, width, height, progress }: CheckBarParams): string {
+  const left = center.left - width * HALF;
+  const top = center.top + height * HALF - STYLE.barHeight * HALF;
+  const length = width * clamp01(progress);
+  return `<rect x="${fmt(left)}" y="${fmt(top)}" width="${fmt(length)}" height="${STYLE.barHeight}" fill="${GREEN_BRIGHT}"/>`;
+}
+
+// Resolution: the model sees both changes as line IDs and answers with IDs, so it can only pick lines.
+const RESOLUTION = {
+  panelWidth: 340,
+  panelHeight: 220,
+  leftX: 700,
+  rightX: 1_420,
+  panelY: 290,
+  headerOffsetY: -76,
+  firstLineOffsetY: -30,
+  lineGap: 42,
+  codeIndent: 76,
+  tagIndent: 40,
+  gutterIndent: 18,
+  gutterWidth: 4,
+  gutterHeight: 30,
+  modelY: 520,
+  modelWidth: 300,
+  modelHeight: 96,
+  resultY: 730,
+  resultHeight: 240,
+  resultHeaderOffsetY: -92,
+  resultFirstLineOffsetY: -50,
+  panelsMs: 200,
+  linesMs: 600,
+  lineStaggerMs: 160,
+  insertMs: 1_700,
+  tagsMs: 5_000,
+  modelMs: 5_300,
+  idsLaunchMs: 6_000,
+  idsFlightMs: 1_000,
+  thinkMs: 7_000,
+  thinkPeriodMs: 450,
+  answerMs: 8_500,
+  resultMs: 11_000,
+  baseLinesMs: 11_100,
+  searchMoveMs: 11_500,
+  ordersMoveMs: 12_100,
+  moveMs: 800,
+  c3LaunchMs: 13_000,
+  c3FlightMs: 1_100,
+  appliedDelayMs: 100,
+  c5FlightMs: 900,
+  topPathY: 110,
+  modelInletOffset: 60
+};
+const BASE_LINES = ["'home',", "'cart',"];
+const RESOLUTION_SIDES = [
+  { id: 'c-3', left: RESOLUTION.leftX, line: "'search',", tag: 't1', moveMs: RESOLUTION.searchMoveMs },
+  { id: 'c-5', left: RESOLUTION.rightX, line: "'orders',", tag: 'o1', moveMs: RESOLUTION.ordersMoveMs }
+] as const;
+const RESOLUTION_C3: Flight = {
+  points: [
+    { left: RESOLUTION.leftX, top: RESOLUTION.panelY - RESOLUTION.panelHeight * HALF },
+    { left: RESOLUTION.leftX, top: RESOLUTION.topPathY },
+    { left: TRUNK_CENTER.left, top: RESOLUTION.topPathY },
+    { left: TRUNK_CENTER.left, top: TRUNK.top + TRUNK.landingDepth }
+  ],
+  launchMs: RESOLUTION.c3LaunchMs,
+  arriveMs: RESOLUTION.c3LaunchMs + RESOLUTION.c3FlightMs,
+  label: 'c-3'
+};
+const RESOLUTION_APPLIED_MS = RESOLUTION_C3.arriveMs + RESOLUTION.appliedDelayMs;
+const RESOLUTION_C5: Flight = {
+  points: [
+    { left: STAGE_CENTER.left + RESOLUTION.panelWidth * HALF, top: RESOLUTION.resultY },
+    intoTrunk(RESOLUTION.resultY)
+  ],
+  launchMs: RESOLUTION_APPLIED_MS,
+  arriveMs: RESOLUTION_APPLIED_MS + RESOLUTION.c5FlightMs,
+  label: 'c-5'
+};
+
+function codeLineY(index: number): number {
+  return RESOLUTION.panelY + RESOLUTION.firstLineOffsetY + index * RESOLUTION.lineGap;
+}
+
+function resultLineY(index: number): number {
+  return RESOLUTION.resultY + RESOLUTION.resultFirstLineOffsetY + index * RESOLUTION.lineGap;
+}
+
+function resolution(timeMs: number): string {
+  const lines: string[] = [];
+  const packets: string[] = [];
+  const panels: string[] = [];
+  const texts: string[] = [];
+  const modelCenter = { left: STAGE_CENTER.left, top: RESOLUTION.modelY };
+  const modelTop = RESOLUTION.modelY - RESOLUTION.modelHeight * HALF;
+  const resultLeft = STAGE_CENTER.left - RESOLUTION.panelWidth * HALF;
+  const insertIndex = BASE_LINES.length;
+  for (const [sideIndex, side] of RESOLUTION_SIDES.entries()) {
+    const panelLeft = side.left - RESOLUTION.panelWidth * HALF;
+    const panelOpacity = smooth(
+      progressIn({
+        timeMs,
+        startMs: RESOLUTION.panelsMs + sideIndex * RESOLUTION.lineStaggerMs,
+        durationMs: TIMING.enterMs
+      })
+    );
+    panels.push(
+      box({
+        center: { left: side.left, top: RESOLUTION.panelY },
+        width: RESOLUTION.panelWidth,
+        height: RESOLUTION.panelHeight,
+        pulse: side.id === 'c-3' ? pulseAfter({ timeMs, eventsMs: [RESOLUTION_C3.launchMs] }) : 0,
+        opacity: panelOpacity
+      }),
+      text({
+        at: { left: side.left, top: RESOLUTION.panelY + RESOLUTION.headerOffsetY },
+        value: side.id,
+        opacity: panelOpacity
+      })
+    );
+    for (const [lineIndex, value] of [...BASE_LINES, side.line].entries()) {
+      const opacity = progressIn({
+        timeMs,
+        startMs: RESOLUTION.linesMs + lineIndex * RESOLUTION.lineStaggerMs,
+        durationMs: TIMING.enterMs
+      });
+      texts.push(
+        text({
+          at: { left: panelLeft + RESOLUTION.codeIndent, top: codeLineY(lineIndex) },
+          value,
+          size: STYLE.codeSize,
+          anchor: 'start',
+          opacity
+        })
+      );
+    }
+    const insertY = codeLineY(insertIndex);
+    const gutter = progressIn({ timeMs, startMs: RESOLUTION.insertMs, durationMs: TIMING.enterMs });
+    if (gutter > 0) {
+      texts.push(
+        `<rect x="${fmt(panelLeft + RESOLUTION.gutterIndent)}" y="${fmt(insertY - RESOLUTION.gutterHeight * HALF)}" width="${RESOLUTION.gutterWidth}" height="${RESOLUTION.gutterHeight}" fill="${ORANGE}" opacity="${alpha(gutter)}"/>`
+      );
+    }
+    const tagAt = { left: panelLeft + RESOLUTION.tagIndent, top: insertY };
+    texts.push(
+      text({
+        at: tagAt,
+        value: side.tag,
+        size: STYLE.tagSize,
+        color: ORANGE,
+        opacity: progressIn({ timeMs, startMs: RESOLUTION.tagsMs, durationMs: TIMING.enterMs })
+      })
+    );
+    const inletX = modelCenter.left + (sideIndex === 0 ? -RESOLUTION.modelInletOffset : RESOLUTION.modelInletOffset);
+    const outletX = sideIndex === 0 ? panelLeft + RESOLUTION.panelWidth : panelLeft;
+    const idPath = [
+      { left: outletX, top: insertY },
+      { left: inletX, top: modelTop }
+    ];
+    lines.push(
+      connector({
+        points: idPath,
+        progress: progressIn({ timeMs, startMs: RESOLUTION.modelMs, durationMs: TIMING.drawMs })
+      })
+    );
+    const idFlight: Flight = {
+      points: idPath,
+      launchMs: RESOLUTION.idsLaunchMs,
+      arriveMs: RESOLUTION.idsLaunchMs + RESOLUTION.idsFlightMs,
+      label: side.tag
+    };
+    packets.push(flightDot({ flight: idFlight, timeMs }));
+    const move = smooth(progressIn({ timeMs, startMs: side.moveMs, durationMs: RESOLUTION.moveMs }));
+    if (move > 0) {
+      // The line drops beside the result, then slides in, so it never crosses the result's header.
+      const targetTop = resultLineY(insertIndex + sideIndex);
+      const path = [
+        { left: panelLeft + RESOLUTION.codeIndent, top: insertY },
+        { left: panelLeft + RESOLUTION.codeIndent, top: targetTop },
+        { left: resultLeft + RESOLUTION.codeIndent, top: targetTop }
+      ];
+      texts.push(
+        text({
+          at: pointAlong({ points: path, progress: move }),
+          value: side.line,
+          size: STYLE.codeSize,
+          anchor: 'start'
+        })
+      );
+    }
+  }
+  const thinking =
+    timeMs >= RESOLUTION.thinkMs && timeMs < RESOLUTION.answerMs
+      ? HALF + HALF * Math.sin(((timeMs - RESOLUTION.thinkMs) / RESOLUTION.thinkPeriodMs) * Math.PI)
+      : 0;
+  panels.push(
+    box({
+      center: modelCenter,
+      width: RESOLUTION.modelWidth,
+      height: RESOLUTION.modelHeight,
+      label: 'WORKERS AI',
+      value: timeMs >= RESOLUTION.answerMs ? '[ t1, o1 ]' : '',
+      pulse: Math.max(thinking, pulseAfter({ timeMs, eventsMs: [RESOLUTION.answerMs] })),
+      opacity: smooth(progressIn({ timeMs, startMs: RESOLUTION.modelMs, durationMs: TIMING.enterMs }))
+    })
+  );
+  const resultOpacity = smooth(progressIn({ timeMs, startMs: RESOLUTION.resultMs, durationMs: TIMING.enterMs }));
+  panels.push(
+    box({
+      center: { left: STAGE_CENTER.left, top: RESOLUTION.resultY },
+      width: RESOLUTION.panelWidth,
+      height: RESOLUTION.resultHeight,
+      pulse: pulseAfter({ timeMs, eventsMs: [RESOLUTION_APPLIED_MS] }),
+      opacity: resultOpacity
+    }),
+    text({
+      at: { left: STAGE_CENTER.left, top: RESOLUTION.resultY + RESOLUTION.resultHeaderOffsetY },
+      value: 'src/routes.mjs',
+      opacity: resultOpacity
+    })
+  );
+  for (const [lineIndex, value] of BASE_LINES.entries()) {
+    texts.push(
+      text({
+        at: { left: resultLeft + RESOLUTION.codeIndent, top: resultLineY(lineIndex) },
+        value,
+        size: STYLE.codeSize,
+        anchor: 'start',
+        opacity: progressIn({ timeMs, startMs: RESOLUTION.baseLinesMs, durationMs: TIMING.enterMs })
+      })
+    );
+  }
+  lines.push(
+    connector({
+      points: RESOLUTION_C3.points,
+      progress: progressIn({ timeMs, startMs: RESOLUTION_C3.launchMs - TIMING.drawMs, durationMs: TIMING.drawMs })
+    }),
+    connector({
+      points: RESOLUTION_C5.points,
+      progress: progressIn({ timeMs, startMs: RESOLUTION_C5.launchMs - TIMING.drawMs, durationMs: TIMING.drawMs })
+    })
+  );
+  packets.push(flightDot({ flight: RESOLUTION_C3, timeMs }), flightDot({ flight: RESOLUTION_C5, timeMs }));
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: AGENTS.dimOpacity }),
+    ...lines,
+    ...panels,
+    ...texts,
+    ...packets,
+    trunk({ pulse: pulseAfter({ timeMs, eventsMs: [RESOLUTION_C3.arriveMs, RESOLUTION_C5.arriveMs] }) })
+  ].join('');
+}
+
+// Batches: changes that commute gather into one batch, and one approval lands all of them at once.
+const BATCH = {
+  size: 320,
+  labelOffsetY: -122,
+  slotGap: 52,
+  slotOffsetY: 22,
+  slotColumns: 4,
+  gatherMs: 400,
+  gatherStaggerMs: 140,
+  gatherFlightMs: 1_000,
+  approveMs: 4_500,
+  checkRadius: 22,
+  checkInset: 40,
+  checkStroke: 4,
+  launchMs: 5_000,
+  launchStaggerMs: 70,
+  flightMs: 1_000,
+  shuffleStride: 7,
+  columnStride: 4,
+  rowStride: 7,
+  rowOffset: 2,
+  spreadTop: 200,
+  spreadGap: 36
+};
+const BATCH_TOTAL = 16;
+const CHANGE_TOTAL = 20;
+
+function batchSlot(index: number): Point {
+  const column = index % BATCH.slotColumns;
+  const row = Math.floor(index / BATCH.slotColumns);
+  const middle = (BATCH.slotColumns - 1) * HALF;
+  return {
+    left: STAGE_CENTER.left + (column - middle) * BATCH.slotGap,
+    top: STAGE_CENTER.top + BATCH.slotOffsetY + (row - middle) * BATCH.slotGap
+  };
+}
+
+type BatchPlan = {
+  gathers: Flight[];
+  landings: Flight[];
+};
+
+function planBatch(): BatchPlan {
+  const gathers: Flight[] = [];
+  const landings: Flight[] = [];
+  for (let index = 0; index < BATCH_TOTAL; index += 1) {
+    const cell = {
+      column: (index * BATCH.columnStride) % AGENTS.columns,
+      row: (index * BATCH.rowStride + BATCH.rowOffset) % AGENTS.rows
+    };
+    const gatherMs = BATCH.gatherMs + index * BATCH.gatherStaggerMs;
+    gathers.push({
+      points: [agentCenter(cell), batchSlot(index)],
+      launchMs: gatherMs,
+      arriveMs: gatherMs + BATCH.gatherFlightMs,
+      label: ''
+    });
+    const rank = (index * BATCH.shuffleStride) % BATCH_TOTAL;
+    const launchMs = BATCH.launchMs + rank * BATCH.launchStaggerMs;
+    landings.push({
+      points: [batchSlot(index), intoTrunk(BATCH.spreadTop + rank * BATCH.spreadGap)],
+      launchMs,
+      arriveMs: launchMs + BATCH.flightMs,
+      label: ''
+    });
+  }
+  return { gathers, landings };
+}
+
+const BATCH_PLAN = planBatch();
+
+function batch(timeMs: number): string {
+  const packets: string[] = [];
+  for (const [index, gather] of BATCH_PLAN.gathers.entries()) {
+    const landing = BATCH_PLAN.landings[index];
+    if (landing === undefined) {
+      throw new Error('BATCH_LANDING_MISSING');
+    }
+    if (timeMs < gather.arriveMs) {
+      packets.push(flightDot({ flight: { ...gather, arriveMs: gather.arriveMs + TIMING.landMs }, timeMs }));
+    } else if (timeMs < landing.launchMs) {
+      packets.push(dot({ at: batchSlot(index) }));
+    } else {
+      packets.push(flightDot({ flight: landing, timeMs }));
+    }
+  }
+  const boxOpacity = smooth(progressIn({ timeMs, startMs: 0, durationMs: TIMING.enterMs }));
+  const approval = smooth(progressIn({ timeMs, startMs: BATCH.approveMs, durationMs: TIMING.enterMs }));
+  const checkCenter = {
+    left: STAGE_CENTER.left + BATCH.size * HALF - BATCH.checkInset,
+    top: STAGE_CENTER.top - BATCH.size * HALF + BATCH.checkInset
+  };
+  const landed = landedCount({ flights: BATCH_PLAN.landings, timeMs });
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: 1 }),
+    box({
+      center: STAGE_CENTER,
+      width: BATCH.size,
+      height: BATCH.size,
+      pulse: pulseAfter({ timeMs, eventsMs: [BATCH.approveMs] }),
+      opacity: boxOpacity
+    }),
+    text({
+      at: { left: STAGE_CENTER.left, top: STAGE_CENTER.top + BATCH.labelOffsetY },
+      value: 'BATCH 1',
+      opacity: boxOpacity
+    }),
+    approvalMark({ center: checkCenter, opacity: approval }),
+    ...packets,
+    trunk({
+      value: `${landed} / ${BATCH_TOTAL}`,
+      pulse: pulseAfter({ timeMs, eventsMs: arrivals(BATCH_PLAN.landings) })
+    })
+  ].join('');
+}
+
+type ApprovalMarkParams = {
+  center: Point;
+  opacity: number;
+};
+
+function approvalMark({ center, opacity }: ApprovalMarkParams): string {
+  if (opacity <= 0) {
+    return '';
+  }
+  const radius = BATCH.checkRadius;
+  const tick = `M${fmt(center.left - radius * HALF)} ${fmt(center.top)}l${fmt(radius * CHECK_TICK.short)} ${fmt(radius * CHECK_TICK.short)}l${fmt(radius * CHECK_TICK.long)} ${fmt(-radius * CHECK_TICK.long)}`;
+  return `<g opacity="${alpha(opacity)}"><circle cx="${fmt(center.left)}" cy="${fmt(center.top)}" r="${radius}" fill="${BACKGROUND}" stroke="${GREEN_BRIGHT}" stroke-width="${BATCH.checkStroke}"/><path d="${tick}" fill="none" stroke="${GREEN_BRIGHT}" stroke-width="${BATCH.checkStroke}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
+
+// Checks: each check result is saved under the hashes of the folders it reads. A landing changes one hash, so only
+// that check runs again.
+const CHECKS = {
+  folderX: 760,
+  folderWidth: 400,
+  checkX: 1_300,
+  checkWidth: 300,
+  rowHeight: 64,
+  firstRowY: 216,
+  rowGap: 96,
+  textInset: 26,
+  rowsMs: 200,
+  rowStaggerMs: 110,
+  hashesMs: 1_400,
+  hashStaggerMs: 120,
+  hashTypeMs: 360,
+  linesMs: 2_300,
+  checksMs: 2_500,
+  savePacketMs: 3_100,
+  saveFlightMs: 800,
+  saveStaggerMs: 90,
+  landingLaunchMs: 6_900,
+  landingFlightMs: 1_200,
+  landingPathY: 780,
+  hashFlipMs: 8_300,
+  flipMs: 400,
+  rerunMs: 8_700,
+  rerunDurationMs: 1_500,
+  keptMs: 8_700,
+  staleOpacity: 0.3
+};
+const CHECK_ROWS = [
+  { folder: 'src/routes.mjs', check: 'routes', hash: '7c7959', changedHash: 'c51183' },
+  { folder: 'src/cart', check: 'cart', hash: 'd7e7df', changedHash: null },
+  { folder: 'src/catalog', check: 'catalog', hash: '74c53e', changedHash: null },
+  { folder: 'src/search', check: 'search', hash: '60c7e5', changedHash: null },
+  { folder: 'src/i18n', check: 'i18n', hash: 'de5fa5', changedHash: null },
+  { folder: 'docs', check: 'docs', hash: '4d2c05', changedHash: null }
+];
+const CHECKS_LANDING: Flight = {
+  points: [{ left: AGENTS.edgeX, top: CHECKS.landingPathY }, intoTrunk(CHECKS.landingPathY)],
+  launchMs: CHECKS.landingLaunchMs,
+  arriveMs: CHECKS.landingLaunchMs + CHECKS.landingFlightMs,
+  label: 'c-3'
+};
+
+function checks(timeMs: number): string {
+  const lines: string[] = [];
+  const packets: string[] = [];
+  const boxes: string[] = [];
+  const folderLeft = CHECKS.folderX - CHECKS.folderWidth * HALF;
+  const folderRight = CHECKS.folderX + CHECKS.folderWidth * HALF;
+  const checkLeft = CHECKS.checkX - CHECKS.checkWidth * HALF;
+  const checkRight = CHECKS.checkX + CHECKS.checkWidth * HALF;
+  for (const [index, row] of CHECK_ROWS.entries()) {
+    const top = CHECKS.firstRowY + index * CHECKS.rowGap;
+    const rowOpacity = smooth(
+      progressIn({ timeMs, startMs: CHECKS.rowsMs + index * CHECKS.rowStaggerMs, durationMs: TIMING.enterMs })
+    );
+    const hashStartMs = CHECKS.hashesMs + index * CHECKS.hashStaggerMs;
+    const typed = Math.round(
+      row.hash.length * progressIn({ timeMs, startMs: hashStartMs, durationMs: CHECKS.hashTypeMs })
+    );
+    // The old hash fades out and the new one fades in, so the change reads as one flip.
+    const flip = progressIn({ timeMs, startMs: CHECKS.hashFlipMs, durationMs: CHECKS.flipMs });
+    let hash = row.hash.slice(0, typed);
+    let hashOpacity = rowOpacity;
+    if (row.changedHash !== null && flip > 0) {
+      hashOpacity = Math.abs(1 - flip * DOUBLE);
+      if (flip >= HALF) {
+        hash = row.changedHash;
+      }
+    }
+    boxes.push(
+      `<g opacity="${alpha(rowOpacity)}">${boxFrame({ center: { left: CHECKS.folderX, top }, width: CHECKS.folderWidth, height: CHECKS.rowHeight, pulse: row.changedHash === null ? 0 : pulseAfter({ timeMs, eventsMs: [CHECKS.hashFlipMs + CHECKS.flipMs] }), alarm: 0 })}</g>`,
+      text({
+        at: { left: folderLeft + CHECKS.textInset, top },
+        value: row.folder,
+        anchor: 'start',
+        opacity: rowOpacity
+      }),
+      text({
+        at: { left: folderRight - CHECKS.textInset, top },
+        value: hash,
+        anchor: 'end',
+        opacity: hashOpacity
+      })
+    );
+    const linkPath = [
+      { left: folderRight, top },
+      { left: checkLeft, top }
+    ];
+    lines.push(
+      connector({
+        points: linkPath,
+        progress: progressIn({
+          timeMs,
+          startMs: CHECKS.linesMs + index * CHECKS.rowStaggerMs,
+          durationMs: TIMING.drawMs
+        })
+      })
+    );
+    const saveLaunchMs = CHECKS.savePacketMs + index * CHECKS.saveStaggerMs;
+    const savedMs = saveLaunchMs + CHECKS.saveFlightMs;
+    packets.push(
+      flightDot({ flight: { points: linkPath, launchMs: saveLaunchMs, arriveMs: savedMs, label: '' }, timeMs })
+    );
+    const isRerun = row.changedHash !== null && timeMs >= CHECKS.rerunMs;
+    const rerunDoneMs = CHECKS.rerunMs + CHECKS.rerunDurationMs;
+    let stored = timeMs >= savedMs ? `✓ ${row.hash}` : '';
+    let storedOpacity = 1;
+    let pulse = pulseAfter({ timeMs, eventsMs: [savedMs] });
+    if (row.changedHash === null) {
+      pulse = Math.max(pulse, pulseAfter({ timeMs, eventsMs: [CHECKS.keptMs] }));
+    } else if (isRerun && timeMs < rerunDoneMs) {
+      storedOpacity = CHECKS.staleOpacity;
+    } else if (isRerun) {
+      stored = `✓ ${row.changedHash}`;
+      pulse = pulseAfter({ timeMs, eventsMs: [rerunDoneMs] });
+    }
+    const checkOpacity = smooth(
+      progressIn({ timeMs, startMs: CHECKS.checksMs + index * CHECKS.rowStaggerMs, durationMs: TIMING.enterMs })
+    );
+    const checkCenter = { left: CHECKS.checkX, top };
+    boxes.push(
+      `<g opacity="${alpha(checkOpacity)}">${boxFrame({ center: checkCenter, width: CHECKS.checkWidth, height: CHECKS.rowHeight, pulse, alarm: 0 })}</g>`,
+      text({
+        at: { left: checkLeft + CHECKS.textInset, top },
+        value: row.check,
+        anchor: 'start',
+        opacity: checkOpacity
+      }),
+      text({
+        at: { left: checkRight - CHECKS.textInset, top },
+        value: stored,
+        anchor: 'end',
+        size: STYLE.valueSize,
+        opacity: checkOpacity * storedOpacity
+      })
+    );
+    if (isRerun && timeMs < rerunDoneMs) {
+      boxes.push(
+        checkBar({
+          center: checkCenter,
+          width: CHECKS.checkWidth,
+          height: CHECKS.rowHeight,
+          progress: progressIn({ timeMs, startMs: CHECKS.rerunMs, durationMs: CHECKS.rerunDurationMs })
+        })
+      );
+    }
+  }
+  lines.push(
+    connector({
+      points: CHECKS_LANDING.points,
+      progress: progressIn({ timeMs, startMs: CHECKS.landingLaunchMs - TIMING.drawMs, durationMs: TIMING.drawMs })
+    })
+  );
+  packets.push(flightDot({ flight: CHECKS_LANDING, timeMs }));
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: AGENTS.dimOpacity }),
+    ...lines,
+    ...packets,
+    ...boxes,
+    trunk({ pulse: pulseAfter({ timeMs, eventsMs: [CHECKS_LANDING.arriveMs] }) })
+  ].join('');
+}
+
+// Everything lands: four batches, twenty changes.
+const EVERYTHING = {
+  firstWaveMs: 300,
+  waveGapMs: 800,
+  waveSize: 5,
+  launchStaggerMs: 60,
+  flightMs: 1_100,
+  columnStride: 5,
+  rowStride: 3,
+  spreadTop: 190,
+  spreadGap: 30
+};
+
+function planEverything(): Flight[] {
+  const flights: Flight[] = [];
+  for (let index = 0; index < CHANGE_TOTAL; index += 1) {
+    const wave = Math.floor(index / EVERYTHING.waveSize);
+    const launchMs =
+      EVERYTHING.firstWaveMs + wave * EVERYTHING.waveGapMs + (index % EVERYTHING.waveSize) * EVERYTHING.launchStaggerMs;
+    const cell = {
+      column: (index * EVERYTHING.columnStride) % AGENTS.columns,
+      row: (index * EVERYTHING.rowStride + 1) % AGENTS.rows
+    };
+    flights.push({
+      points: [agentCenter(cell), intoTrunk(EVERYTHING.spreadTop + index * EVERYTHING.spreadGap)],
+      launchMs,
+      arriveMs: launchMs + EVERYTHING.flightMs,
+      label: ''
+    });
+  }
+  return flights;
+}
+
+const EVERYTHING_FLIGHTS = planEverything();
+
+function everything(timeMs: number): string {
+  const landed = landedCount({ flights: EVERYTHING_FLIGHTS, timeMs });
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: 1 }),
+    ...EVERYTHING_FLIGHTS.map((flight) => flightDot({ flight, timeMs })),
+    trunk({
+      value: `${landed} / ${CHANGE_TOTAL}`,
+      pulse: pulseAfter({ timeMs, eventsMs: arrivals(EVERYTHING_FLIGHTS) })
+    })
+  ].join('');
+}
+
+// What Bob's agent saw: one agent steps forward, and its change passes through the three commands it runs.
+const AGENT_SCENE = {
+  cell: { column: 4, row: 7 },
+  scale: 3,
+  targetX: 600,
+  moveMs: 200,
+  moveDurationMs: 800,
+  firstBoxX: 880,
+  boxGap: 280,
+  boxWidth: 240,
+  boxHeight: 72,
+  boxesMs: 900,
+  boxStaggerMs: 450,
+  linesMs: 1_100,
+  launchMs: 2_500,
+  flightMs: 1_900,
+  iconGap: 16
+};
+const AGENT_COMMANDS = ['commute start', 'git push', 'commute wait'];
+
+function agentCommands(timeMs: number): string {
+  const move = smooth(progressIn({ timeMs, startMs: AGENT_SCENE.moveMs, durationMs: AGENT_SCENE.moveDurationMs }));
+  const from = agentOrigin(AGENT_SCENE.cell);
+  const bigSize = AGENTS.iconSize * AGENT_SCENE.scale;
+  const to = { left: AGENT_SCENE.targetX - bigSize * HALF, top: STAGE_CENTER.top - bigSize * HALF };
+  const scale = mix({ from: 1, to: AGENT_SCENE.scale, progress: move });
+  const origin = {
+    left: mix({ from: from.left, to: to.left, progress: move }),
+    top: mix({ from: from.top, to: to.top, progress: move })
+  };
+  const route: Point[] = [{ left: AGENT_SCENE.targetX + bigSize * HALF + AGENT_SCENE.iconGap, top: STAGE_CENTER.top }];
+  const boxes: string[] = [];
+  for (const [index, command] of AGENT_COMMANDS.entries()) {
+    const center = { left: AGENT_SCENE.firstBoxX + index * AGENT_SCENE.boxGap, top: STAGE_CENTER.top };
+    route.push(center);
+    boxes.push(
+      box({
+        center,
+        width: AGENT_SCENE.boxWidth,
+        height: AGENT_SCENE.boxHeight,
+        label: command,
+        opacity: smooth(
+          progressIn({
+            timeMs,
+            startMs: AGENT_SCENE.boxesMs + index * AGENT_SCENE.boxStaggerMs,
+            durationMs: TIMING.enterMs
+          })
+        )
+      })
+    );
+  }
+  route.push(intoTrunk(STAGE_CENTER.top));
+  const flight: Flight = {
+    points: route,
+    launchMs: AGENT_SCENE.launchMs,
+    arriveMs: AGENT_SCENE.launchMs + AGENT_SCENE.flightMs,
+    label: ''
+  };
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: mix({ from: 1, to: AGENTS.dimOpacity, progress: move }) }),
+    connector({
+      points: route,
+      progress: progressIn({ timeMs, startMs: AGENT_SCENE.linesMs, durationMs: TIMING.drawMs })
+    }),
+    flightDot({ flight, timeMs }),
+    ...boxes,
+    agentIcon({ origin, opacity: 1, scale }),
+    trunk({ pulse: pulseAfter({ timeMs, eventsMs: [flight.arriveMs] }) })
+  ].join('');
+}
+
+// How Commute runs on Cloudflare. Trunk turns into Artifacts, which holds trunk and one repository per change.
+const ARCH = {
+  boxHeight: 72,
+  workers: { left: 700, top: STAGE_CENTER.top, width: 240 },
+  durableObject: { left: 1_040, top: STAGE_CENTER.top, width: 280 },
+  workersAi: { left: 1_400, top: 300, width: 240 },
+  containers: { left: 1_400, top: 660, width: 240 },
+  elbowX: 1_240,
+  bottomY: 780,
+  labelY: 210,
+  chipWidth: 112,
+  chipHeight: 40,
+  chipTop: 270,
+  chipGap: 54,
+  chipSize: 20,
+  chipStroke: 2,
+  relabelMs: 300,
+  chipsMs: 1_200,
+  chipStaggerMs: 180,
+  workersMs: 700,
+  workersLinesMs: 1_300,
+  flowMs: 2_400,
+  doMs: 7_700,
+  aiMs: 8_500,
+  containersMs: 9_300,
+  secondFlowMs: 10_200,
+  flowPeriodMs: 1_700,
+  flowFlightMs: 1_500,
+  flowsMax: 12,
+  routeOffsetMs: 550
+};
+const ARTIFACT_CHIPS = ['trunk', 'c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6', 'c-7'];
+const ARCH_PATHS = {
+  agentsToWorkers: [
+    { left: AGENTS.edgeX, top: STAGE_CENTER.top },
+    { left: ARCH.workers.left - ARCH.workers.width * HALF, top: STAGE_CENTER.top }
+  ],
+  workersToArtifacts: [
+    { left: ARCH.workers.left, top: STAGE_CENTER.top + ARCH.boxHeight * HALF },
+    { left: ARCH.workers.left, top: ARCH.bottomY },
+    { left: TRUNK.left, top: ARCH.bottomY }
+  ],
+  workersToDo: [
+    { left: ARCH.workers.left + ARCH.workers.width * HALF, top: STAGE_CENTER.top },
+    { left: ARCH.durableObject.left - ARCH.durableObject.width * HALF, top: STAGE_CENTER.top }
+  ],
+  doToAi: [
+    { left: ARCH.durableObject.left + ARCH.durableObject.width * HALF, top: STAGE_CENTER.top },
+    { left: ARCH.elbowX, top: STAGE_CENTER.top },
+    { left: ARCH.elbowX, top: ARCH.workersAi.top },
+    { left: ARCH.workersAi.left - ARCH.workersAi.width * HALF, top: ARCH.workersAi.top }
+  ],
+  doToContainers: [
+    { left: ARCH.durableObject.left + ARCH.durableObject.width * HALF, top: STAGE_CENTER.top },
+    { left: ARCH.elbowX, top: STAGE_CENTER.top },
+    { left: ARCH.elbowX, top: ARCH.containers.top },
+    { left: ARCH.containers.left - ARCH.containers.width * HALF, top: ARCH.containers.top }
+  ],
+  containersToArtifacts: [
+    { left: ARCH.containers.left + ARCH.containers.width * HALF, top: ARCH.containers.top },
+    { left: TRUNK.left, top: ARCH.containers.top }
+  ]
+};
+// Changes travel these routes. Each route passes behind the boxes on its way.
+const ARCH_ROUTES = [
+  {
+    startMs: ARCH.flowMs,
+    points: [
+      { left: AGENTS.edgeX, top: STAGE_CENTER.top },
+      { left: ARCH.workers.left, top: STAGE_CENTER.top },
+      { left: ARCH.workers.left, top: ARCH.bottomY },
+      intoTrunk(ARCH.bottomY)
+    ]
+  },
+  {
+    startMs: ARCH.secondFlowMs,
+    points: [
+      { left: ARCH.workers.left, top: STAGE_CENTER.top },
+      { left: ARCH.elbowX, top: STAGE_CENTER.top },
+      { left: ARCH.elbowX, top: ARCH.containers.top },
+      intoTrunk(ARCH.containers.top)
+    ]
+  },
+  {
+    startMs: ARCH.secondFlowMs + ARCH.routeOffsetMs,
+    points: [
+      { left: ARCH.durableObject.left, top: STAGE_CENTER.top },
+      { left: ARCH.elbowX, top: STAGE_CENTER.top },
+      { left: ARCH.elbowX, top: ARCH.workersAi.top },
+      { left: ARCH.workersAi.left, top: ARCH.workersAi.top }
+    ]
+  }
+];
+
+function planArchitecture(): Flight[] {
+  const flights: Flight[] = [];
+  for (const route of ARCH_ROUTES) {
+    for (let index = 0; index < ARCH.flowsMax; index += 1) {
+      const launchMs = route.startMs + index * ARCH.flowPeriodMs;
+      flights.push({ points: route.points, launchMs, arriveMs: launchMs + ARCH.flowFlightMs, label: '' });
+    }
+  }
+  return flights;
+}
+
+const ARCH_FLIGHTS = planArchitecture();
+
+type ArchNodeParams = {
+  center: Point;
+  width: number;
+  label: string;
+  startMs: number;
+};
+
+function architecture(timeMs: number): string {
+  const appear = (startMs: number): number => smooth(progressIn({ timeMs, startMs, durationMs: TIMING.enterMs }));
+  const draw = (startMs: number): number => progressIn({ timeMs, startMs, durationMs: TIMING.drawMs });
+  const relabel = progressIn({ timeMs, startMs: ARCH.relabelMs, durationMs: TIMING.enterMs });
+  const chips = ARTIFACT_CHIPS.map((chip, index) => {
+    const opacity = appear(ARCH.chipsMs + index * ARCH.chipStaggerMs);
+    const center = { left: TRUNK_CENTER.left, top: ARCH.chipTop + index * ARCH.chipGap };
+    return `<g opacity="${alpha(opacity)}"><rect x="${fmt(center.left - ARCH.chipWidth * HALF)}" y="${fmt(center.top - ARCH.chipHeight * HALF)}" width="${ARCH.chipWidth}" height="${ARCH.chipHeight}" fill="${BOX_FILL}" stroke="${GREEN}" stroke-width="${ARCH.chipStroke}"/></g>${text({ at: center, value: chip, size: ARCH.chipSize, opacity })}`;
+  });
+  const node = ({ center, width, label, startMs }: ArchNodeParams): string =>
+    box({ center, width, height: ARCH.boxHeight, label, opacity: appear(startMs) });
+  return [
+    agents({ timeMs, entryStartMs: null, opacity: 1 }),
+    connector({ points: ARCH_PATHS.agentsToWorkers, progress: draw(ARCH.workersLinesMs) }),
+    connector({ points: ARCH_PATHS.workersToArtifacts, progress: draw(ARCH.workersLinesMs) }),
+    connector({ points: ARCH_PATHS.workersToDo, progress: draw(ARCH.doMs) }),
+    connector({ points: ARCH_PATHS.doToAi, progress: draw(ARCH.aiMs) }),
+    connector({ points: ARCH_PATHS.doToContainers, progress: draw(ARCH.containersMs) }),
+    connector({ points: ARCH_PATHS.containersToArtifacts, progress: draw(ARCH.containersMs) }),
+    ...ARCH_FLIGHTS.map((flight) => flightDot({ flight, timeMs })),
+    node({ center: ARCH.workers, width: ARCH.workers.width, label: 'WORKERS', startMs: ARCH.workersMs }),
+    node({ center: ARCH.durableObject, width: ARCH.durableObject.width, label: 'DURABLE OBJECT', startMs: ARCH.doMs }),
+    node({ center: ARCH.workersAi, width: ARCH.workersAi.width, label: 'WORKERS AI', startMs: ARCH.aiMs }),
+    node({ center: ARCH.containers, width: ARCH.containers.width, label: 'CONTAINERS', startMs: ARCH.containersMs }),
+    trunk({ label: '', pulse: pulseAfter({ timeMs, eventsMs: arrivals(ARCH_FLIGHTS) }) }),
+    text({ at: TRUNK_CENTER, value: 'TRUNK', opacity: 1 - relabel }),
+    text({ at: { left: TRUNK_CENTER.left, top: ARCH.labelY }, value: 'ARTIFACTS', opacity: relabel }),
+    ...chips
+  ].join('');
+}
+
+// The end card: the architecture clears, and the mark, the name, and the repository stay.
+const END = {
+  clearMs: 700,
+  enterDelayMs: 500,
+  tileY: 330,
+  tileSize: 120,
+  nameY: 476,
+  nameSize: 112,
+  nameWeight: 650,
+  urlY: 590,
+  urlSize: 36,
+  risePx: 16
+};
+const ARCH_DURATION_MS = sceneStartMs({ scenes: CLOSING_SCENES, visual: 'end' });
+
+function endCard(timeMs: number): string {
+  const clear = 1 - smooth(progressIn({ timeMs, startMs: 0, durationMs: END.clearMs }));
+  const enter = smooth(progressIn({ timeMs, startMs: END.enterDelayMs, durationMs: TIMING.drawMs }));
+  const rise = (1 - enter) * END.risePx;
+  return [
+    `<g opacity="${alpha(clear)}">${architecture(ARCH_DURATION_MS + timeMs)}</g>`,
+    logo({ center: { left: VIDEO_WIDTH * HALF, top: END.tileY + rise }, size: END.tileSize, opacity: enter }),
+    text({
+      at: { left: VIDEO_WIDTH * HALF, top: END.nameY + rise },
+      value: 'Commute',
+      size: END.nameSize,
+      family: SANS,
+      weight: END.nameWeight,
+      opacity: enter
+    }),
+    text({
+      at: { left: VIDEO_WIDTH * HALF, top: END.urlY + rise },
+      value: 'github.com/lucrise-llc/commute',
+      size: END.urlSize,
+      opacity: enter
+    })
+  ].join('');
 }

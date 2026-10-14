@@ -24,8 +24,8 @@ const CONSOLE_WIDTH = 1_600;
 const CONSOLE_HEIGHT = 800;
 const CONSOLE_LEFT = 160;
 const CONSOLE_TOP = 120;
-const CONSOLE_BAR_TOP = 72;
-const CONSOLE_BAR_HEIGHT = 48;
+// The console window's title bar, which compose lays over the window as an image.
+export const CONSOLE_BAR = { left: 160, top: 72, width: 1_600, height: 48 };
 const CONSOLE_BORDER_LEFT = 158;
 const CONSOLE_BORDER_TOP = 70;
 const CONSOLE_BORDER_WIDTH = 1_604;
@@ -92,7 +92,7 @@ export async function encodeFramesClip({ frames, overlays, listPath, output }: F
   if (hasFocus) {
     const cameraPath = `${listPath}.camera`;
     await writeFile(cameraPath, cameraCommands(frames));
-    base = `[0:v]fps=${VIDEO_FPS},sendcmd=f=${cameraPath},crop@camera=${CAPTURE_WIDTH}:${CAPTURE_HEIGHT}:0:0:exact=1,scale=${CONSOLE_WIDTH}:${CONSOLE_HEIGHT}:flags=lanczos,format=rgb24,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:${CONSOLE_LEFT}:${CONSOLE_TOP}:color=${BACKGROUND},drawbox=x=${CONSOLE_LEFT}:y=${CONSOLE_BAR_TOP}:w=${CONSOLE_WIDTH}:h=${CONSOLE_BAR_HEIGHT}:color=0x17191d:t=fill,drawbox=x=${CONSOLE_BORDER_LEFT}:y=${CONSOLE_BORDER_TOP}:w=${CONSOLE_BORDER_WIDTH}:h=${CONSOLE_BORDER_HEIGHT}:color=0x383838:t=${CONSOLE_BORDER_THICKNESS}[layer0]`;
+    base = `[0:v]fps=${VIDEO_FPS},sendcmd=f=${cameraPath},crop@camera=${CAPTURE_WIDTH}:${CAPTURE_HEIGHT}:0:0:exact=1,scale=${CONSOLE_WIDTH}:${CONSOLE_HEIGHT}:flags=lanczos,format=rgb24,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:${CONSOLE_LEFT}:${CONSOLE_TOP}:color=${BACKGROUND},drawbox=x=${CONSOLE_BORDER_LEFT}:y=${CONSOLE_BORDER_TOP}:w=${CONSOLE_BORDER_WIDTH}:h=${CONSOLE_BORDER_HEIGHT}:color=0x383838:t=${CONSOLE_BORDER_THICKNESS}[layer0]`;
   }
   const layers = overlays.map((overlay, index) => {
     const enable = overlay.windows

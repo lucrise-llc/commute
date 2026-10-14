@@ -12,9 +12,9 @@ import type { FrameEntry, Overlay } from './clips.ts';
 
 import { transcriptSchema } from './transcript.ts';
 import { FAST_SPEED, planSegments } from './segments.ts';
-import { encodeFramesClip, joinClips } from './clips.ts';
 import { TIMELINE_FILE, timelineSchema } from './capture.ts';
 import { planReplay, renderReplay } from './terminal-replay.ts';
+import { CONSOLE_BAR, encodeFramesClip, joinClips } from './clips.ts';
 import { CHAPTER_SCENES, CLOSING_SCENES, OPENING_SCENES, renderScenes } from './animated-scenes.ts';
 import { AGENT_OUTRO_CUES, AGENT_OUTRO_INTRO, TERMINAL_AGENT, TERMINAL_CUES, TERMINAL_INTRO } from './story.ts';
 import {
@@ -24,7 +24,8 @@ import {
   renderGraphic,
   STRIP_HEIGHT,
   VIDEO_HEIGHT,
-  VIDEO_WIDTH
+  VIDEO_WIDTH,
+  windowBarHtml
 } from './graphics.ts';
 
 const RECORDING_DIR = fileURLToPath(new URL('../recording', import.meta.url));
@@ -100,6 +101,13 @@ await renderGraphic({
   path: badge,
   size: { width: BADGE_WIDTH, height: STRIP_HEIGHT },
   isTransparent: true
+});
+const windowBar = join(workDir, 'window-bar.png');
+await renderGraphic({
+  page,
+  html: windowBarHtml('Commute'),
+  path: windowBar,
+  size: { width: CONSOLE_BAR.width, height: CONSOLE_BAR.height }
 });
 for (const segment of segments) {
   await addConsoleSegment({ segment });
@@ -221,7 +229,13 @@ async function addConsoleSegment({ segment }: AddConsoleSegmentParams): Promise<
     return;
   }
   const path = nextClipPath();
-  const overlays: Overlay[] = [];
+  let segmentMs = 0;
+  for (const frame of segment.frames) {
+    segmentMs += frame.durationMs;
+  }
+  const overlays: Overlay[] = [
+    { image: windowBar, left: CONSOLE_BAR.left, top: CONSOLE_BAR.top, windows: [{ startMs: 0, endMs: segmentMs }] }
+  ];
   for (const [index, caption] of segment.captions.entries()) {
     const image = `${path}-caption-${index}.png`;
     await renderGraphic({ page, html: captionHtml(caption.text), path: image, size: STRIP_SIZE });

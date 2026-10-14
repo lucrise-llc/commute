@@ -10,13 +10,21 @@ export const BACKGROUND = '#101010';
 export const TEXT_COLOR = '#f1f2f4';
 export const MUTED_COLOR = '#9299a4';
 export const ACCENT_COLOR = '#f6821f';
-export const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
 
 // The caption style, shared by the strip under the console and the terminal replay. A caption takes two lines at most.
 export const CAPTION_CSS = `
 .caption { max-width: 1440px; max-height: 100px; overflow: hidden; text-align: center; text-wrap: balance;
   color: ${TEXT_COLOR}; font: 500 36px/1.35 ${FONT_FAMILY}; letter-spacing: -0.005em; }
 .caption .nowrap { white-space: nowrap; }
+`;
+// The title bar of a window on the stage, shared by the terminal replay and the console: three dots and a title.
+export const WINDOW_BAR_CSS = `
+.bar { position: relative; height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 20px;
+  background: #17191d; border-bottom: 1px solid #23262c; }
+.bar i { width: 14px; height: 14px; border-radius: 50%; background: #3a3e46; }
+.bar span { position: absolute; left: 0; right: 0; text-align: center; color: ${MUTED_COLOR};
+  font: 500 20px ${FONT_FAMILY}; }
 `;
 // Words with a hyphen, such as a change ID, stay on one line.
 const HYPHENATED_WORD = /[\w.]+(?:-[\w.]+)+/g;
@@ -43,6 +51,20 @@ export function badgeHtml(label: string): string {
         background: ${ACCENT_COLOR}; color: #15171a; font: 700 32px/1 ${FONT_FAMILY}; font-variant-numeric: tabular-nums; }`,
     body: `<div class="badge"><svg width="30" height="22" viewBox="0 0 30 22" aria-hidden="true">
         <path d="M2 2l12 9-12 9zM16 2l12 9-12 9z" fill="currentColor"/></svg>${escapeHtml(label)}</div>`
+  });
+}
+
+export function windowBarMarkup(title: string): string {
+  return `<div class="bar"><i></i><i></i><i></i><span>${escapeHtml(title)}</span></div>`;
+}
+
+// The console's title bar as an image, laid over the top of its window.
+export function windowBarHtml(title: string): string {
+  return htmlDocument({
+    css: `* { box-sizing: border-box; margin: 0; }
+      body { -webkit-font-smoothing: antialiased; }
+      ${WINDOW_BAR_CSS}`,
+    body: windowBarMarkup(title)
   });
 }
 
