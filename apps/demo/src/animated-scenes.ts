@@ -156,13 +156,13 @@ export const OPENING_SCENES: Scene[] = [
     id: 'opening-queue',
     visual: 'queue',
     cues: [
-      { text: 'A merge queue lands one change at a time. Every change waits for the line ahead.', durationMs: 6_600 }
+      { text: 'A merge queue lands one change at a time. Every change waits for the line ahead.', durationMs: 6_900 }
     ]
   },
   {
     id: 'opening-rerun',
     visual: 'rerun',
-    cues: [{ text: 'Each landing moves trunk. Checks for every change behind it run again.', durationMs: 6_000 }]
+    cues: [{ text: 'Each landing moves trunk. Checks for every change behind it run again.', durationMs: 6_300 }]
   },
   {
     id: 'opening-conflict',
@@ -175,7 +175,7 @@ export const OPENING_SCENES: Scene[] = [
     cues: [
       {
         text: 'Commute gives each area of code its own lane. Independent changes land in parallel, in any order.',
-        durationMs: 7_600
+        durationMs: 8_200
       }
     ]
   },
@@ -187,7 +187,7 @@ export const OPENING_SCENES: Scene[] = [
   {
     id: 'opening-name',
     visual: 'brand',
-    cues: [{ text: 'Commute. Many coding agents, one repository.', durationMs: 4_000 }]
+    cues: [{ text: 'Commute. Many coding agents, one repository.', durationMs: 5_100 }]
   }
 ];
 
@@ -198,28 +198,28 @@ export const CHAPTER_SCENES: Record<string, Scene> = {
     cues: [
       {
         text: 'Each change declares its files. Only changes sharing a file get a real merge check.',
-        durationMs: 6_700
+        durationMs: 7_100
       },
-      { text: 'A clean merge stays parallel; a conflict gives the pair an order.', durationMs: 5_300 }
+      { text: 'A clean merge stays parallel; a conflict gives the pair an order.', durationMs: 5_800 }
     ]
   },
   'A conflict, resolved at the first push': {
     id: 'chapter-resolution',
     visual: 'resolution',
     cues: [
-      { text: "Both changes insert after 'cart', in src/routes.mjs.", durationMs: 4_700 },
+      { text: "Both changes insert after 'cart', in src/routes.mjs.", durationMs: 5_000 },
       {
         text: 'Workers AI reads both intents and selects existing line IDs. It cannot write a line.',
-        durationMs: 6_200
+        durationMs: 8_000
       },
-      { text: 'The resolution is stored and applies when c-3 lands.', durationMs: 4_600 }
+      { text: 'The resolution is stored and applies when c-3 lands.', durationMs: 4_900 }
     ]
   },
   'People approve batches, and changes land in parallel': {
     id: 'chapter-batches',
     visual: 'batch',
     cues: [
-      { text: 'Ready changes that commute form one landing batch.', durationMs: 4_200 },
+      { text: 'Ready changes that commute form one landing batch.', durationMs: 4_700 },
       { text: 'One approval lands the whole batch, in any order.', durationMs: 4_600 }
     ]
   },
@@ -234,12 +234,12 @@ export const CHAPTER_SCENES: Record<string, Scene> = {
   'Everything lands': {
     id: 'chapter-everything',
     visual: 'everything',
-    cues: [{ text: 'Everything lands: 20 changes in four batches.', durationMs: 4_300 }]
+    cues: [{ text: 'Everything lands: 20 changes in four batches.', durationMs: 4_800 }]
   },
   'What the agents saw': {
     id: 'chapter-agent',
     visual: 'agent',
-    cues: [{ text: 'What the agents saw: Commute commands and plain git.', durationMs: 4_800 }]
+    cues: [{ text: 'What the agents saw: Commute commands and plain git.', durationMs: 5_100 }]
   }
 };
 
@@ -250,11 +250,11 @@ export const CLOSING_SCENES: Scene[] = [
     cues: [
       {
         text: 'Workers serve the API, console, and git remote. Artifacts holds trunk and a repository per change.',
-        durationMs: 7_500
+        durationMs: 8_900
       },
       {
         text: 'A Durable Object coordinates each project. Containers run merges and checks. Workers AI resolves conflicts.',
-        durationMs: 8_200
+        durationMs: 9_800
       }
     ]
   },

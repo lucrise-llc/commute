@@ -45,6 +45,9 @@ export const SESSIONS_CUES: SessionCue[] = [
   }
 ];
 
+// The chapter card before the rest of the sessions.
+export const AGENTS_CHAPTER = 'What the agents saw';
+
 export const SESSIONS_OUTRO_INTRO = 'Back in the two sessions. From here on, the agents only wait and pull.';
 
 // The cues of the rest of the sessions, after the last cue above.

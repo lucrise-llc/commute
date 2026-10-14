@@ -10,6 +10,7 @@ import type { FrameEntry } from './clips.ts';
 import type { Transcript } from './transcript.ts';
 
 import { FRAME_MS } from './clips.ts';
+import { voiceHoldMs } from './voice-clips.ts';
 import {
   ACCENT_COLOR,
   BACKGROUND,
@@ -117,11 +118,19 @@ type PlanSessionsParams = {
   sessions: Session[];
   intro: string;
   cues: SessionCue[];
+  // The length of each caption's voice clip, by the caption's text.
+  voiceMsByText: ReadonlyMap<string, number>;
   fromHarnessMs?: number;
 };
 
-// The replay starts with the intro caption at fromHarnessMs and ends after the reading time of the last cue.
-export function planSessions({ sessions, intro, cues, fromHarnessMs = 0 }: PlanSessionsParams): SessionsPlan {
+// The replay starts with the intro caption at fromHarnessMs and ends when the last cue has been read and spoken.
+export function planSessions({
+  sessions,
+  intro,
+  cues,
+  voiceMsByText,
+  fromHarnessMs = 0
+}: PlanSessionsParams): SessionsPlan {
   const panes = sessions.map((session) => paneOf(session));
   const cued = matchCues({ sessions, panes, cues, fromHarnessMs });
   const endHarnessMs = cued.at(-1)?.harnessMs ?? fromHarnessMs;
@@ -148,12 +157,12 @@ export function planSessions({ sessions, intro, cues, fromHarnessMs = 0 }: PlanS
       continue;
     }
     for (const cue of cuesHere) {
-      videoMs = Math.max(videoMs, readyMs(captions));
+      videoMs = Math.max(videoMs, readyMs({ captions, voiceMsByText }));
       clock.push({ videoMs, harnessMs });
       captions.push({ videoMs, text: cue.text, block: cue.block });
     }
   }
-  const durationMs = Math.max(videoMs + END_HOLD_MS, readyMs(captions));
+  const durationMs = Math.max(videoMs + END_HOLD_MS, readyMs({ captions, voiceMsByText }));
   if (durationMs > REPLAY_MS_MAX) {
     throw new Error(`REPLAY_TOO_LONG: the replay takes ${Math.round(durationMs)} ms, more than ${REPLAY_MS_MAX}.`);
   }
@@ -239,13 +248,19 @@ function matchCues({ sessions, panes, cues, fromHarnessMs }: MatchCuesParams): C
   return cued;
 }
 
-// The video time when the last caption has had its reading time.
-function readyMs(captions: Caption[]): number {
+type ReadyMsParams = {
+  captions: Caption[];
+  voiceMsByText: ReadonlyMap<string, number>;
+};
+
+// The video time when the last caption has had its reading time and its clip has been spoken.
+function readyMs({ captions, voiceMsByText }: ReadyMsParams): number {
   const last = captions.at(-1);
   if (last === undefined) {
     return 0;
   }
-  return last.videoMs + READING_MS_LEAD + last.text.split(/\s+/).length * READING_MS_PER_WORD;
+  const readingMs = READING_MS_LEAD + last.text.split(/\s+/).length * READING_MS_PER_WORD;
+  return last.videoMs + Math.max(readingMs, voiceHoldMs(voiceMsByText.get(last.text) ?? 0));
 }
 
 type RenderSessionsParams = {

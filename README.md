@@ -10,14 +10,15 @@ independent changes in any order. Those changes keep their check results.
 > Commute is a prototype. The scope of the first demo and the plan after it are
 > in [PRD.md](PRD.md).
 
-**Demo video:** one real run, explained. Alice and Bob each start 10 agents on
-one repository while a person uses the console. Animated scenes explain each
-idea, and Alice's and Bob's agents run side by side. Overlaps show up at the
-start, a conflict is resolved at the first push, batches land in parallel, and
-check results that still hold are kept. Neither agent edits the conflict.
-Waits in the console play at 8×.
+**Demo video:** one real run, explained and narrated. Alice and Bob each start
+10 agents on one repository while a person uses the console. Animated scenes
+explain each idea, and Alice's and Bob's agents run side by side. Overlaps show
+up at the start, a conflict is resolved at the first push, batches land in
+parallel, and check results that still hold are kept. Neither agent edits the
+conflict. Waits in the console play at 8×. The narration is my own voice,
+cloned with ElevenLabs.
 
-https://github.com/user-attachments/assets/20dd1ed4-30ba-4772-8ea4-7b289de10c3e
+https://github.com/user-attachments/assets/df6c39a7-44b9-46dd-b400-3f449a9ed5c9
 
 ## How Commute differs from pull requests
 

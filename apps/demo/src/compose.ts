@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Composes the walkthrough video from a recorded take, animated explanation, and the agents' sessions.
+// Composes the walkthrough video from a recorded take, animated explanation, the agents' sessions, and the voiceover.
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from 'node:util';
@@ -7,18 +7,34 @@ import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 
 import type { Scene } from './animated-scenes.ts';
-import type { Session } from './agent-sessions.ts';
 import type { ConsoleSegment } from './segments.ts';
-import type { FrameEntry, Overlay } from './clips.ts';
+import type { FrameEntry, Overlay, Window } from './clips.ts';
+import type { Session, SessionsPlan } from './agent-sessions.ts';
 
 import { AGENTS } from './agents.ts';
 import { transcriptSchema } from './transcript.ts';
 import { FAST_SPEED, planSegments } from './segments.ts';
 import { TIMELINE_FILE, timelineSchema } from './capture.ts';
 import { planSessions, renderSessions } from './agent-sessions.ts';
-import { CONSOLE_BAR, encodeFramesClip, joinClips } from './clips.ts';
+import { readVoiceIndex, VOICE_DIR, VOICE_LEAD_MS, voiceHoldMs } from './voice-clips.ts';
 import { CHAPTER_SCENES, CLOSING_SCENES, OPENING_SCENES, renderScenes } from './animated-scenes.ts';
-import { SESSION_AGENTS, SESSIONS_CUES, SESSIONS_INTRO, SESSIONS_OUTRO_CUES, SESSIONS_OUTRO_INTRO } from './story.ts';
+import {
+  FRAME_MS,
+  CONSOLE_BAR,
+  encodeFramesClip,
+  joinClips,
+  buildVoiceTrack,
+  LOUDNESS_TARGET,
+  measureLoudness
+} from './clips.ts';
+import {
+  AGENTS_CHAPTER,
+  SESSION_AGENTS,
+  SESSIONS_CUES,
+  SESSIONS_INTRO,
+  SESSIONS_OUTRO_CUES,
+  SESSIONS_OUTRO_INTRO
+} from './story.ts';
 import {
   BADGE_WIDTH,
   badgeHtml,
@@ -55,6 +71,20 @@ const BYTES_PER_MB = 1_000_000;
 const SIZE_DIGITS = 2;
 const STRIP_SIZE = { width: VIDEO_WIDTH, height: STRIP_HEIGHT };
 const STRIP_TOP = VIDEO_HEIGHT - STRIP_HEIGHT;
+const VOICE_TRACK_FILE = 'voice.wav';
+// The delivered audio stays within this many LU of the loudness target, and its true peak stays at or under -1 dBTP.
+const LOUDNESS_TOLERANCE_LU = 1;
+const TRUE_PEAK_MAX_DB = -1;
+
+// A caption's window, in the time of the clip that shows it.
+type CaptionWindow = Window & {
+  text: string;
+};
+
+type VoicePlacement = {
+  file: string;
+  startMs: number;
+};
 
 const { values } = parseArgs({
   options: {
@@ -82,14 +112,28 @@ for (const name of SESSION_AGENTS) {
   );
   sessions.push({ owner: agent.owner, intent: agent.intent, edit: agent.edit, transcript });
 }
-const segments = planSegments({ timeline, recordingDir });
-const sessionsPlan = planSessions({ sessions, intro: SESSIONS_INTRO, cues: SESSIONS_CUES });
+const voiceIndex = await readVoiceIndex(recordingDir);
+const voiceMsByText = new Map(Object.entries(voiceIndex).map(([text, clip]) => [text, clip.durationMs]));
+const segments = planSegments({ timeline, recordingDir }).map((segment) => holdLastCaption(segment));
+const sessionsPlan = planSessions({ sessions, intro: SESSIONS_INTRO, cues: SESSIONS_CUES, voiceMsByText });
 const sessionsOutroPlan = planSessions({
   sessions,
   intro: SESSIONS_OUTRO_INTRO,
   cues: SESSIONS_OUTRO_CUES,
+  voiceMsByText,
   fromHarnessMs: sessionsPlan.endHarnessMs
 });
+checkVoice([
+  ...sceneWindows(OPENING_SCENES),
+  ...sessionWindows(sessionsPlan),
+  ...segments.flatMap((segment) => [
+    ...(segment.chapter === null ? [] : sceneWindows([chapterScene(segment.chapter)])),
+    ...segment.captions
+  ]),
+  ...sceneWindows([chapterScene(AGENTS_CHAPTER)]),
+  ...sessionWindows(sessionsOutroPlan),
+  ...sceneWindows(CLOSING_SCENES)
+]);
 
 await rm(workDir, { recursive: true, force: true });
 await mkdir(join(workDir, 'sessions'), { recursive: true });
@@ -97,12 +141,14 @@ await mkdir(join(workDir, 'sessions-outro'), { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const clips: string[] = [];
+const voicePlacements: VoicePlacement[] = [];
 let videoMs = 0;
 
 await addAnimated({ scenes: OPENING_SCENES });
 await addFrames({
   frames: await renderSessions({ browser, plan: sessionsPlan, framesDir: join(workDir, 'sessions') }),
-  overlays: []
+  overlays: [],
+  captions: sessionWindows(sessionsPlan)
 });
 const badge = join(workDir, 'badge.png');
 await renderGraphic({
@@ -122,10 +168,11 @@ await renderGraphic({
 for (const segment of segments) {
   await addConsoleSegment({ segment });
 }
-await addAnimated({ scenes: [chapterScene('What the agents saw')] });
+await addAnimated({ scenes: [chapterScene(AGENTS_CHAPTER)] });
 await addFrames({
   frames: await renderSessions({ browser, plan: sessionsOutroPlan, framesDir: join(workDir, 'sessions-outro') }),
-  overlays: []
+  overlays: [],
+  captions: sessionWindows(sessionsOutroPlan)
 });
 await addAnimated({ scenes: CLOSING_SCENES });
 await browser.close();
@@ -135,8 +182,19 @@ if (videoMs < VIDEO_MS_MIN || videoMs > VIDEO_MS_MAX) {
     `VIDEO_LENGTH_OUT_OF_RANGE: the video takes ${Math.round(videoMs)} ms; the submission asks for ${VIDEO_MS_MIN} to ${VIDEO_MS_MAX}.`
   );
 }
+const voiceTrack = join(workDir, VOICE_TRACK_FILE);
+await buildVoiceTrack({ placements: voicePlacements, durationMs: videoMs, output: voiceTrack });
 const clipsListPath = join(workDir, 'clips.ffconcat');
-await joinClips({ clips, listPath: clipsListPath, output, crf: UPLOAD_CRF, durationMs: videoMs, isGithub: false });
+await joinClips({
+  clips,
+  listPath: clipsListPath,
+  audio: voiceTrack,
+  output,
+  crf: UPLOAD_CRF,
+  durationMs: videoMs,
+  isGithub: false
+});
+await checkLoudness(output);
 const uploadSize = (await stat(output)).size;
 const uploadReport = report({ path: output, size: uploadSize, videoMs, fps: UPLOAD_FPS, crf: UPLOAD_CRF });
 if (uploadSize > UPLOAD_BYTES_MAX) {
@@ -151,6 +209,7 @@ while (true) {
   await joinClips({
     clips,
     listPath: clipsListPath,
+    audio: voiceTrack,
     output: githubOutput,
     crf: githubCrf,
     durationMs: videoMs,
@@ -162,6 +221,7 @@ while (true) {
   }
   githubCrf = Math.min(CRF_MAX, githubCrf + GITHUB_CRF_STEP);
 }
+await checkLoudness(githubOutput);
 const githubReport = report({ path: githubOutput, size: githubSize, videoMs, fps: GITHUB_FPS, crf: githubCrf });
 if (githubSize > GITHUB_BYTES_MAX) {
   throw new Error(`VIDEO_TOO_LARGE: ${githubReport}. GitHub accepts at most ${GITHUB_BYTES_MAX / BYTES_PER_MB} MB.`);
@@ -196,7 +256,7 @@ async function addAnimated({ scenes }: AddAnimatedParams): Promise<void> {
     framesDir: `${path}-frames`,
     reviewDir: join(recordingDir, 'review')
   });
-  await addFrames({ frames, overlays: [] });
+  await addFrames({ frames, overlays: [], captions: sceneWindows(scenes) });
 }
 
 function chapterScene(title: string): Scene {
@@ -210,12 +270,17 @@ function chapterScene(title: string): Scene {
 type AddFramesParams = {
   frames: FrameEntry[];
   overlays: Overlay[];
+  captions: CaptionWindow[];
 };
 
-async function addFrames({ frames, overlays }: AddFramesParams): Promise<void> {
+// Adds a clip to the video, and places the voice clip of each of its captions.
+async function addFrames({ frames, overlays, captions }: AddFramesParams): Promise<void> {
   const path = nextClipPath();
   await encodeFramesClip({ frames, overlays, listPath: `${path}.ffconcat`, output: `${path}.mp4` });
   clips.push(`${path}.mp4`);
+  for (const caption of captions) {
+    voicePlacements.push({ file: voiceFile(caption.text), startMs: videoMs + caption.startMs + VOICE_LEAD_MS });
+  }
   for (const frame of frames) {
     videoMs += frame.durationMs;
   }
@@ -249,5 +314,86 @@ async function addConsoleSegment({ segment }: AddConsoleSegmentParams): Promise<
   if (segment.fastWindows.length > 0) {
     overlays.push({ image: badge, left: VIDEO_WIDTH - BADGE_WIDTH, top: STRIP_TOP, windows: segment.fastWindows });
   }
-  await addFrames({ frames: segment.frames, overlays });
+  await addFrames({ frames: segment.frames, overlays, captions: segment.captions });
+}
+
+// The last caption of a console segment may need longer than the segment has left for its voice clip. The segment then
+// holds its last frame until the clip ends.
+function holdLastCaption(segment: ConsoleSegment): ConsoleSegment {
+  const lastCaption = segment.captions.at(-1);
+  const lastFrame = segment.frames.at(-1);
+  const clipMs = voiceMsByText.get(lastCaption?.text ?? '');
+  if (lastCaption === undefined || lastFrame === undefined || clipMs === undefined) {
+    return segment;
+  }
+  const shortMs = voiceHoldMs(clipMs) - (lastCaption.endMs - lastCaption.startMs);
+  if (shortMs <= 0) {
+    return segment;
+  }
+  const holdMs = Math.ceil(shortMs / FRAME_MS) * FRAME_MS;
+  return {
+    ...segment,
+    frames: [...segment.frames.slice(0, -1), { ...lastFrame, durationMs: lastFrame.durationMs + holdMs }],
+    captions: [...segment.captions.slice(0, -1), { ...lastCaption, endMs: lastCaption.endMs + holdMs }]
+  };
+}
+
+// The caption windows of animated scenes, one after another.
+function sceneWindows(scenes: Scene[]): CaptionWindow[] {
+  const windows: CaptionWindow[] = [];
+  let startMs = 0;
+  for (const scene of scenes) {
+    for (const cue of scene.cues) {
+      windows.push({ text: cue.text, startMs, endMs: startMs + cue.durationMs });
+      startMs += cue.durationMs;
+    }
+  }
+  return windows;
+}
+
+// Each caption of a sessions replay shows until the next one, and the last one until the replay ends.
+function sessionWindows(plan: SessionsPlan): CaptionWindow[] {
+  return plan.captions.map((caption, index) => ({
+    text: caption.text,
+    startMs: caption.videoMs,
+    endMs: plan.captions[index + 1]?.videoMs ?? plan.frameCount * FRAME_MS
+  }));
+}
+
+function voiceFile(text: string): string {
+  const clip = voiceIndex[text];
+  if (clip === undefined) {
+    throw new Error(`VOICE_CLIP_MISSING: run npm run voice -w @commute/demo for "${text}".`);
+  }
+  return join(recordingDir, VOICE_DIR, clip.file);
+}
+
+// Every caption needs a clip that fits its window. All failures show at once, before the render starts.
+function checkVoice(windows: CaptionWindow[]): void {
+  const failures: string[] = [];
+  for (const window of windows) {
+    const clipMs = voiceMsByText.get(window.text);
+    if (clipMs === undefined) {
+      failures.push(`no clip: "${window.text}"`);
+      continue;
+    }
+    const neededMs = voiceHoldMs(clipMs);
+    const windowMs = window.endMs - window.startMs;
+    if (neededMs > windowMs) {
+      failures.push(`${Math.round(neededMs)} ms of voice in ${Math.round(windowMs)} ms: "${window.text}"`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`VOICE_DOES_NOT_FIT:\n${failures.join('\n')}`);
+  }
+}
+
+// The delivered audio stays near the loudness target after the AAC encode.
+async function checkLoudness(path: string): Promise<void> {
+  const measured = await measureLoudness(path);
+  const integratedOff = Math.abs(measured.input_i - LOUDNESS_TARGET.integrated);
+  if (integratedOff > LOUDNESS_TOLERANCE_LU || measured.input_tp > TRUE_PEAK_MAX_DB) {
+    throw new Error(`LOUDNESS_OFF_TARGET: ${path} measures ${measured.input_i} LUFS and ${measured.input_tp} dBTP.`);
+  }
+  console.log(`audio ${path}: ${measured.input_i} LUFS, ${measured.input_tp} dBTP`);
 }

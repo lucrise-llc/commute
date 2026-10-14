@@ -1,5 +1,6 @@
 // ffmpeg steps of compose. Each part of the video becomes a lossless clip of the same size and frame rate, and the
 // last step joins the clips and encodes the video once.
+import { z } from 'zod';
 import { promisify } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -17,6 +18,16 @@ export const FADE_MS = 300;
 const FADE_SECONDS = FADE_MS / MS_PER_SECOND;
 const KEYFRAME_SECONDS = 10;
 const DURATION_DIGITS = 6;
+// The voice track is mono speech. The GitHub copy spends fewer bits on it to stay under its size limit.
+const VIDEO_AUDIO_BITRATE = '128k';
+const GITHUB_AUDIO_BITRATE = '64k';
+const AUDIO_RATE = 48_000;
+// Loudness of the voice track: integrated LUFS, true peak in dBTP, and loudness range in LU. The track is mono, and
+// -18 LUFS on one channel plays about as loud as -15 LUFS in stereo. The true peak leaves 1 dB for the AAC encode.
+export const LOUDNESS_TARGET = { integrated: -18, truePeak: -2, range: 11 };
+const LOUDNORM_OUTPUT_BYTES_MAX = 1_000_000;
+const LOUDNORM_JSON = /\{[^{}]*"input_i"[^{}]*\}/;
+const VOICE_PLACEMENTS_MAX = 200;
 const FFMPEG_OUTPUT_BYTES_MAX = 10_000_000;
 const CAPTURE_WIDTH = 1_920;
 const CAPTURE_HEIGHT = 960;
@@ -123,6 +134,8 @@ export async function encodeFramesClip({ frames, overlays, listPath, output }: F
 type JoinClipsParams = {
   clips: string[];
   listPath: string;
+  // The voice track, as long as the video.
+  audio: string;
   output: string;
   crf: number;
   durationMs: number;
@@ -134,6 +147,7 @@ type JoinClipsParams = {
 export async function joinClips({
   clips,
   listPath,
+  audio,
   output,
   crf,
   durationMs,
@@ -149,6 +163,12 @@ export async function joinClips({
     '0',
     '-i',
     listPath,
+    '-i',
+    audio,
+    '-map',
+    '0:v',
+    '-map',
+    '1:a',
     '-vf',
     `fps=${fps},setpts=N/(${fps}*TB),${resolution}${fades(durationMs)},format=yuv420p,${FRAME_COLOR_TAGS}`,
     '-c:v',
@@ -172,7 +192,12 @@ export async function joinClips({
     '+faststart',
     '-tag:v',
     'avc1',
-    '-an',
+    '-c:a',
+    'aac',
+    '-b:a',
+    isGithub ? GITHUB_AUDIO_BITRATE : VIDEO_AUDIO_BITRATE,
+    '-ac',
+    '1',
     output
   ]);
 }
@@ -233,4 +258,88 @@ function quote(path: string): string {
 
 async function ffmpeg(args: string[]): Promise<void> {
   await runFile('ffmpeg', ['-v', 'error', '-y', ...args], { maxBuffer: FFMPEG_OUTPUT_BYTES_MAX });
+}
+
+type VoicePlacement = {
+  file: string;
+  startMs: number;
+};
+
+type BuildVoiceTrackParams = {
+  placements: VoicePlacement[];
+  durationMs: number;
+  output: string;
+};
+
+// Places each clip at its start, pads the track to the length of the video, and normalizes its loudness in two
+// passes: the first measures the mix, and the second applies one linear gain toward the target.
+export async function buildVoiceTrack({ placements, durationMs, output }: BuildVoiceTrackParams): Promise<void> {
+  if (placements.length === 0 || placements.length > VOICE_PLACEMENTS_MAX) {
+    throw new Error(
+      `VOICE_PLACEMENTS_OUT_OF_RANGE: ${placements.length} clips; the track takes 1 to ${VOICE_PLACEMENTS_MAX}.`
+    );
+  }
+  const mixed = `${output}.mix.wav`;
+  const delays = placements.map(
+    (placement, index) =>
+      `[${index}:a]aresample=${AUDIO_RATE},aformat=channel_layouts=mono,adelay=${Math.round(placement.startMs)}:all=1[clip${index}]`
+  );
+  const inputs = placements.map((_placement, index) => `[clip${index}]`).join('');
+  const length = seconds(durationMs);
+  await ffmpeg([
+    ...placements.flatMap((placement) => ['-i', placement.file]),
+    '-filter_complex',
+    [
+      ...delays,
+      `${inputs}amix=inputs=${placements.length}:normalize=0:dropout_transition=0,apad=whole_dur=${length},atrim=end=${length}[voice]`
+    ].join(';'),
+    '-map',
+    '[voice]',
+    '-c:a',
+    'pcm_s24le',
+    mixed
+  ]);
+  const measured = await measureLoudness(mixed);
+  const { integrated, truePeak, range } = LOUDNESS_TARGET;
+  const filter = [
+    `loudnorm=I=${integrated}:TP=${truePeak}:LRA=${range}`,
+    `measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}`,
+    `measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
+  ].join(':');
+  await ffmpeg(['-i', mixed, '-af', `${filter},aresample=${AUDIO_RATE}`, '-c:a', 'pcm_s24le', output]);
+}
+
+const loudnessSchema = z.object({
+  input_i: z.coerce.number(),
+  input_tp: z.coerce.number(),
+  input_lra: z.coerce.number(),
+  input_thresh: z.coerce.number(),
+  target_offset: z.coerce.number()
+});
+
+type Loudness = z.infer<typeof loudnessSchema>;
+
+// The loudness of the audio in a file, as ffmpeg's loudnorm filter measures it.
+export async function measureLoudness(path: string): Promise<Loudness> {
+  const { integrated, truePeak, range } = LOUDNESS_TARGET;
+  const { stderr } = await runFile(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-nostats',
+      '-i',
+      path,
+      '-af',
+      `loudnorm=I=${integrated}:TP=${truePeak}:LRA=${range}:print_format=json`,
+      '-f',
+      'null',
+      '-'
+    ],
+    { maxBuffer: LOUDNORM_OUTPUT_BYTES_MAX }
+  );
+  const json = LOUDNORM_JSON.exec(stderr);
+  if (json === null) {
+    throw new Error(`LOUDNESS_UNMEASURED: ffmpeg printed no loudness for ${path}.`);
+  }
+  return loudnessSchema.parse(JSON.parse(json[0]));
 }
