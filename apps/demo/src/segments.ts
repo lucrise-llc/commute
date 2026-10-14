@@ -5,19 +5,19 @@ import { join } from 'node:path';
 
 import type { Timeline } from './capture.ts';
 import type { FrameEntry, Window } from './clips.ts';
+import type { FocusWindow } from './console-focus.ts';
 
 import { FRAME_MS } from './clips.ts';
+import { FOCUS_CUES, focusAt } from './console-focus.ts';
 
 export const FAST_SPEED = 8;
 const NORMAL_SPEED = 1;
 // Longer than the longest reading hold in record.ts, so a caption stays while the cursor rests on what it describes.
 const CAPTION_MS_MAX = 15_000;
 // 15 minutes of video in one segment.
-const SEGMENT_FRAMES_MAX = 27_000;
+const SEGMENT_FRAMES_MAX = 54_000;
 
-type Caption = Window & {
-  text: string;
-};
+type Caption = FocusWindow;
 
 export type ConsoleSegment = {
   // The title of the chapter card before the segment. The segment before the first chapter mark has none.
@@ -39,6 +39,10 @@ type PlanSegmentsParams = {
 };
 
 export function planSegments({ timeline, recordingDir }: PlanSegmentsParams): ConsoleSegment[] {
+  const cueCount = timeline.marks.filter((mark) => mark.kind === 'say').length;
+  if (cueCount !== FOCUS_CUES.length) {
+    throw new Error(`FOCUS_CUES_MISMATCH: ${cueCount} captions but ${FOCUS_CUES.length} camera plans.`);
+  }
   const ranges = speedRanges(timeline);
   const starts = [
     { startMs: 0, chapter: null },
@@ -47,10 +51,11 @@ export function planSegments({ timeline, recordingDir }: PlanSegmentsParams): Co
   return starts.map(({ startMs, chapter }, index) => {
     const endMs = starts[index + 1]?.startMs ?? timeline.durationMs;
     const segment = { startMs, endMs, videoStartMs: videoMs({ ranges, ms: startMs }) };
+    const captions = planCaptions({ timeline, ranges, segment });
     return {
       chapter,
-      frames: planFrames({ timeline, recordingDir, ranges, segment }),
-      captions: planCaptions({ timeline, ranges, segment }),
+      frames: planFrames({ timeline, recordingDir, ranges, segment, captions }),
+      captions,
       fastWindows: planFastWindows({ ranges, segment })
     };
   });
@@ -64,10 +69,11 @@ type Segment = Window & {
 type PlanFramesParams = PlanSegmentsParams & {
   ranges: SpeedRange[];
   segment: Segment;
+  captions: Caption[];
 };
 
 // Each video frame shows the last screencast frame at or before its capture time. Repeats merge into one entry.
-function planFrames({ timeline, recordingDir, ranges, segment }: PlanFramesParams): FrameEntry[] {
+function planFrames({ timeline, recordingDir, ranges, segment, captions }: PlanFramesParams): FrameEntry[] {
   const videoEndMs = videoMs({ ranges, ms: segment.endMs });
   const frameCount = Math.round((videoEndMs - segment.videoStartMs) / FRAME_MS);
   if (frameCount > SEGMENT_FRAMES_MAX) {
@@ -85,11 +91,18 @@ function planFrames({ timeline, recordingDir, ranges, segment }: PlanFramesParam
       throw new Error('TIMELINE_WITHOUT_FRAMES: the timeline lists no frames.');
     }
     const file = join(recordingDir, shownFrame.file);
+    const focus = focusAt({ windows: captions, atMs: frame * FRAME_MS });
     const last = entries.at(-1);
-    if (last?.file === file) {
+    if (
+      last?.file === file &&
+      last.focus?.left === focus.left &&
+      last.focus.top === focus.top &&
+      last.focus.width === focus.width &&
+      last.focus.height === focus.height
+    ) {
       last.durationMs += FRAME_MS;
     } else {
-      entries.push({ file, durationMs: FRAME_MS });
+      entries.push({ file, durationMs: FRAME_MS, focus });
     }
   }
   return entries;
@@ -113,7 +126,11 @@ function planCaptions({ timeline, ranges, segment }: PlanCaptionsParams): Captio
     const next = cues[index + 1];
     const nextStartMs = next === undefined ? Infinity : videoMs({ ranges, ms: next.atMs }) - segment.videoStartMs;
     const endMs = Math.min(startMs + CAPTION_MS_MAX, nextStartMs, segmentEndMs);
-    return endMs > startMs ? [{ text: cue.text, startMs, endMs }] : [];
+    const plan = FOCUS_CUES[index];
+    if (plan === undefined) {
+      throw new Error(`FOCUS_CUE_MISSING: caption ${index}.`);
+    }
+    return endMs > startMs ? [{ text: cue.text, startMs, endMs, rect: plan.rect }] : [];
   });
 }
 

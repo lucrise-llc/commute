@@ -1,21 +1,16 @@
-// The video's own graphics, drawn as HTML and screenshot with Playwright: the cards, the caption strip under the
-// console, and the speed badge. They are video cards, not product UI: the system font, plenty of space, a dark neutral
-// background, and one accent color.
+// The caption strip, speed badge, and terminal colors for the composed video.
 import type { Page } from 'playwright';
-
-import { ARCHITECTURE_ROWS, CLOSING_CARD, TITLE_CARD } from './story.ts';
 
 export const VIDEO_WIDTH = 1_920;
 export const VIDEO_HEIGHT = 1_080;
 export const STRIP_HEIGHT = 120;
 export const BADGE_WIDTH = 200;
 const CAPTION_SIDE_PADDING = 240;
-export const BACKGROUND = '#121417';
-export const STRIP_BACKGROUND = '#0c0d0f';
+export const BACKGROUND = '#101010';
 export const TEXT_COLOR = '#f1f2f4';
 export const MUTED_COLOR = '#9299a4';
 export const ACCENT_COLOR = '#f6821f';
-export const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+const FONT_FAMILY = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
 
 // The caption style, shared by the strip under the console and the terminal replay. A caption takes two lines at most.
 export const CAPTION_CSS = `
@@ -23,96 +18,22 @@ export const CAPTION_CSS = `
   color: ${TEXT_COLOR}; font: 500 36px/1.35 ${FONT_FAMILY}; letter-spacing: -0.005em; }
 .caption .nowrap { white-space: nowrap; }
 `;
+// The title bar of a window on the stage, shared by the terminal replay and the console: three dots and a title.
+export const WINDOW_BAR_CSS = `
+.bar { position: relative; height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 20px;
+  background: #17191d; border-bottom: 1px solid #23262c; }
+.bar i { width: 14px; height: 14px; border-radius: 50%; background: #3a3e46; }
+.bar span { position: absolute; left: 0; right: 0; text-align: center; color: ${MUTED_COLOR};
+  font: 500 20px ${FONT_FAMILY}; }
+`;
 // Words with a hyphen, such as a change ID, stay on one line.
 const HYPHENATED_WORD = /[\w.]+(?:-[\w.]+)+/g;
-
-export type Card =
-  | {
-      kind: 'title';
-    }
-  | {
-      kind: 'why';
-      text: string;
-      position: string;
-    }
-  | {
-      kind: 'chapter';
-      number: number;
-      title: string;
-    }
-  | {
-      kind: 'architecture';
-    }
-  | {
-      kind: 'closing';
-    };
-
-const CARD_CSS = `
-* { box-sizing: border-box; margin: 0; }
-html, body { width: ${VIDEO_WIDTH}px; height: ${VIDEO_HEIGHT}px; }
-body { background: ${BACKGROUND}; color: ${TEXT_COLOR}; font-family: ${FONT_FAMILY}; -webkit-font-smoothing: antialiased;
-  display: flex; flex-direction: column; justify-content: center; padding: 0 220px; text-wrap: balance; }
-.rule { width: 96px; height: 8px; border-radius: 4px; background: ${ACCENT_COLOR}; margin-bottom: 56px; }
-.name { font-size: 168px; font-weight: 700; line-height: 1; letter-spacing: -0.035em; }
-.tagline { margin-top: 36px; font-size: 64px; font-weight: 500; letter-spacing: -0.015em; }
-.platform { margin-top: 80px; font-size: 32px; color: ${MUTED_COLOR}; }
-.position { margin-bottom: 40px; font-size: 30px; font-weight: 600; color: ${ACCENT_COLOR};
-  font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
-.statement { max-width: 1400px; font-size: 66px; font-weight: 500; line-height: 1.28; letter-spacing: -0.015em; }
-.chapter-number { font-size: 200px; font-weight: 700; line-height: 1; color: ${ACCENT_COLOR}; letter-spacing: -0.04em; }
-.chapter-title { margin-top: 32px; font-size: 80px; font-weight: 600; letter-spacing: -0.02em; }
-.rows { display: grid; grid-template-columns: 440px 1fr; }
-.rows > div { padding: 30px 0; border-top: 1px solid #2a2e35; font-size: 46px; }
-.rows > div:nth-last-child(-n + 2) { border-bottom: 1px solid #2a2e35; }
-.product { font-weight: 600; }
-.role { color: ${MUTED_COLOR}; }
-.closing { max-width: 1480px; font-size: 92px; font-weight: 600; line-height: 1.15; letter-spacing: -0.025em; }
-.accent { color: ${ACCENT_COLOR}; }
-`;
-
-export function cardHtml(card: Card): string {
-  return htmlDocument({ css: CARD_CSS, body: cardBody(card) });
-}
-
-function cardBody(card: Card): string {
-  switch (card.kind) {
-    case 'title': {
-      return `<div class="rule"></div>
-        <div class="name">${escapeHtml(TITLE_CARD.name)}</div>
-        <div class="tagline">${escapeHtml(TITLE_CARD.tagline)}</div>
-        <div class="platform">${escapeHtml(TITLE_CARD.platform)}</div>`;
-    }
-    case 'why': {
-      return `<div class="position">${escapeHtml(card.position)}</div>
-        <div class="statement">${escapeHtml(card.text)}</div>`;
-    }
-    case 'chapter': {
-      return `<div class="chapter-number">${card.number}</div>
-        <div class="chapter-title">${escapeHtml(card.title)}</div>`;
-    }
-    case 'architecture': {
-      const rows = ARCHITECTURE_ROWS.map(
-        ({ product, role }) =>
-          `<div class="product">${escapeHtml(product)}</div><div class="role">${escapeHtml(role)}</div>`
-      );
-      return `<div class="rows">${rows.join('')}</div>`;
-    }
-    case 'closing': {
-      return `<div class="rule"></div>
-        <div class="closing"><span class="accent">${escapeHtml(CLOSING_CARD.name)}:</span> ${escapeHtml(CLOSING_CARD.line)}</div>`;
-    }
-    default: {
-      const unknown: never = card;
-      throw new Error(`UNKNOWN_CARD: ${JSON.stringify(unknown)}`);
-    }
-  }
-}
 
 // One caption in the strip under the console. The strip leaves room on the right for the speed badge.
 export function captionHtml(text: string): string {
   return htmlDocument({
     css: `* { box-sizing: border-box; margin: 0; }
-      body { width: ${VIDEO_WIDTH}px; height: ${STRIP_HEIGHT}px; background: ${STRIP_BACKGROUND};
+      body { width: ${VIDEO_WIDTH}px; height: ${STRIP_HEIGHT}px; background: ${BACKGROUND};
         display: flex; align-items: center; justify-content: center; padding: 0 ${CAPTION_SIDE_PADDING}px;
         -webkit-font-smoothing: antialiased; }
       ${CAPTION_CSS}`,
@@ -130,6 +51,20 @@ export function badgeHtml(label: string): string {
         background: ${ACCENT_COLOR}; color: #15171a; font: 700 32px/1 ${FONT_FAMILY}; font-variant-numeric: tabular-nums; }`,
     body: `<div class="badge"><svg width="30" height="22" viewBox="0 0 30 22" aria-hidden="true">
         <path d="M2 2l12 9-12 9zM16 2l12 9-12 9z" fill="currentColor"/></svg>${escapeHtml(label)}</div>`
+  });
+}
+
+export function windowBarMarkup(title: string): string {
+  return `<div class="bar"><i></i><i></i><i></i><span>${escapeHtml(title)}</span></div>`;
+}
+
+// The console's title bar as an image, laid over the top of its window.
+export function windowBarHtml(title: string): string {
+  return htmlDocument({
+    css: `* { box-sizing: border-box; margin: 0; }
+      body { -webkit-font-smoothing: antialiased; }
+      ${WINDOW_BAR_CSS}`,
+    body: windowBarMarkup(title)
   });
 }
 
